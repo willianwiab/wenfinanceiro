@@ -1760,8 +1760,10 @@ async function R_desconciliarEvento(eventoId){
 
 async function R_carregarTodos(){
   loading(true,'Carregando Receber...');setSyncStatus('saving');
+  console.log('[WEN] Iniciando carregamento Receber...');
   try{
     [R_todosOsDados]=await Promise.all([R_fbCarregarTodos(),R_carregarConciliados()]);
+    console.log('[WEN] ✅ Receber carregado:', R_todosOsDados.length, 'registros');
     setSyncStatus('ok');toast('☁️ '+R_todosOsDados.length+' gravações carregadas!');
     if(window._ultimosConfirmados)atualizarNotificacoes(window._ultimosCancelados||[],window._ultimosConfirmados);
   }catch(e){setSyncStatus('error',e.message);toast('Erro Receber: '+e.message,'#ef4444');}
@@ -2792,7 +2794,13 @@ async function P_atualizarCaderninho(){
 async function carregarDeSheetsP(){
   setSyncStatus('saving');
   try{
-    const res=await fetch(`${FS_URL}/meses?key=${FB_API_KEY}`);const json=await res.json();
+    const url=`${FS_URL}/meses?key=${FB_API_KEY}`;
+    console.log('[WEN] Buscando Pagar:', url.split('?')[0]);
+    const res=await fetch(url);
+    console.log('[WEN] Pagar HTTP status:', res.status);
+    if(!res.ok){const e=await res.json().catch(()=>({}));console.error('[WEN] Pagar erro:',e);throw new Error('HTTP '+res.status);}
+    const json=await res.json();
+    console.log('[WEN] Pagar docs:', json.documents?.length||0);
     if(!json.documents||json.documents.length===0){setSyncStatus('ok');return false;}
     const novosMeses={};
     json.documents.forEach(doc=>{
