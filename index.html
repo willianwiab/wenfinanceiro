@@ -221,6 +221,7 @@ body{background:#f0f4f8;color:#1e293b}
 .concil-item-acao{border:none;border-radius:5px;padding:3px 9px;font-size:.73rem;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .concil-vazio{text-align:center;padding:18px;color:#6b7280;font-size:.83rem}
 .concil-mes-select{border:1px solid #e0e7ff;border-radius:7px;padding:5px 9px;font-size:.8rem;outline:none;color:#4f46e5;font-weight:600;background:white;cursor:pointer}
+#bkFiltros button.active{background:#1e40af;color:white;border-color:#1e40af}
 
 /* Notificações */
 .notif-btn{position:relative;background:rgba(255,255,255,.15);border:none;border-radius:9px;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.15rem;transition:background .2s;flex-shrink:0}
@@ -677,10 +678,11 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   .fech-doc-r{box-shadow:none;border-radius:0}
   .container{padding:0;max-width:100%}
 }
+.hdr-logo{height:40px;width:auto;display:block}
+
 </style>
   <!-- Firebase Auth SDK (Google Login) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
     if (!firebase.apps.length) {
       firebase.initializeApp({
@@ -701,8 +703,9 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ══ HEADER ══ -->
 <div class="hdr">
   <div class="hdr-brand">
+    <img src="assets/logo-wen.png" alt="WEN Produtora" class="hdr-logo"/>
     <div>
-      <h1>💼 WEN <span>Financeiro</span></h1>
+      <h1>WEN <span>Financeiro</span></h1>
       <p id="hdrSub">WEN Produtora — Fluxo de Caixa</p>
     </div>
   </div>
@@ -734,8 +737,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button class="active" onclick="showMain('fluxo',this)">💰 Fluxo de Caixa</button>
   <button onclick="showMain('receber',this)">📥 A Receber</button>
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
+  <button onclick="showMain('banco',this)">🏦 Conciliação</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
-  <button onclick="showMain('claude',this)">🤖 Claude</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
 </div>
 
@@ -1136,6 +1139,13 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
   <!-- p-categorias -->
   <div class="page" id="page-p-categorias">
+    <div style="background:white;border-radius:13px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+        <h3 style="font-size:.8rem;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.05em">⚙️ Gerenciar Categorias</h3>
+        <button class="btn btn-blue" style="padding:6px 14px;font-size:.8rem" onclick="CAT_abrirModal()">+ Nova Categoria</button>
+      </div>
+      <div id="catGerenciarLista" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
       <select id="pCatMesFiltro" onchange="renderCategoriasP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:7px 11px;font-size:.88rem;outline:none"></select>
       <select id="pCatMesComp" onchange="renderCategoriasP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:7px 11px;font-size:.88rem;outline:none"><option value="">📊 Comparar com...</option></select>
@@ -1172,6 +1182,52 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div><!-- /page-pagar -->
 
 <!-- ════════════════════════════════════════
+     CONCILIAÇÃO BANCÁRIA
+════════════════════════════════════════ -->
+<div class="page" id="page-banco">
+  <div class="concil-header">
+    <h4>🏦 Conciliação Bancária</h4>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:.78rem;color:#6b7280">Tolerância:
+        <select class="concil-mes-select" onchange="BK_setTolerancia(this.value)">
+          <option value="1">±1 dia</option>
+          <option value="3" selected>±3 dias</option>
+          <option value="5">±5 dias</option>
+          <option value="7">±7 dias</option>
+        </select>
+      </label>
+      <input type="file" id="bkFileInput" accept=".ofx" multiple style="display:none" onchange="BK_handleFiles(this)"/>
+      <button class="btn btn-blue" onclick="BK_abrirImport()">⬆ Importar .ofx</button>
+      <button class="btn btn-outline" onclick="BK_limparExtratos()">🗑️ Limpar Extratos</button>
+    </div>
+  </div>
+  <div id="bkImportInfo"></div>
+  <div class="concil-resumo" id="bkResumo"></div>
+  <div id="bkFiltros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <button class="btn btn-outline active" onclick="BK_setFiltro('SUGESTOES',this)">🔵 Sugestões</button>
+    <button class="btn btn-outline" onclick="BK_setFiltro('AMBIGUOS',this)">🟡 Ambíguos</button>
+    <button class="btn btn-outline" onclick="BK_setFiltro('SEM_MATCH',this)">🔴 Sem Correspondência</button>
+    <button class="btn btn-outline" onclick="BK_setFiltro('CONCILIADOS',this)">✅ Conciliados</button>
+    <button class="btn btn-outline" onclick="BK_setFiltro('SISTEMA_ORFAO',this)">📋 Sistema sem Transação</button>
+    <button class="btn btn-outline" onclick="BK_setFiltro('IGNORADOS',this)">🗑️ Ignorados</button>
+  </div>
+  <div id="bkCorpo"></div>
+</div><!-- /page-banco -->
+
+<!-- Modal de vínculo manual — Conciliação Bancária -->
+<div class="modal-bg" id="bkModalManualBg">
+  <div class="modal">
+    <h3 style="margin-bottom:10px">🔎 Vincular Manualmente</h3>
+    <div id="bkManualInfo" style="font-size:.84rem;color:#374151;background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:12px"></div>
+    <input type="text" id="bkManualBusca" placeholder="Buscar por nome/cliente..." oninput="BK_renderCandidatosManual()" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:7px;font-size:.85rem;margin-bottom:10px;outline:none"/>
+    <div id="bkManualLista" style="max-height:340px;overflow-y:auto"></div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn btn-outline" onclick="BK_fecharModalManual()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
      ANÁLISE
 ════════════════════════════════════════ -->
 <div class="page" id="page-analise">
@@ -1192,11 +1248,12 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <div class="page" id="page-config">
   <div class="backup-box">
     <h3>☁️ Banco de Dados — Contas a Receber</h3>
-    <p style="font-size:.86rem;color:#6b7280;margin-bottom:14px">Dados salvos automaticamente no Firebase (coleção: lancamentos).</p>
+    <p style="font-size:.86rem;color:#6b7280;margin-bottom:14px">Dados salvos automaticamente no Firebase (coleção: lancamentos). Ficam em cache local no navegador — cada carregamento de página só busca o que mudou desde a última vez, pra não estourar a cota do Firebase.</p>
     <div class="backup-actions">
       <button class="btn btn-green" onclick="fazerBackupR()">⬇ Backup Receber (.json)</button>
       <button class="btn btn-outline" onclick="exportarTodosExcelR()">⬇ Excel Completo Receber</button>
       <button class="btn btn-blue" onclick="sincronizarAgoraR()">🔄 Sincronizar Receber</button>
+      <button class="btn btn-outline" onclick="forcarRecargaCompletaR()" title="Limpa o cache local e busca a coleção inteira de novo — use só se os dados parecerem desatualizados/errados">🗑️ Forçar Recarga Completa</button>
     </div>
     <h3 style="margin-top:22px;font-size:.8rem;text-transform:uppercase;color:#6b7280;font-weight:700;letter-spacing:.05em;margin-bottom:12px">📂 Restaurar Backup Receber</h3>
     <div class="backup-drop" onclick="document.getElementById('rBackupInput').click()">
@@ -1484,6 +1541,22 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal criar/editar categoria -->
+<div class="modal-bg" id="catModalBg">
+  <div class="modal" style="max-width:380px">
+    <h2 id="catModalTitle">➕ Nova Categoria</h2>
+    <div class="form-group"><label>Nome</label><input type="text" id="catFLabel" placeholder="Ex: Manutenção"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Ícone (emoji)</label><input type="text" id="catFIcon" placeholder="🔧" maxlength="4"/></div>
+      <div class="form-group"><label>Cor</label><input type="color" id="catFCor" value="#3b82f6" style="width:100%;height:38px;padding:2px;cursor:pointer"/></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="CAT_fecharModal()">Cancelar</button>
+      <button class="btn btn-purple" onclick="CAT_salvar()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal copiar mês pagar -->
 <div class="confirm-bg" id="pCopiarMesBg">
   <div class="confirm-box" style="max-width:460px">
@@ -1504,117 +1577,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <button class="btn btn-outline-b" onclick="fecharCopiarMesP()">Cancelar</button>
       <button class="btn btn-green" onclick="confirmarCopiarMesP()">📋 Copiar Agora</button>
     </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════ -->
-<!-- ══ SEÇÃO CLAUDE ══ -->
-<!-- ══════════════════════════════════════════════ -->
-<div id="page-claude" class="page">
-
-  <!-- Login — funciona local e hospedado -->
-  <div id="claudeLoginWrap" style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-    <div style="background:#1e293b;border-radius:20px;padding:44px 40px;max-width:400px;width:100%;border:1px solid #334155;text-align:center">
-      <div style="font-size:3rem;margin-bottom:16px">🤖</div>
-      <h2 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:8px">Assistente Claude</h2>
-      <p style="font-size:.85rem;color:#475569;margin-bottom:28px;line-height:1.7">
-        Análise financeira inteligente com seus dados reais.
-      </p>
-
-      <!-- Botão Google (só aparece em http/https) -->
-      <div id="claudeGoogleArea">
-        <button onclick="claudeLoginGoogle()" id="claudeGoogleBtn"
-          style="width:100%;background:white;color:#1f2937;border:none;border-radius:12px;padding:14px 20px;font-size:.95rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:12px">
-          <svg width="20" height="20" viewBox="0 0 48 48">
-            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-          </svg>
-          Entrar com Google
-        </button>
-        <div style="font-size:.72rem;color:#334155;margin-bottom:16px">— ou —</div>
-      </div>
-
-      <!-- Login local por PIN (funciona em file://) -->
-      <div id="claudePinArea">
-        <div style="margin-bottom:14px;text-align:left">
-          <label style="font-size:.75rem;font-weight:600;color:#64748b;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Senha de Acesso</label>
-          <input id="claudePinInput" type="password" placeholder="Digite sua senha"
-            style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:11px 14px;color:#e2e8f0;font-size:.9rem;outline:none"
-            onkeydown="if(event.key==='Enter')claudeLoginPin()"/>
-        </div>
-        <button onclick="claudeLoginPin()"
-          style="width:100%;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;border:none;border-radius:12px;padding:13px;font-size:.95rem;font-weight:700;cursor:pointer">
-          🔐 Entrar
-        </button>
-      </div>
-
-      <div id="claudeLoginErr" style="font-size:.8rem;color:#f87171;margin-top:12px;min-height:20px"></div>
-      <div style="font-size:.7rem;color:#1e293b;margin-top:16px">WEN Produtora · Acesso Restrito</div>
-    </div>
-  </div>
-
-  <!-- App Claude (após login) -->
-  <div id="claudeAppWrap" style="display:none">
-
-    <!-- Header usuário -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:1.1rem">🤖</div>
-        <div>
-          <div style="font-size:1rem;font-weight:700;color:#e2e8f0">Claude Financeiro</div>
-          <div id="claudeUserLabel" style="font-size:.75rem;color:#64748b">Carregando...</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="claudeAnalisarAgora()"
-          style="background:#4f46e5;color:white;border:none;border-radius:10px;padding:9px 18px;font-size:.82rem;font-weight:600;cursor:pointer">
-          🔄 Analisar Mês Atual
-        </button>
-        <button onclick="claudeLogout()"
-          style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:10px;padding:9px 14px;font-size:.82rem;cursor:pointer">
-          Sair
-        </button>
-      </div>
-    </div>
-
-    <!-- KPIs rápidos -->
-    <div id="claudeKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px"></div>
-
-    <!-- Chat -->
-    <div style="background:#1e293b;border-radius:16px;border:1px solid #334155;overflow:hidden">
-      <!-- Mensagens -->
-      <div id="claudeMsgs" style="height:420px;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth">
-        <div style="text-align:center;color:#334155;font-size:.82rem;padding:20px">
-          🤖 Faça login para começar a análise
-        </div>
-      </div>
-      <!-- Input -->
-      <div style="border-top:1px solid #1e293b;padding:14px 16px;display:flex;gap:10px;background:#0f172a">
-        <input id="claudeInput" type="text" placeholder="Pergunte sobre seus dados financeiros..."
-          style="flex:1;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:11px 14px;color:#e2e8f0;font-size:.88rem;outline:none"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();claudeEnviar();}"/>
-        <button onclick="claudeEnviar()"
-          style="background:#4f46e5;color:white;border:none;border-radius:10px;padding:11px 18px;font-size:.88rem;font-weight:600;cursor:pointer;white-space:nowrap">
-          Enviar →
-        </button>
-      </div>
-    </div>
-
-    <!-- Sugestões rápidas -->
-    <div style="margin-top:16px">
-      <div style="font-size:.72rem;color:#334155;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Perguntas rápidas</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">📊 Como foi esse mês?</button>
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">🚨 Quais clientes estão em atraso?</button>
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">💡 Que ações devo tomar?</button>
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">📈 Compare com o mês passado</button>
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">🏆 Quem são os melhores clientes?</button>
-        <button onclick="claudeSugestao(this.textContent)" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:99px;padding:7px 14px;font-size:.78rem;cursor:pointer">📉 Estamos no lucro ou prejuízo?</button>
-      </div>
-    </div>
-
   </div>
 </div>
 
@@ -1668,6 +1630,98 @@ function toast(msg,cor='#16a34a'){
   t.textContent=msg;t.style.background=cor;t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2800);
 }
+
+// ══════════════════════════════════════════════════════
+// MODO SIMULAÇÃO LOCAL — abrir com ?mock=1 na URL
+// Intercepta todo fetch() pro Firestore e responde com dados fictícios em memória,
+// sem NENHUMA leitura/escrita real. Serve pra desenvolver/testar sem gastar cota do
+// Firebase (ou quando a cota estourou) e sem risco nenhum de mexer nos dados reais.
+// ══════════════════════════════════════════════════════
+const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
+if (SIMULACAO_LOCAL){
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{} };
+
+  const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
+
+  // Categorias — mesmas 10 padrão, pra Gerenciar Categorias funcionar sem tocar no Firebase
+  const CATS_SEED = {
+    consumo:{label:'Consumo',icon:'⚡',color:'#f59e0b',bg:'#fef3c7'},
+    servicos:{label:'Serviços',icon:'🔧',color:'#3b82f6',bg:'#dbeafe'},
+    impostos:{label:'Impostos',icon:'📋',color:'#ef4444',bg:'#fee2e2'},
+    pessoal:{label:'Pessoal',icon:'👤',color:'#8b5cf6',bg:'#ede9fe'},
+    aluguel:{label:'Aluguel',icon:'🏠',color:'#10b981',bg:'#d1fae5'},
+    cartoes:{label:'Cartões',icon:'💳',color:'#ec4899',bg:'#fce7f3'},
+    marketing:{label:'Marketing',icon:'📣',color:'#f97316',bg:'#ffedd5'},
+    contabilidade:{label:'Contab.',icon:'📊',color:'#6366f1',bg:'#e0e7ff'},
+    retirada:{label:'Retiradas',icon:'💰',color:'#14b8a6',bg:'#ccfbf1'},
+    outros:{label:'Outros',icon:'📦',color:'#94a3b8',bg:'#f1f5f9'},
+  };
+  Object.entries(CATS_SEED).forEach(([id,d])=>seedFV('categorias_pagar',id,d));
+
+  // Lançamentos fictícios (A Receber) — cobrindo diária paga, diária pendente e um grupo
+  // de 3 diárias do mesmo cliente no mesmo mês (pra testar soma/fechamento)
+  const R_SEED = [
+    {id:'mock1',cliente:'CLIENTE TESTE A',mes:'JUL/2026',data:'02/07/2026',vencimento:'-',studio:'STUDIO A',horario:'10:00 as 12:00',horas:2,valorTotal:2000,valorReserva:2000,saldo:0,desc:'-',obs:''},
+    {id:'mock2',cliente:'CLIENTE TESTE B',mes:'JUL/2026',data:'05/07/2026',vencimento:'-',studio:'STUDIO B',horario:'14:00 as 16:00',horas:2,valorTotal:1500,valorReserva:0,saldo:1500,desc:'-',obs:''},
+    {id:'mock3',cliente:'CLIENTE TESTE C',mes:'JUL/2026',data:'08/07/2026',vencimento:'-',studio:'STUDIO A',horario:'09:00 as 10:00',horas:1,valorTotal:800,valorReserva:0,saldo:800,desc:'Diária 1/3',obs:''},
+    {id:'mock4',cliente:'CLIENTE TESTE C',mes:'JUL/2026',data:'15/07/2026',vencimento:'-',studio:'STUDIO A',horario:'09:00 as 10:00',horas:1,valorTotal:800,valorReserva:0,saldo:800,desc:'Diária 2/3',obs:''},
+    {id:'mock5',cliente:'CLIENTE TESTE C',mes:'JUL/2026',data:'22/07/2026',vencimento:'-',studio:'STUDIO A',horario:'09:00 as 10:00',horas:1,valorTotal:800,valorReserva:0,saldo:800,desc:'Diária 3/3',obs:''},
+  ];
+  R_SEED.forEach(r=>seedFV('lancamentos',r.id,r));
+
+  // Uma conciliação já confirmada, pra testar o selo "🔗 Conciliado"
+  seedFV('banco_conciliados','mock_chave_1',{chave:'mock_chave_1',status:'match',tipo:'receber',id:'mock1',mes:'JUL/2026',label:'CLIENTE TESTE A',motivo:'valor_exato',ts:new Date(2026,6,12).toISOString()});
+
+  function mockResposta(bodyJson){ return Promise.resolve({ ok:true, status:200, json:()=>Promise.resolve(bodyJson) }); }
+  function mockFetch(url, opts){
+    if (url.startsWith(FS_URL + ':runQuery')){
+      const body = JSON.parse((opts && opts.body) || '{}');
+      const sq = body.structuredQuery || {};
+      const collection = (sq.from && sq.from[0] && sq.from[0].collectionId) || '';
+      if (!MOCK_DB[collection]) MOCK_DB[collection] = {};
+      const col = MOCK_DB[collection];
+      let ids = Object.keys(col);
+      const filtro = sq.where && sq.where.fieldFilter;
+      if (filtro){
+        const campo = filtro.field.fieldPath, valor = filtro.value.stringValue;
+        ids = ids.filter(id => { const fv = col[id][campo] && col[id][campo].stringValue; return fv && fv > valor; });
+      }
+      const results = ids.map(id => ({ document: { name: `mock/${collection}/${id}`, fields: col[id] } }));
+      return mockResposta(results);
+    }
+    const rest = url.slice(FS_URL.length + 1);
+    const pathPart = rest.split('?')[0];
+    const partes = pathPart.split('/');
+    const collection = decodeURIComponent(partes[0]);
+    const docId = partes[1] ? decodeURIComponent(partes[1]) : null;
+    const method = (opts && opts.method) || 'GET';
+    if (!MOCK_DB[collection]) MOCK_DB[collection] = {};
+    const col = MOCK_DB[collection];
+    if (method === 'DELETE'){ delete col[docId]; return mockResposta({}); }
+    if (method === 'PATCH'){
+      const body = JSON.parse(opts.body||'{}');
+      col[docId] = { ...(col[docId]||{}), ...(body.fields||{}) };
+      return mockResposta({ fields: col[docId] });
+    }
+    // GET (lista a coleção inteira — os datasets fictícios são pequenos, sem paginação)
+    const documents = Object.keys(col).map(id => ({ name:`mock/${collection}/${id}`, fields: col[id] }));
+    return mockResposta({ documents });
+  }
+  const fetchReal = window.fetch.bind(window);
+  window.fetch = function(url, opts){
+    if (typeof url === 'string' && url.startsWith(FS_URL)) return mockFetch(url, opts);
+    return fetchReal(url, opts);
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const banner = document.createElement('div');
+    banner.textContent = '🧪 MODO SIMULAÇÃO — dados fictícios, nada aqui é lido/gravado no Firebase real';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7c3aed;color:white;text-align:center;font-weight:700;font-size:.8rem;padding:6px;letter-spacing:.03em';
+    document.body.prepend(banner);
+    document.body.style.paddingTop = '30px';
+  });
+}
+
 function loading(show,txt='Carregando...'){
   document.getElementById('loadingTxt').textContent=txt;
   document.getElementById('loadingOverlay').classList.toggle('show',show);
@@ -1699,8 +1753,8 @@ function showMain(id,btn){
   if(id==='receber')renderSubPageR(subRAtivo);
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='analise')renderAnalise();
+  if(id==='banco')BK_executarMatching();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;}
-  if(id==='claude'){const u=firebase.auth().currentUser;if(u){CL_user=u;claudeIniciarApp();}}
 }
 
 function showSubR(id,btn){
@@ -1738,7 +1792,7 @@ function renderSubPageP(id){
   if(id==='p-contas')renderTabelaP();
   if(id==='p-historico')renderHistoricoP();
   if(id==='p-periodo')renderPeriodoSelectsP();
-  if(id==='p-categorias'){renderCatMesFiltroP();renderCategoriasP();}
+  if(id==='p-categorias'){CAT_renderGerenciar();renderCatMesFiltroP();renderCategoriasP();}
 }
 
 function atualizarHeaderContexto(){
@@ -1810,15 +1864,19 @@ const R_META_HORAS=100;
 
 // Firebase Receber
 async function R_fbSalvar(reg){
-  const id=reg.id||gerarId();const r={...reg,id};
+  const id=reg.id||gerarId();const r={...reg,id,atualizadoEm:new Date().toISOString()};
   const fields={};Object.keys(r).forEach(k=>fields[k]=toFV(r[k]));
   const url=`${FS_URL}/lancamentos/${id}?key=${FB_API_KEY}`;
   const res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
   if(!res.ok)throw new Error('Erro salvar R: '+res.statusText);return r;
 }
+// Exclusão lógica (soft-delete): em vez de apagar o documento, só marca excluido:true.
+// Isso permite que o cache local de outros aparelhos/sessões descubra a exclusão da
+// próxima vez que sincronizarem (uma exclusão de verdade não deixa rastro pra comparar).
 async function R_fbExcluir(id){
   const url=`${FS_URL}/lancamentos/${id}?key=${FB_API_KEY}`;
-  await fetch(url,{method:'DELETE'});
+  const fields={excluido:toFV(true),atualizadoEm:toFV(new Date().toISOString())};
+  await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
 }
 async function R_fbCarregarTodos(){
   let todos=[],pt=null;
@@ -1829,7 +1887,31 @@ async function R_fbCarregarTodos(){
     if(json.documents){json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));todos.push(obj);});}
     pt=json.nextPageToken||null;
   }while(pt);
-  return todos;
+  return todos.filter(r=>!r.excluido);
+}
+// ── Cache local dos lançamentos (Receber) — evita rebuscar a coleção inteira a cada load ──
+// Guarda o retrato mais recente em localStorage; nas próximas cargas só busca no Firestore
+// o que mudou desde a última sincronização (campo atualizadoEm), não a coleção inteira.
+const R_CACHE_KEY='wen_lancamentos_cache';
+const R_CACHE_SYNC_KEY='wen_lancamentos_last_sync';
+function R_carregarCacheLocal(){ try{ return JSON.parse(localStorage.getItem(R_CACHE_KEY)||'[]'); }catch(e){ return []; } }
+function R_salvarCacheLocal(){ localStorage.setItem(R_CACHE_KEY, JSON.stringify(R_todosOsDados)); }
+function R_limparCacheLocal(){ localStorage.removeItem(R_CACHE_KEY); localStorage.removeItem(R_CACHE_SYNC_KEY); toast('🗑️ Cache local limpo — próxima carga vai buscar tudo de novo.','#6b7280'); }
+// Busca só os lançamentos alterados/criados/excluídos desde "desde" (ISO string).
+// Sem "desde", cai pro fetch completo de sempre (bootstrap do cache).
+async function R_fbBuscarAlterados(desde){
+  if (!desde) return R_fbCarregarTodos().then(todos=>({todos,parcial:false}));
+  const body={structuredQuery:{from:[{collectionId:'lancamentos'}],where:{fieldFilter:{field:{fieldPath:'atualizadoEm'},op:'GREATER_THAN',value:{stringValue:desde}}}}};
+  const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const json=await res.json();
+  const todos=[];
+  (Array.isArray(json)?json:[]).forEach(item=>{
+    if(!item.document)return;
+    const f=item.document.fields||{};const obj={};
+    Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));
+    todos.push(obj);
+  });
+  return {todos,parcial:true};
 }
 async function R_fbSalvarConciliado(eventoId,dados){
   const fields={};const obj={id:eventoId,...dados,ts:new Date().toISOString()};
@@ -1870,16 +1952,29 @@ async function R_desconciliarEvento(eventoId){
   }catch(e){toast('Erro: '+e.message,'#ef4444');}
 }
 
-async function R_carregarTodos(){
+async function R_carregarTodos(forcarCompleto){
   loading(true,'Carregando Receber...');setSyncStatus('saving');
   try{
-    [R_todosOsDados]=await Promise.all([R_fbCarregarTodos(),R_carregarConciliados()]);
-    setSyncStatus('ok');toast('☁️ '+R_todosOsDados.length+' gravações carregadas!');
+    const cacheLocal=R_carregarCacheLocal();
+    const ultimoSync=(!forcarCompleto&&cacheLocal.length>0)?localStorage.getItem(R_CACHE_SYNC_KEY):null;
+    const [{todos:alterados,parcial},_conc]=await Promise.all([R_fbBuscarAlterados(ultimoSync),R_carregarConciliados()]);
+    if(parcial){
+      const porId={};cacheLocal.forEach(r=>{if(!r.excluido)porId[r.id]=r;});
+      alterados.forEach(r=>{if(r.excluido)delete porId[r.id];else porId[r.id]=r;});
+      R_todosOsDados=Object.values(porId);
+    }else{
+      R_todosOsDados=alterados; // fetch completo já vem sem excluídos
+    }
+    localStorage.setItem(R_CACHE_SYNC_KEY,new Date().toISOString());
+    R_salvarCacheLocal();
+    setSyncStatus('ok');
+    toast(parcial?`☁️ ${R_todosOsDados.length} gravações (${alterados.length} atualizada(s) agora)`:`☁️ ${R_todosOsDados.length} gravações carregadas!`);
     if(window._ultimosConfirmados)atualizarNotificacoes(window._ultimosCancelados||[],window._ultimosConfirmados);
   }catch(e){setSyncStatus('error',e.message);toast('Erro Receber: '+e.message,'#ef4444');}
   finally{loading(false);}
 }
 async function sincronizarAgoraR(){await R_carregarTodos();renderMesSelectR();renderDashboardR();renderTabelaR();}
+async function forcarRecargaCompletaR(){R_limparCacheLocal();await R_carregarTodos(true);renderMesSelectR();renderDashboardR();renderTabelaR();toast('☁️ Recarga completa concluída!');}
 
 // Estado
 function R_getMesData(){return R_todosOsDados.filter(r=>r.mes===R_mesAtual);}
@@ -2131,7 +2226,7 @@ function renderTabelaR(){
       <td class="center">${r.data||'-'}</td><td class="center" style="color:${R_getVencEfetivo(r)!==r.data&&R_getVencEfetivo(r)!=='-'?'#f97316':'inherit'}">${R_getVencEfetivo(r)}</td><td class="center">${r.horas}h</td>
       <td class="right">${fmt(r.valorTotal)}</td><td class="right" style="color:#22c55e">${fmt(r.valorReserva)}</td>
       <td class="right" style="color:${r.saldo>0?'#ef4444':'#16a34a'}">${fmt(r.saldo)}</td>
-      <td class="center"><span class="badge-r ${R_isPago(r)?'pago':'pendente'}">${R_isPago(r)?'✅ PAGO':'🔴 PENDENTE'}</span></td>
+      <td class="center"><span class="badge-r ${R_isPago(r)?'pago':'pendente'}">${R_isPago(r)?'✅ PAGO':'🔴 PENDENTE'}</span>${typeof BK_statusConciliacao==='function'?`<div style="margin-top:3px">${BK_statusConciliacao('receber',r.id,r.mes)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div>`:''}</td>
       <td class="center">
         <button class="btn-acao-r" data-action="editar">✏️</button>
         <button class="btn-acao-r del" data-action="excluir">🗑️</button>
@@ -2858,6 +2953,101 @@ const CATS_P={
   outros:{label:'Outros',icon:'📦',color:'#94a3b8',bg:'#f1f5f9'},
 };
 function catInfoP(c){return CATS_P[c]||{label:'Sem cat.',icon:'—',color:'#94a3b8',bg:'#f1f5f9'};}
+
+// ── Categorias — cadastro dinâmico (Firestore), com os itens acima como seed inicial ──
+const CAT_COL='categorias_pagar';
+async function CAT_fbSalvar(id,dados){
+  const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
+  await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+}
+async function CAT_fbExcluir(id){
+  await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});
+}
+async function CAT_fbCarregarTodas(){
+  const out={};
+  try{
+    let pt=null;
+    do{
+      let url=`${FS_URL}/${CAT_COL}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+      const res=await fetch(url);const json=await res.json();
+      if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));const id=doc.name.split('/').pop();out[id]=obj;});
+      pt=json.nextPageToken||null;
+    }while(pt);
+  }catch(e){console.warn('Categorias:',e.message);}
+  return out;
+}
+async function CAT_inicializar(){
+  const remoto=await CAT_fbCarregarTodas();
+  if(Object.keys(remoto).length){
+    Object.keys(CATS_P).forEach(k=>delete CATS_P[k]);
+    Object.assign(CATS_P,remoto);
+  }else{
+    for(const[id,dados]of Object.entries(CATS_P))await CAT_fbSalvar(id,dados);
+  }
+  CAT_popularSelectP();CAT_renderGerenciar();
+  if(mainAtivo==='pagar'){popularCatFiltroTabelaP();if(subPAtivo==='p-categorias')renderCategoriasP();if(subPAtivo==='p-contas')renderTabelaP();}
+}
+function CAT_popularSelectP(){
+  const sel=document.getElementById('pFCategoria');if(!sel)return;
+  const val=sel.value;
+  sel.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('');
+  if(val&&CATS_P[val])sel.value=val;
+}
+function CAT_renderGerenciar(){
+  const el=document.getElementById('catGerenciarLista');if(!el)return;
+  const keys=Object.keys(CATS_P).sort((a,b)=>CATS_P[a].label.localeCompare(CATS_P[b].label));
+  el.innerHTML=keys.map(k=>{
+    const c=CATS_P[k];
+    return `<div style="display:flex;align-items:center;gap:5px;background:${c.bg};color:${c.color};border-radius:20px;padding:5px 6px 5px 12px;font-size:.8rem;font-weight:700">
+      <span>${c.icon} ${c.label}</span>
+      <button onclick="CAT_abrirModal('${k}')" style="background:none;border:none;cursor:pointer;font-size:.8rem;padding:2px;opacity:.75" title="Editar">✏️</button>
+      <button onclick="CAT_excluir('${k}')" style="background:none;border:none;cursor:pointer;font-size:.8rem;padding:2px;opacity:.75" title="Excluir">🗑️</button>
+    </div>`;
+  }).join('')||'<div style="color:#9ca3af;font-size:.83rem">Nenhuma categoria cadastrada.</div>';
+}
+let CAT_editandoId=null;
+function CAT_slug(label){return label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'')||('cat_'+Object.keys(CATS_P).length);}
+function CAT_abrirModal(id=null){
+  CAT_editandoId=id;
+  document.getElementById('catModalTitle').textContent=id?'✏️ Editar Categoria':'➕ Nova Categoria';
+  if(id){
+    const c=CATS_P[id];
+    document.getElementById('catFLabel').value=c.label;
+    document.getElementById('catFIcon').value=c.icon;
+    document.getElementById('catFCor').value=c.color;
+  }else{
+    document.getElementById('catFLabel').value='';
+    document.getElementById('catFIcon').value='🏷️';
+    document.getElementById('catFCor').value='#3b82f6';
+  }
+  document.getElementById('catModalBg').classList.add('open');
+}
+function CAT_fecharModal(){document.getElementById('catModalBg').classList.remove('open');CAT_editandoId=null;}
+async function CAT_salvar(){
+  const label=document.getElementById('catFLabel').value.trim();
+  if(!label){toast('Informe o nome da categoria.','#ef4444');return;}
+  const icon=document.getElementById('catFIcon').value.trim()||'🏷️';
+  const color=document.getElementById('catFCor').value;
+  const bg=color+'22';
+  const id=CAT_editandoId||CAT_slug(label);
+  const dados={label,icon,color,bg};
+  CATS_P[id]=dados;
+  await CAT_fbSalvar(id,dados);
+  CAT_fecharModal();
+  CAT_popularSelectP();CAT_renderGerenciar();popularCatFiltroTabelaP();
+  if(subPAtivo==='p-categorias')renderCategoriasP();
+  if(subPAtivo==='p-contas')renderTabelaP();
+  toast('✅ Categoria salva!');
+}
+async function CAT_excluir(id){
+  if(!confirm('Excluir esta categoria? Contas já lançadas com ela continuam existindo, só deixam de mostrar o ícone/cor (viram "Sem cat.").'))return;
+  delete CATS_P[id];
+  await CAT_fbExcluir(id);
+  CAT_popularSelectP();CAT_renderGerenciar();popularCatFiltroTabelaP();
+  if(subPAtivo==='p-categorias')renderCategoriasP();
+  if(subPAtivo==='p-contas')renderTabelaP();
+  toast('🗑️ Categoria removida.','#6b7280');
+}
 function catBadgeP(c){if(!c)return'';const ci=catInfoP(c);return`<span class="cat-badge-p" style="background:${ci.bg};color:${ci.color}">${ci.icon} ${ci.label}</span>`;}
 
 // Estado Pagar
@@ -3127,7 +3317,7 @@ function renderTabelaP(){
       <td class="center">${r.dia?'Dia '+r.dia:'—'}</td>
       <td class="right">${fmt(r.valor)}</td>
       <td class="right" style="color:${saldo>0?'#b91c1c':'#15803d'}">${fmt(saldo)}</td>
-      <td class="center"><span class="badge-p ${st.cls}">${st.label}</span></td>
+      <td class="center"><span class="badge-p ${st.cls}">${st.label}</span>${typeof BK_statusConciliacao==='function'?`<div style="margin-top:3px">${BK_statusConciliacao('pagar',r.id,mesR)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div>`:''}</td>
       <td class="center">${!isPago?`<button class="btn-parcial-p" onclick="P_abrirBaixaCtx('${r.id}','${mesR}')">💰 Baixar</button>`:`<span class="btn-pagar-p pago">✅</span>`}</td>
       <td class="center"><button class="toggle-btn-p" onclick="P_editarContaCtx('${r.id}','${mesR}')">✏️</button><button class="toggle-btn-p" onclick="P_excluirContaCtx('${r.id}','${mesR}')">🗑️</button></td>
     </tr>`;
@@ -3588,12 +3778,14 @@ document.getElementById('rModalConfirmBg')?.addEventListener('click',e=>{if(e.ta
 document.getElementById('rModalParcialBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('rModalParcialBg'))R_fecharModalParcial();});
 document.getElementById('rModalRecorBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('rModalRecorBg'))R_fecharModalRecor();});
 document.getElementById('modalNFBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('modalNFBg'))document.getElementById('modalNFBg').classList.remove('open');});
+document.getElementById('bkModalManualBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('bkModalManualBg'))BK_fecharModalManual();});
 
 // Pagar
 document.getElementById('pModalBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pModalBg'))fecharModalP();});
 document.getElementById('pConfirmBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pConfirmBg'))cancelarPropagacaoP();});
 document.getElementById('pExclBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pExclBg'))cancelarExcluirP();});
 document.getElementById('pModalBaixaBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pModalBaixaBg'))fecharModalBaixaP();});
+document.getElementById('catModalBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('catModalBg'))CAT_fecharModal();});
 document.getElementById('pCopiarMesBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pCopiarMesBg'))fecharCopiarMesP();});
 
 // ── INIT ──
@@ -3765,361 +3957,10 @@ async function init(){
   },2000);
 }
 
-// ══════════════════════════════════════════════════════
-// MÓDULO CLAUDE — Assistente Financeiro IA
-// Firebase Auth + Anthropic API via proxy
-// ══════════════════════════════════════════════════════
-
-// Estado do módulo
-let CL_user = null;
-let CL_historico = []; // histórico de mensagens do chat
-let CL_analisandoAuto = false;
-
-// ── Firebase Auth ──
-// ── Login Google (http/https) ──
-function claudeLoginGoogle() {
-  const btn = document.getElementById('claudeGoogleBtn');
-  const errEl = document.getElementById('claudeLoginErr');
-  if(btn){ btn.style.opacity='.6'; btn.disabled=true;
-    btn.innerHTML=btn.innerHTML.replace('Entrar com Google','⏳ Abrindo...'); }
-  errEl.textContent='';
-
-  const provider = new firebase.auth.GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-
-  firebase.auth().signInWithPopup(provider)
-    .then(cred => { CL_user=cred.user; claudeIniciarApp(); })
-    .catch(err => {
-      if(btn){ btn.style.opacity='1'; btn.disabled=false;
-        btn.innerHTML=btn.innerHTML.replace('⏳ Abrindo...','Entrar com Google'); }
-      if(err.code==='auth/operation-not-supported-in-this-environment'){
-        errEl.textContent='⚠️ Google Login requer servidor HTTP. Use a senha abaixo.';
-      } else if(err.code==='auth/popup-closed-by-user'){
-        errEl.textContent='Popup fechado. Tente novamente.';
-      } else if(err.code==='auth/unauthorized-domain'){
-        errEl.innerHTML='❌ Adicione este domínio no Firebase Console → Authentication → Authorized Domains';
-      } else {
-        errEl.textContent='❌ '+(err.message||err.code);
-      }
-    });
-}
-
-// ── Login por PIN local (file:// e http) ──
-const CL_PIN_HASH = 'wen2026';  // Troque pela sua senha
-function claudeLoginPin() {
-  const pin = document.getElementById('claudePinInput').value;
-  const errEl = document.getElementById('claudeLoginErr');
-  if(pin === CL_PIN_HASH) {
-    CL_user = { email: 'wenprodutora@gmail.com', displayName: 'WEN Produtora', uid: 'local' };
-    document.getElementById('claudePinInput').value = '';
-    claudeIniciarApp();
-  } else {
-    errEl.textContent = '❌ Senha incorreta.';
-    document.getElementById('claudePinInput').value = '';
-    document.getElementById('claudePinInput').focus();
-  }
-}
-
-function claudeLogin() { claudeLoginGoogle(); }
-
-// Detecta ambiente e mostra/oculta opções de login
-function claudeSetupLoginUI() {
-  const isHTTP = location.protocol === 'http:' || location.protocol === 'https:';
-  const googleArea = document.getElementById('claudeGoogleArea');
-  // Google só funciona em HTTP — em file:// oculta o botão
-  if(googleArea) googleArea.style.display = isHTTP ? 'block' : 'none';
-}
-
-// Recupera sessão após redirect do Google
-function claudeVerificarRedirect() {
-  firebase.auth().getRedirectResult()
-    .then(result => {
-      if (result && result.user) {
-        CL_user = result.user;
-        sessionStorage.removeItem('claude_auth_pending');
-        // Se estiver na aba Claude, inicia o app
-        if (mainAtivo === 'claude') claudeIniciarApp();
-      }
-    })
-    .catch(err => {
-      console.error('Redirect auth error:', err);
-    });
-
-  // Também verifica se já tem sessão ativa
-  firebase.auth().onAuthStateChanged(user => {
-    if (user) {
-      CL_user = user;
-      if (mainAtivo === 'claude' &&
-          document.getElementById('claudeAppWrap').style.display === 'none') {
-        claudeIniciarApp();
-      }
-    }
-  });
-}
-
-function claudeLogout() {
-  firebase.auth().signOut().then(() => {
-    CL_user = null; CL_historico = [];
-    document.getElementById('claudeLoginWrap').style.display = 'flex';
-    document.getElementById('claudeAppWrap').style.display = 'none';
-    document.getElementById('claudeMsgs').innerHTML = '<div style="text-align:center;color:#334155;font-size:.82rem;padding:20px">🤖 Faça login para começar a análise</div>';
-    document.getElementById('claudeEmail').value = '';
-    document.getElementById('claudeSenha').value = '';
-    const btn = document.querySelector('#claudeLoginWrap button');
-    btn.textContent = '🔐 Entrar com Firebase'; btn.disabled = false;
-  });
-}
-
-function claudeIniciarApp() {
-  document.getElementById('claudeLoginWrap').style.display = 'none';
-  document.getElementById('claudeAppWrap').style.display = 'block';
-  document.getElementById('claudeUserLabel').textContent = CL_user.email + ' · Conectado';
-  claudeRenderKpis();
-  if (!CL_analisandoAuto) {
-    CL_analisandoAuto = true;
-    setTimeout(() => claudeAnalisarAgora(), 400);
-  }
-}
-
-// Verifica se já tem sessão ativa ao abrir a aba
-function claudeVerificarSessao() {
-  firebase.auth().onAuthStateChanged(user => {
-    if (user && document.getElementById('mainClaude').style.display !== 'none') {
-      CL_user = user;
-      claudeIniciarApp();
-    }
-  });
-}
-
-// ── KPIs rápidos do mês atual ──
-function claudeRenderKpis() {
-  const mes = R_mesAtual;
-  const recData = R_todosOsDados.filter(r => r.mes === mes);
-  const pagData = P_meses[mes] || [];
-  const receita = recData.reduce((a, r) => a + Number(r.valorTotal || 0), 0);
-  const recebido = recData.reduce((a, r) => a + Number(r.valorReserva || 0), 0);
-  const despesa = pagData.reduce((a, r) => a + r.valor, 0);
-  const resultado = receita - despesa;
-  const saldo = receita - recebido;
-  const adimPct = receita > 0 ? Math.round(recebido / receita * 100) : 0;
-
-  const kpis = [
-    { label: '💰 Receita ' + mes, val: fmt(receita), cor: '#4ade80' },
-    { label: '📤 Despesa ' + mes, val: fmt(despesa || 0), cor: despesa > 0 ? '#f87171' : '#64748b' },
-    { label: '📊 Resultado', val: fmt(resultado), cor: resultado >= 0 ? '#4ade80' : '#f87171' },
-    { label: '⏳ A Receber', val: fmt(saldo), cor: saldo > 0 ? '#fbbf24' : '#4ade80' },
-    { label: '✅ Adimplência', val: adimPct + '%', cor: adimPct >= 90 ? '#4ade80' : adimPct >= 60 ? '#fbbf24' : '#f87171' },
-    { label: '🎙️ Gravações', val: recData.length, cor: '#a78bfa' },
-  ];
-
-  const el = document.getElementById('claudeKpis');
-  el.innerHTML = kpis.map(k =>
-    `<div style="background:#1e293b;border-radius:12px;padding:14px 16px;border:1px solid #334155">
-      <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:#334155;font-weight:600;margin-bottom:8px">${k.label}</div>
-      <div style="font-size:1.2rem;font-weight:800;color:${k.cor}">${k.val}</div>
-    </div>`
-  ).join('');
-}
-
-// ── Monta contexto financeiro completo para o Claude ──
-function claudeGetContexto() {
-  const mes = R_mesAtual;
-  const mesAnt = R_getMesAnterior(mes);
-
-  const recData = R_todosOsDados.filter(r => r.mes === mes);
-  const pagData = P_meses[mes] || [];
-  const recAnt = R_todosOsDados.filter(r => r.mes === mesAnt);
-  const pagAnt = P_meses[mesAnt] || [];
-
-  const calc = (rec, pag) => {
-    const receita = rec.reduce((a, r) => a + Number(r.valorTotal || 0), 0);
-    const recebido = rec.reduce((a, r) => a + Number(r.valorReserva || 0), 0);
-    const despesa = pag.reduce((a, r) => a + r.valor, 0);
-    const horas = rec.reduce((a, r) => a + Number(r.horas || 0), 0);
-    const clientes = [...new Set(rec.map(r => r.cliente))];
-    const saldo = receita - recebido;
-    const emAtraso = rec.filter(r => Number(r.saldo || 0) > 0).map(r => ({ cliente: r.cliente, saldo: r.saldo }));
-    const categorias = {};
-    pag.forEach(r => { const c = r.categoria || 'outros'; categorias[c] = (categorias[c] || 0) + r.valor; });
-    return { receita, recebido, saldo, despesa, resultado: receita - despesa, horas, clientes, emAtraso, categorias };
-  };
-
-  const atual = calc(recData, pagData);
-  const anterior = calc(recAnt, pagAnt);
-
-  // Top clientes históricos
-  const cliMap = {};
-  R_todosOsDados.filter(r => r.valorTotal > 0).forEach(r => {
-    cliMap[r.cliente] = (cliMap[r.cliente] || 0) + Number(r.valorTotal || 0);
-  });
-  const topCli = Object.entries(cliMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
-
-  // Contas a pagar vencidas/vencendo
-  const hoje = new Date();
-  const diaHoje = hoje.getDate();
-  const vencidas = pagData.filter(r => r.status?.toUpperCase() !== 'PAGO' && r.dia && r.dia < diaHoje);
-  const vencendo = pagData.filter(r => r.status?.toUpperCase() !== 'PAGO' && r.dia && r.dia >= diaHoje && r.dia <= diaHoje + 5);
-
-  return `Você é o assistente financeiro da WEN Produtora, um studio audiovisual B2B em São Paulo.
-Responda sempre em português, de forma direta, prática e objetiva.
-Use emojis para destacar pontos importantes. Máximo 4 parágrafos por resposta, a menos que seja pedido mais detalhe.
-
-=== DADOS DO MÊS ATUAL: ${mes} ===
-- Receita bruta: R$ ${Math.round(atual.receita).toLocaleString('pt-BR')}
-- Recebido: R$ ${Math.round(atual.recebido).toLocaleString('pt-BR')}
-- Saldo a receber: R$ ${Math.round(atual.saldo).toLocaleString('pt-BR')}
-- Despesa total: R$ ${Math.round(atual.despesa).toLocaleString('pt-BR')}
-- Resultado: R$ ${Math.round(atual.resultado).toLocaleString('pt-BR')}
-- Horas trabalhadas: ${atual.horas}h
-- Gravações: ${recData.length}
-- Clientes ativos: ${atual.clientes.length}
-- Clientes com saldo em atraso: ${atual.emAtraso.length > 0 ? atual.emAtraso.map(x => x.cliente + ' (R$ ' + Number(x.saldo).toLocaleString('pt-BR') + ')').join(', ') : 'nenhum'}
-- Categorias de despesa: ${Object.entries(atual.categorias).map(([k, v]) => k + ': R$ ' + Math.round(v).toLocaleString('pt-BR')).join(' | ')}
-- Contas vencidas não pagas: ${vencidas.length} (R$ ${vencidas.reduce((a, r) => a + r.valor, 0).toLocaleString('pt-BR')})
-- Contas vencendo nos próximos 5 dias: ${vencendo.length}
-
-=== MÊS ANTERIOR: ${mesAnt} ===
-- Receita: R$ ${Math.round(anterior.receita).toLocaleString('pt-BR')}
-- Despesa: R$ ${Math.round(anterior.despesa).toLocaleString('pt-BR')}
-- Resultado: R$ ${Math.round(anterior.resultado).toLocaleString('pt-BR')}
-- Horas: ${anterior.horas}h
-
-=== CUSTO FIXO MENSAL ESTIMADO: R$ 65.024 ===
-=== BREAK-EVEN ANUAL: R$ 780.288 ===
-
-=== TOP 8 CLIENTES HISTÓRICOS ===
-${topCli.map((c, i) => `${i + 1}. ${c[0]}: R$ ${Math.round(c[1]).toLocaleString('pt-BR')}`).join('\n')}
-
-=== CONTEXTO DO NEGÓCIO ===
-Pacotes: Essencial R$630/h (Studio B, mín 3h), Profissional R$800/h (Studio A), Premium Plateia R$1.100/h (Studio B c/ plateia, mín 4h).
-Studio A: 100m² cenografia fixa. Studio B: 180m² modular com PARLED.`;
-}
-
-// ── Análise automática ao abrir a aba ──
-async function claudeAnalisarAgora() {
-  claudeRenderKpis();
-  const contexto = claudeGetContexto();
-  const prompt = `Analise os dados financeiros do mês atual e forneça:
-1. Um diagnóstico rápido (positivo ou negativo, e por quê)
-2. O ponto mais crítico que precisa de atenção imediata
-3. Uma ação concreta para esta semana
-Seja direto e específico com os números.`;
-
-  claudeAdicionarMsg('assistant', '⏳ Analisando os dados do mês...', true);
-  CL_historico = [];
-
-  try {
-    const resposta = await claudeChamarAPI(contexto, prompt);
-    // Remove a mensagem de "analisando"
-    const msgs = document.getElementById('claudeMsgs');
-    const loading = msgs.querySelector('[data-loading]');
-    if (loading) loading.remove();
-    claudeAdicionarMsg('assistant', resposta);
-    CL_historico.push({ role: 'user', content: prompt });
-    CL_historico.push({ role: 'assistant', content: resposta });
-  } catch (err) {
-    const msgs = document.getElementById('claudeMsgs');
-    const loading = msgs.querySelector('[data-loading]');
-    if (loading) loading.remove();
-    claudeAdicionarMsg('assistant', '❌ Erro ao conectar com a API. Verifique sua conexão e tente novamente.');
-  }
-}
-
-// ── Enviar mensagem no chat ──
-async function claudeEnviar() {
-  const input = document.getElementById('claudeInput');
-  const texto = input.value.trim();
-  if (!texto) return;
-  input.value = '';
-
-  claudeAdicionarMsg('user', texto);
-  CL_historico.push({ role: 'user', content: texto });
-
-  claudeAdicionarMsg('assistant', '⏳ Pensando...', true);
-
-  try {
-    const contexto = claudeGetContexto();
-    const resposta = await claudeChamarAPI(contexto, null, CL_historico.slice(-10));
-    const msgs = document.getElementById('claudeMsgs');
-    const loading = msgs.querySelector('[data-loading]');
-    if (loading) loading.remove();
-    claudeAdicionarMsg('assistant', resposta);
-    CL_historico.push({ role: 'assistant', content: resposta });
-    // Limita histórico a 20 mensagens
-    if (CL_historico.length > 20) CL_historico = CL_historico.slice(-20);
-  } catch (err) {
-    const msgs = document.getElementById('claudeMsgs');
-    const loading = msgs.querySelector('[data-loading]');
-    if (loading) loading.remove();
-    claudeAdicionarMsg('assistant', '❌ Erro na API: ' + (err.message || 'Tente novamente.'));
-  }
-}
-
-function claudeSugestao(texto) {
-  document.getElementById('claudeInput').value = texto;
-  claudeEnviar();
-}
-
-// ── Chamada à API Anthropic ──
-async function claudeChamarAPI(systemPrompt, primeiraMsg, historico) {
-  const msgs = historico
-    ? historico
-    : [{ role: 'user', content: primeiraMsg }];
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: msgs,
-    })
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || 'API error ' + response.status);
-  }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || '(sem resposta)';
-}
-
-// ── Renderiza mensagem no chat ──
-function claudeAdicionarMsg(role, texto, isLoading) {
-  const msgs = document.getElementById('claudeMsgs');
-  const div = document.createElement('div');
-  if (isLoading) div.dataset.loading = '1';
-
-  const isUser = role === 'user';
-  div.style.cssText = `display:flex;gap:10px;align-items:flex-start;${isUser ? 'flex-direction:row-reverse' : ''}`;
-
-  const avatar = document.createElement('div');
-  avatar.style.cssText = `width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.9rem;margin-top:2px;${isUser ? 'background:#4f46e5' : 'background:#1e293b;border:1px solid #334155'}`;
-  avatar.textContent = isUser ? '👤' : '🤖';
-
-  const bubble = document.createElement('div');
-  bubble.style.cssText = `max-width:78%;padding:12px 16px;border-radius:${isUser ? '16px 4px 16px 16px' : '4px 16px 16px 16px'};font-size:.85rem;line-height:1.75;${isUser ? 'background:#4f46e5;color:white' : 'background:#1e293b;border:1px solid #334155;color:#cbd5e1'}`;
-
-  // Formata texto: negrito, quebras de linha
-  bubble.innerHTML = texto
-    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#e2e8f0">$1</strong>')
-    .replace(/\n\n/g, '<br><br>')
-    .replace(/\n/g, '<br>');
-
-  div.appendChild(avatar);
-  div.appendChild(bubble);
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-// Claude handler integrado no showMain principal
-
 
 init();
-claudeVerificarRedirect();
-claudeSetupLoginUI();
+CAT_inicializar();
 </script>
+<script src="js/banco.js?v=4"></script>
 </body>
 </html>
