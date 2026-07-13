@@ -120,11 +120,11 @@ body{background:#f0f4f8;color:#1e293b}
 .cards-r{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
 .card-r{background:white;border-radius:14px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid #ccc;transition:transform .15s}
 .card-r:hover{transform:translateY(-2px)}
-.card-r.total{border-color:#16a34a}.card-r.recebido{border-color:#22c55e}.card-r.aberto{border-color:#ef4444}.card-r.horas{border-color:#3b82f6}.card-r.ticket{border-color:#f97316}
+.card-r.total{border-color:#16a34a}.card-r.recebido{border-color:#22c55e}.card-r.aberto{border-color:#ef4444}.card-r.horas{border-color:#3b82f6}.card-r.ticket{border-color:#f97316}.card-r.edicao{border-color:#7c3aed}
 .card-r label{font-size:.7rem;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.05em;display:block;margin-bottom:7px}
 .card-r .val{font-size:1.25rem;font-weight:700;margin-top:4px}
 .card-r .val-sub{font-size:.72rem;color:#6b7280;margin-top:4px}
-.card-r.total .val{color:#15803d}.card-r.recebido .val{color:#16a34a}.card-r.aberto .val{color:#b91c1c}.card-r.horas .val{color:#1e40af}.card-r.ticket .val{color:#c2410c}
+.card-r.total .val{color:#15803d}.card-r.recebido .val{color:#16a34a}.card-r.aberto .val{color:#b91c1c}.card-r.horas .val{color:#1e40af}.card-r.ticket .val{color:#c2410c}.card-r.edicao .val{color:#6d28d9}
 
 .meta-box-r{background:white;border-radius:14px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:20px;border:2px solid #dbeafe}
 .meta-box-r h3{font-size:.8rem;text-transform:uppercase;color:#1e40af;font-weight:700;margin-bottom:12px;letter-spacing:.05em}
@@ -1326,8 +1326,12 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="form-group"><label>Studio</label><select id="rFStudio"><option>STUDIO A</option><option>STUDIO B</option><option>EXTERNO</option></select></div>
       <div class="form-group"><label>Horas</label><input type="number" id="rFHoras" placeholder="2" min="0.5" step="0.5" oninput="calcPreviewR()"/></div>
     </div>
+    <div class="form-row3">
+      <div class="form-group"><label>🎬 Locação (R$)</label><input type="number" id="rFValorLocacao" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
+      <div class="form-group"><label>✂️ Edição (R$)</label><input type="number" id="rFValorEdicao" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
+      <div class="form-group"><label>💰 Total (calculado)</label><input type="number" id="rFValorTotal" placeholder="0,00" readonly style="background:#f1f5f9;color:#6b7280;cursor:not-allowed"/></div>
+    </div>
     <div class="form-row">
-      <div class="form-group"><label>Valor Total (R$)</label><input type="number" id="rFValorTotal" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
       <div class="form-group"><label>Valor Reserva (R$)</label><input type="number" id="rFValorReserva" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
     </div>
     <div class="calc-preview" id="rCalcPreview"></div>
@@ -2034,6 +2038,8 @@ function renderDashboardR(){
   const tA=data.reduce((a,r)=>a+Number(r.saldo||0),0);
   const tH=data.reduce((a,r)=>a+Number(r.horas||0),0);
   const tk=tH>0?tB/tH:0;
+  const tE=data.reduce((a,r)=>a+Number(r.valorEdicao||0),0);
+  const pct_edicao=tB>0?Math.round(tE/tB*100):0;
   const mesAnt=R_getMesAnterior(R_mesAtual);
   const dataAnt=R_todosOsDados.filter(r=>r.mes===mesAnt);
   const tBAnt=dataAnt.reduce((a,r)=>a+Number(r.valorTotal||0),0);
@@ -2052,6 +2058,7 @@ function renderDashboardR(){
         <div class="re-item"><label>⏱ Horas</label><div class="rev">${tH}h</div>${varH!==null?`<div style="font-size:.7rem;opacity:.8">${varH>=0?'▲':'▼'} ${Math.abs(varH).toFixed(1)}%</div>`:''}</div>
         <div class="re-item"><label>🎯 Ticket/h</label><div class="rev">${tH>0?fmt(tk):'—'}</div><div style="font-size:.7rem;opacity:.8">${data.length} grav.</div></div>
         <div class="re-item"><label>👥 Clientes</label><div class="rev">${new Set(data.map(r=>r.cliente)).size}</div></div>
+        <div class="re-item"><label>✂️ Edição</label><div class="rev">${fmt(tE)}</div><div style="font-size:.7rem;opacity:.8">${pct_edicao}% do faturamento</div></div>
       </div>
     </div>`;
 
@@ -2060,7 +2067,8 @@ function renderDashboardR(){
     <div class="card-r recebido"><label>✅ Recebido</label><div class="val">${fmt(tR)}</div><div class="val-sub">${pct_rec}% do total</div></div>
     <div class="card-r aberto"><label>🔴 A Receber</label><div class="val">${fmt(tA)}</div></div>
     <div class="card-r horas"><label>⏱ Horas</label><div class="val">${tH}h</div>${varH!==null?`<div class="val-sub">${varH>=0?'▲':'▼'} ${Math.abs(varH).toFixed(1)}%</div>`:''}</div>
-    <div class="card-r ticket"><label>🎯 Ticket/h</label><div class="val">${tH>0?fmt(tk):'—'}</div></div>`;
+    <div class="card-r ticket"><label>🎯 Ticket/h</label><div class="val">${tH>0?fmt(tk):'—'}</div></div>
+    <div class="card-r edicao"><label>✂️ Edição</label><div class="val">${fmt(tE)}</div><div class="val-sub">${pct_edicao}% do faturamento</div></div>`;
 
   const pctMeta=Math.min(Math.round(tH/R_META_HORAS*100),100);
   const bar=document.getElementById('rMetaBar');
@@ -2295,7 +2303,10 @@ function atualizarMesDoFormularioR(){
 }
 function R_atualizarClientesList(){const todos=R_getTodosClientes();['rClientesList','rClientesList2'].forEach(id=>{const dl=document.getElementById(id);if(dl)dl.innerHTML=todos.map(c=>`<option value="${c}">`).join('');});}
 function calcPreviewR(){
-  const t=parseFloat(document.getElementById('rFValorTotal').value)||0,r=parseFloat(document.getElementById('rFValorReserva').value)||0,h=parseFloat(document.getElementById('rFHoras').value)||0;
+  const vl=parseFloat(document.getElementById('rFValorLocacao').value)||0,ve=parseFloat(document.getElementById('rFValorEdicao').value)||0;
+  const t=vl+ve;
+  document.getElementById('rFValorTotal').value=t>0?t:'';
+  const r=parseFloat(document.getElementById('rFValorReserva').value)||0,h=parseFloat(document.getElementById('rFHoras').value)||0;
   const p=document.getElementById('rCalcPreview');
   if(t>0){const tk=h>0?t/h:0;p.innerHTML=`💰 Saldo: <b>${fmt(t-r)}</b>${tk>0?' · Ticket/h: <b>'+fmt(tk)+'</b>':''}`;p.classList.add('show');}else p.classList.remove('show');
 }
@@ -2311,7 +2322,12 @@ function R_abrirModal(id=null){
   if(agInfo)agInfo.style.display='none';
   if(id){
     const r=R_todosOsDados.find(x=>String(x.id)===String(id));if(!r){toast('Não encontrado','#ef4444');return;}
-    document.getElementById('rFCliente').value=r.cliente;document.getElementById('rFHorario').value=r.horario||'';document.getElementById('rFStudio').value=r.studio||'STUDIO A';document.getElementById('rFHoras').value=r.horas;document.getElementById('rFValorTotal').value=r.valorTotal;document.getElementById('rFValorReserva').value=r.valorReserva;document.getElementById('rFDesc').value=r.desc||'';document.getElementById('rFObs').value=r.obs||'';
+    document.getElementById('rFCliente').value=r.cliente;document.getElementById('rFHorario').value=r.horario||'';document.getElementById('rFStudio').value=r.studio||'STUDIO A';document.getElementById('rFHoras').value=r.horas;document.getElementById('rFValorReserva').value=r.valorReserva;document.getElementById('rFDesc').value=r.desc||'';document.getElementById('rFObs').value=r.obs||'';
+    // Locação/Edição — lançamentos antigos não têm essa separação, assume tudo como locação
+    const temSplit=r.valorLocacao!==undefined||r.valorEdicao!==undefined;
+    document.getElementById('rFValorLocacao').value=temSplit?(r.valorLocacao||0):(r.valorTotal||0);
+    document.getElementById('rFValorEdicao').value=temSplit?(r.valorEdicao||0):0;
+    document.getElementById('rFValorTotal').value=r.valorTotal;
     const partesMes=(r.mes||R_mesAtual).split('/'),miAbrev=partesMes[0],anoR=partesMes[1],miNum=String(MESES_ABREV.indexOf(miAbrev)+1).padStart(2,'0'),data=r.data||'-';
     if(data&&data!=='-'){const pts=data.split('/');document.getElementById('rFDia').value=pts[0]||'';}else document.getElementById('rFDia').value='';
     // Carrega vencimento
@@ -2321,7 +2337,7 @@ function R_abrirModal(id=null){
     document.getElementById('rFMes').value=miNum;document.getElementById('rFAno').value=anoR||new Date().getFullYear();
     atualizarMesDoFormularioR();
   }else{
-    ['rFCliente','rFHorario','rFHoras','rFValorTotal','rFValorReserva','rFDesc','rFObs'].forEach(x=>document.getElementById(x).value='');
+    ['rFCliente','rFHorario','rFHoras','rFValorLocacao','rFValorEdicao','rFValorTotal','rFValorReserva','rFDesc','rFObs'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('rFDia').value='';document.getElementById('rFStudio').value='STUDIO A';
     const partesMes=R_mesAtual.split('/'),miNum=String(MESES_ABREV.indexOf(partesMes[0])+1).padStart(2,'0');
     document.getElementById('rFMes').value=miNum;document.getElementById('rFAno').value=partesMes[1]||new Date().getFullYear();
@@ -2338,7 +2354,8 @@ function R_fecharModal(){
   R_pendingGoogleEventId=null;document.getElementById('rAgendaEventoInfo').style.display='none';}
 async function R_salvarLancamento(){
   const cliente=document.getElementById('rFCliente').value.trim().toUpperCase();if(!cliente){toast('Informe o cliente.','#ef4444');return;}
-  const vt=parseFloat(document.getElementById('rFValorTotal').value)||0,vr=parseFloat(document.getElementById('rFValorReserva').value)||0;
+  const vl=parseFloat(document.getElementById('rFValorLocacao').value)||0,ve=parseFloat(document.getElementById('rFValorEdicao').value)||0;
+  const vt=vl+ve,vr=parseFloat(document.getElementById('rFValorReserva').value)||0;
   const dia=document.getElementById('rFDia').value,mi=document.getElementById('rFMes').value,ano=document.getElementById('rFAno').value;
   const dataFmt=dia&&mi?(dia+'/'+mi):'-';
   let mesLanc=R_mesAtual;if(mi&&ano)mesLanc=MESES_ABREV[parseInt(mi)-1]+'/'+ano;
@@ -2347,7 +2364,7 @@ async function R_salvarLancamento(){
   const vMes=document.getElementById('rFVencMes').value;
   const vAno=document.getElementById('rFVencAno').value;
   const vencFmt=(vDia&&vMes&&vAno)?(vDia+'/'+vMes+'/'+vAno):dataFmt;
-  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
+  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorLocacao:vl,valorEdicao:ve,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
   if(R_pendingGoogleEventId)base.googleEventId=R_pendingGoogleEventId;
   loading(true,R_editandoId?'Atualizando...':'Salvando...');setSyncStatus('saving');
   try{
@@ -2856,7 +2873,7 @@ function R_criarLancamentoDeEvento(eventoId){
   document.getElementById('rFHorario').value=`${hora} AS ${horaFim}`;
   document.getElementById('rFStudio').value='STUDIO A';
   document.getElementById('rFHoras').value=durH;
-  document.getElementById('rFValorTotal').value='';document.getElementById('rFValorReserva').value='';
+  document.getElementById('rFValorLocacao').value='';document.getElementById('rFValorEdicao').value='';document.getElementById('rFValorTotal').value='';document.getElementById('rFValorReserva').value='';
   document.getElementById('rFDesc').value=`1 GRAVAÇÃO DE ${durH}H`;document.getElementById('rFObs').value='';
   document.getElementById('rFDia').value=dia;document.getElementById('rFMes').value=mesNum;document.getElementById('rFAno').value=ano;
   atualizarMesDoFormularioR();
@@ -3961,6 +3978,6 @@ async function init(){
 init();
 CAT_inicializar();
 </script>
-<script src="js/banco.js?v=4"></script>
+<script src="js/banco.js?v=7"></script>
 </body>
 </html>

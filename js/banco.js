@@ -296,16 +296,18 @@ async function BK_executarMatching(){
   renderBanco();
 }
 
-// ── Liquidação de saldo — usada quando uma transação concilia contra VÁRIAS diárias de uma vez ──
-// (o cliente pagou o fechamento do mês inteiro numa transferência só). Zera o saldo de cada
-// diária do grupo, como se cada uma tivesse sido dada baixa individualmente, e guarda os
-// valores anteriores para poder reverter em BK_desfazer.
+// ── Liquidação de saldo — roda sempre que uma transação bancária é conciliada (1 diária ou várias
+// juntas num fechamento). Marca como recebido/pago de verdade, igual ao botão manual faria.
+// Se o lançamento JÁ estava quitado (baixa manual feita antes do próximo import do OFX — o
+// extrato só é importado a cada ~15 dias, então isso é o caso comum, não exceção), não mexe em
+// nada — só concilia. "antes" só guarda o que realmente foi alterado, pra Desfazer reverter certo.
 async function BK_settleReceberIds(ids){
   const antes = [];
   for (const it of ids){
     const idx = R_todosOsDados.findIndex(r => String(r.id) === String(it.id));
     if (idx === -1) continue;
     const r = R_todosOsDados[idx];
+    if (Number(r.saldo) <= 0) continue; // já tinha sido dado baixa manualmente — só concilia, não mexe
     antes.push({ id: r.id, mes: r.mes, saldoAntes: r.saldo, valorReservaAntes: r.valorReserva });
     r.saldo = 0; r.valorReserva = r.valorTotal;
     await R_fbSalvar(r);
@@ -314,13 +316,38 @@ async function BK_settleReceberIds(ids){
   if (mainAtivo === 'receber') renderDashboardR();
   return antes;
 }
+// Mesma lógica do lado Pagar — marca a(s) conta(s) como PAGO, pulando quem já estava.
+async function BK_settlePagarIds(ids){
+  const antes = [];
+  for (const it of ids){
+    const lista = P_meses[it.mes] || [];
+    const idx = lista.findIndex(r => String(r.id) === String(it.id));
+    if (idx === -1) continue;
+    const r = lista[idx];
+    if (r.status && r.status.toUpperCase() === 'PAGO') continue; // já tinha sido baixado manualmente
+    antes.push({ id: r.id, mes: it.mes, statusAntes: r.status, valorPagoAntes: r.valorPago });
+    r.status = 'PAGO'; r.valorPago = r.valor;
+  }
+  if (antes.length) P_salvarStorage();
+  if (mainAtivo === 'pagar' && subPAtivo === 'p-contas') renderTabelaP();
+  if (mainAtivo === 'pagar') renderDashboardP();
+  return antes;
+}
+// Normaliza qualquer match (1 lançamento ou grupo) numa lista de {id,mes,valor} e liquida.
+async function BK_settlePorTipo(tipo, ids){
+  return tipo === 'pagar' ? BK_settlePagarIds(ids) : BK_settleReceberIds(ids);
+}
 
 // ── Confirmação (nada concilia sem passar por aqui) ──
+// Sempre tenta liquidar (marcar recebido/pago) o que a transação bancária cobre — 1 lançamento
+// ou vários juntos. Quem já estava quitado (baixa manual antes do próximo import do OFX) fica
+// intocado, só ganha o selo de conciliado — ver BK_settleReceberIds/BK_settlePagarIds.
 async function BK_confirmarSugestao(chave){
   const s = BK_sugestoes[chave]; const t = BK_extratos.find(x => BK_chave(x) === chave);
   if (!s || !t) return;
-  const antes = s.grupo ? await BK_settleReceberIds(s.ids) : null;
-  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: s.tipo, grupo: !!s.grupo, id: s.id, ids: s.ids, antes, mes: s.mes, label: s.label, motivo: s.motivo };
+  const ids = s.grupo ? s.ids : [{ id: s.id, mes: s.mes, valor: s.valor }];
+  const antes = await BK_settlePorTipo(s.tipo, ids);
+  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: s.tipo, grupo: !!s.grupo, id: s.id, ids: s.grupo ? s.ids : ids, antes, mes: s.mes, label: s.label, motivo: s.motivo };
   delete BK_sugestoes[chave];
   await BK_fbSalvarConciliado(chave, BK_conciliados[chave]);
   if (!s.grupo) await BK_atualizarRegraAprendida(s, t);
@@ -348,13 +375,24 @@ async function BK_ignorar(chave){
 async function BK_desfazer(chave){
   if (!confirm('Desfazer esta conciliação? Ela volta para revisão.')) return;
   const c = BK_conciliados[chave];
-  if (c?.grupo && Array.isArray(c.antes)){
-    for (const a of c.antes){
-      const idx = R_todosOsDados.findIndex(r => String(r.id) === String(a.id));
-      if (idx > -1){ R_todosOsDados[idx].saldo = a.saldoAntes; R_todosOsDados[idx].valorReserva = a.valorReservaAntes; await R_fbSalvar(R_todosOsDados[idx]); }
+  if (c && Array.isArray(c.antes) && c.antes.length){
+    if (c.tipo === 'pagar'){
+      for (const a of c.antes){
+        const lista = P_meses[a.mes] || [];
+        const idx = lista.findIndex(r => String(r.id) === String(a.id));
+        if (idx > -1){ lista[idx].status = a.statusAntes; lista[idx].valorPago = a.valorPagoAntes; }
+      }
+      P_salvarStorage();
+      if (mainAtivo === 'pagar' && subPAtivo === 'p-contas') renderTabelaP();
+      if (mainAtivo === 'pagar') renderDashboardP();
+    } else {
+      for (const a of c.antes){
+        const idx = R_todosOsDados.findIndex(r => String(r.id) === String(a.id));
+        if (idx > -1){ R_todosOsDados[idx].saldo = a.saldoAntes; R_todosOsDados[idx].valorReserva = a.valorReservaAntes; await R_fbSalvar(R_todosOsDados[idx]); }
+      }
+      if (mainAtivo === 'receber' && subRAtivo === 'r-lancamentos') renderTabelaR();
+      if (mainAtivo === 'receber') renderDashboardR();
     }
-    if (mainAtivo === 'receber' && subRAtivo === 'r-lancamentos') renderTabelaR();
-    if (mainAtivo === 'receber') renderDashboardR();
   }
   delete BK_conciliados[chave];
   await BK_fbRemoverConciliado(chave).catch(()=>{});
@@ -491,14 +529,15 @@ async function BK_confirmarVinculoManual(it){
   if (!BK_chaveManualAtual) return;
   const chave = BK_chaveManualAtual;
   const t = BK_extratos.find(x => BK_chave(x) === chave);
-  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: it.tipo, id: it.id, mes: it.mes, label: it.label, motivo: 'manual' };
+  const antes = await BK_settlePorTipo(it.tipo, [{ id: it.id, mes: it.mes, valor: it.valor }]);
+  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: it.tipo, id: it.id, ids: [{ id: it.id, mes: it.mes, valor: it.valor }], antes, mes: it.mes, label: it.label, motivo: 'manual' };
   delete BK_candidatosAmbiguos[chave]; delete BK_sugestoes[chave];
   await BK_fbSalvarConciliado(chave, BK_conciliados[chave]);
   await BK_atualizarRegraAprendida(it, t);
-  BK_fecharModalManual(); renderBanco(); toast('✅ Vinculado manualmente!');
+  BK_fecharModalManual(); renderBanco(); toast('✅ Vinculado e conciliado!');
 }
-// Confirma o vínculo manual do lado Receber — 1 diária vira link simples (igual antes),
-// 2+ diárias viram grupo e o saldo de cada uma é liquidado (fechamento do mês pago de uma vez).
+// Confirma o vínculo manual do lado Receber — 1 diária ou 2+ (grupo/fechamento), sempre liquida
+// o saldo de quem ainda estiver pendente (quem já tinha baixa manual antes fica intocado).
 async function BK_confirmarGrupoManual(){
   if (!BK_manualSelecionados.length || !BK_chaveManualAtual) return;
   const chave = BK_chaveManualAtual;
@@ -508,11 +547,11 @@ async function BK_confirmarGrupoManual(){
   const labelBase = [...new Set(BK_manualSelecionados.map(x => x.label))].join(', ');
   const label = isGrupo ? `${labelBase} (${ids.length} diárias)` : labelBase;
   const mesRep = BK_manualSelecionados[0].mes;
-  const antes = isGrupo ? await BK_settleReceberIds(ids) : null;
-  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: 'receber', grupo: isGrupo, id: isGrupo ? null : ids[0].id, ids: isGrupo ? ids : null, antes, mes: mesRep, label, motivo: isGrupo ? 'manual_grupo' : 'manual' };
+  const antes = await BK_settleReceberIds(ids);
+  BK_conciliados[chave] = { ...(BK_conciliados[chave]||{}), status: 'match', tipo: 'receber', grupo: isGrupo, id: isGrupo ? null : ids[0].id, ids, antes, mes: mesRep, label, motivo: isGrupo ? 'manual_grupo' : 'manual' };
   delete BK_candidatosAmbiguos[chave]; delete BK_sugestoes[chave];
   await BK_fbSalvarConciliado(chave, BK_conciliados[chave]);
-  BK_fecharModalManual(); renderBanco(); toast(isGrupo ? `✅ ${ids.length} diárias conciliadas!` : '✅ Vinculado manualmente!');
+  BK_fecharModalManual(); renderBanco(); toast(isGrupo ? `✅ ${ids.length} diárias conciliadas!` : '✅ Vinculado e conciliado!');
 }
 
 // ── Criar um lançamento novo direto de uma transação sem correspondência ──
@@ -521,7 +560,7 @@ function BK_criarLancamento(chave){
   const dataTxn = BK_parseDataBR(t.data); if (!dataTxn) return;
   if (t.valor > 0){
     R_abrirModal();
-    document.getElementById('rFValorTotal').value = t.valor;
+    document.getElementById('rFValorLocacao').value = t.valor; // assume tudo como locação por padrão — ajuste manual se tiver edição
     document.getElementById('rFDesc').value = t.memo || '';
     document.getElementById('rFDia').value = String(dataTxn.getDate()).padStart(2,'0');
     document.getElementById('rFMes').value = String(dataTxn.getMonth()+1).padStart(2,'0');
@@ -599,7 +638,7 @@ function renderBanco(){
 
   if (BK_filtroAtual === 'SUGESTOES'){
     if (!sugestoesChaves.length){ corpo.innerHTML = '<div class="concil-vazio">Nenhuma sugestão pendente. Importe um extrato ou rode a conciliação.</div>'; return; }
-    const lista = sugestoesChaves.slice().sort((a,b) => BK_parseDataBR(a.data) - BK_parseDataBR(b.data));
+    const lista = sugestoesChaves.slice().sort((a,b) => Math.abs(b.valor) - Math.abs(a.valor));
     corpo.innerHTML = `<div style="margin-bottom:12px"><button class="btn btn-blue" onclick="BK_confirmarTodasSugestoes()">✅ Confirmar Todas (${lista.length})</button></div>` +
       lista.map(t => {
         const chave = BK_chave(t); const s = BK_sugestoes[chave]; const isCredito = t.valor > 0;
@@ -629,7 +668,10 @@ function renderBanco(){
   else if (BK_filtroAtual === 'CONCILIADOS') lista = conciliadosChaves;
   else if (BK_filtroAtual === 'IGNORADOS') lista = ignorados;
 
-  lista.sort((a,b) => BK_parseDataBR(a.data) - BK_parseDataBR(b.data));
+  // Ambíguos/Sem Correspondência: maior valor primeiro (triagem por relevância).
+  // Conciliados/Ignorados: por data (é histórico, não algo a decidir).
+  if (BK_filtroAtual === 'AMBIGUOS' || BK_filtroAtual === 'SEM_MATCH') lista.sort((a,b) => Math.abs(b.valor) - Math.abs(a.valor));
+  else lista.sort((a,b) => BK_parseDataBR(a.data) - BK_parseDataBR(b.data));
   corpo.innerHTML = lista.length ? lista.map(t => {
     const chave = BK_chave(t);
     const isCredito = t.valor > 0;
@@ -669,7 +711,10 @@ function renderBanco(){
         : c.motivo === 'grupo_diarias' ? ' <span style="font-size:.68rem;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px">🧮 soma de diárias</span>'
         : c.motivo === 'padrao_aprendido' ? ' <span style="font-size:.68rem;background:#ede9fe;color:#6d28d9;padding:1px 5px;border-radius:3px">🧠 aprendido</span>' : '';
       const desc = c.grupo
-        ? (c.ids||[]).map(it => `<div style="font-size:.74rem;color:#6b7280;padding:2px 0 2px 4px;border-left:2px solid #e5e7eb;margin-top:2px">🎙️ ${it.mes} · ${fmt(it.valor)} · ✅ saldo quitado</div>`).join('')
+        ? (c.ids||[]).map(it => {
+            const foiLiquidadoAgora = (c.antes||[]).some(a => String(a.id) === String(it.id));
+            return `<div style="font-size:.74rem;color:#6b7280;padding:2px 0 2px 4px;border-left:2px solid #e5e7eb;margin-top:2px">🎙️ ${it.mes} · ${fmt(it.valor)} · ${foiLiquidadoAgora ? '✅ saldo quitado agora' : 'ℹ️ já estava pago antes'}</div>`;
+          }).join('')
         : BK_descricaoSaldo(c.tipo, c.id, c.mes);
       const registro = !c.grupo ? BK_getRegistroAtual(c.tipo, c.id, c.mes) : null;
       const catAtual = (!c.grupo && c.tipo === 'pagar') ? (registro?.categoria || '') : '';
