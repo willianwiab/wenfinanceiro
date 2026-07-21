@@ -732,12 +732,22 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- ══ LEMBRETE DE BACKUP DIÁRIO ══ -->
+<div id="backupLembreteBar" style="display:none;background:#eef2ff;border-bottom:2px solid #6366f1;padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+  <span style="font-size:.86rem;color:#3730a3;font-weight:600">📦 Backup diário — garanta uma cópia de segurança dos seus dados de hoje (Receber + Pagar)</span>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-blue" style="padding:6px 14px;font-size:.8rem" onclick="baixarBackupDiario()">⬇ Baixar Agora</button>
+    <button class="btn btn-outline" style="padding:6px 14px;font-size:.8rem" onclick="dispensarLembreteBackup()">Agora não</button>
+  </div>
+</div>
+
 <!-- ══ NAV PRINCIPAL ══ -->
 <div class="nav-main">
   <button class="active" onclick="showMain('fluxo',this)">💰 Fluxo de Caixa</button>
   <button onclick="showMain('receber',this)">📥 A Receber</button>
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
-  <button onclick="showMain('banco',this)">🏦 Conciliação</button>
+  <button onclick="showMain('contas',this)">🏦 Contas</button>
+  <button onclick="showMain('banco',this)">🔗 Conciliação</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
 </div>
@@ -1184,6 +1194,31 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ════════════════════════════════════════
      CONCILIAÇÃO BANCÁRIA
 ════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════
+     CONTAS BANCÁRIAS (Fase 1 — roadmap)
+════════════════════════════════════════ -->
+<div class="page" id="page-contas">
+  <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div>
+        <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">🏦 Contas Bancárias</h2>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Saldos, movimentações e projeção de caixa. Vincule pagamentos à conta usada.</p>
+      </div>
+      <button class="btn btn-purple" onclick="BC_abrirModal()">➕ Nova conta</button>
+    </div>
+
+    <!-- Painel de saldos -->
+    <div class="cards-p" id="bcPainelCards"></div>
+
+    <!-- Projeção -->
+    <div class="cards-p" id="bcProjecaoCards" style="margin-top:14px"></div>
+
+    <!-- Lista de contas -->
+    <h3 style="font-size:.95rem;font-weight:700;color:#334155;margin:22px 0 10px">Minhas contas</h3>
+    <div id="bcListaContas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px"></div>
+  </div>
+</div>
+
 <div class="page" id="page-banco">
   <div class="concil-header">
     <h4>🏦 Conciliação Bancária</h4>
@@ -1536,11 +1571,54 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="form-group"><label>Valor pago (R$)</label><input type="number" id="pBaixaValorPago" placeholder="0,00" step="0.01" oninput="calcBaixaSaldoP()"/></div>
       <div class="baixa-saldo-p" id="pBaixaSaldoInfo"></div>
     </div>
-    <div class="form-group"><label>Data</label><input type="date" id="pBaixaData"/></div>
+    <div class="form-group"><label>Conta bancária</label><select id="pBaixaConta"><option value="">— Não vincular —</option></select></div>
+    <div class="form-group"><label>Data do pagamento</label><input type="date" id="pBaixaData"/></div>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-size:.82rem;color:#6b7280;font-weight:600;user-select:none">Juros / multa / desconto (opcional)</summary>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group"><label>Juros (R$)</label><input type="number" id="pBaixaJuros" placeholder="0,00" step="0.01" oninput="calcBaixaSaldoP()"/></div>
+        <div class="form-group"><label>Multa (R$)</label><input type="number" id="pBaixaMulta" placeholder="0,00" step="0.01" oninput="calcBaixaSaldoP()"/></div>
+        <div class="form-group"><label>Desconto (R$)</label><input type="number" id="pBaixaDesconto" placeholder="0,00" step="0.01" oninput="calcBaixaSaldoP()"/></div>
+      </div>
+    </details>
     <div class="form-group"><label>Observação</label><input type="text" id="pBaixaObs" placeholder="Ex: Pago via PIX"/></div>
     <div class="modal-actions">
       <button class="btn btn-outline-b" onclick="fecharModalBaixaP()">Cancelar</button>
       <button class="btn btn-purple" onclick="confirmarBaixaP()">✅ Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal criar/editar conta bancária (Fase 1) -->
+<div class="modal-bg" id="bcModalBg">
+  <div class="modal" style="max-width:440px">
+    <h2 id="bcModalTitle">➕ Nova Conta</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Banco / Instituição</label><input type="text" id="bcFBanco" placeholder="Ex: Nubank, Itaú, Caixa"/></div>
+      <div class="form-group"><label>Tipo</label><select id="bcFTipo">
+        <option value="corrente">🏛️ Conta corrente</option>
+        <option value="digital">📱 Conta digital</option>
+        <option value="investimento">📈 Investimento</option>
+        <option value="caixa">💵 Caixa físico</option>
+        <option value="personalizada">🔧 Personalizada</option>
+      </select></div>
+    </div>
+    <div class="form-group"><label>Nome personalizado da conta</label><input type="text" id="bcFNome" placeholder="Ex: Conta principal WEN"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Agência</label><input type="text" id="bcFAgencia" placeholder="0001"/></div>
+      <div class="form-group"><label>Conta</label><input type="text" id="bcFConta" placeholder="12345-6"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Saldo inicial (R$)</label><input type="number" id="bcFSaldoInicial" placeholder="0,00" step="0.01"/></div>
+      <div class="form-group"><label>Cor</label><input type="color" id="bcFCor" value="#16a34a" style="width:100%;height:38px;padding:2px;cursor:pointer"/></div>
+    </div>
+    <div style="display:flex;gap:16px;align-items:center;margin:4px 0 6px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:#374151;cursor:pointer"><input type="checkbox" id="bcFPrincipal" style="width:15px;height:15px;accent-color:#7c3aed"/> ⭐ Conta principal</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:#374151;cursor:pointer"><input type="checkbox" id="bcFAtiva" checked style="width:15px;height:15px;accent-color:#16a34a"/> Ativa</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="BC_fecharModal()">Cancelar</button>
+      <button class="btn btn-purple" onclick="BC_salvar()">✅ Salvar</button>
     </div>
   </div>
 </div>
@@ -1643,7 +1721,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_bancarias:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -1675,6 +1753,17 @@ if (SIMULACAO_LOCAL){
 
   // Uma conciliação já confirmada, pra testar o selo "🔗 Conciliado"
   seedFV('banco_conciliados','mock_chave_1',{chave:'mock_chave_1',status:'match',tipo:'receber',id:'mock1',mes:'JUL/2026',label:'CLIENTE TESTE A',motivo:'valor_exato',ts:new Date(2026,6,12).toISOString()});
+
+  // Contas a Pagar fictícias (coleção `meses`) — pra testar baixa → conta bancária (Fase 1)
+  const P_SEED_JUL=[
+    {id:'p1',nome:'Aluguel estúdio',valor:3800,valorPago:0,dia:5,mes:'JUL/2026',categoria:'aluguel',fixa:true,status:'PENDENTE',cod:'',obs:''},
+    {id:'p2',nome:'Energia',valor:640,valorPago:0,dia:12,mes:'JUL/2026',categoria:'consumo',fixa:true,status:'PENDENTE',cod:'',obs:''},
+    {id:'p3',nome:'Freela edição',valor:1200,valorPago:0,dia:20,mes:'JUL/2026',categoria:'servicos',fixa:false,status:'PENDENTE',cod:'',obs:''},
+  ];
+  seedFV('meses','JUL%2F2026',{mes:'JUL/2026',contas:P_SEED_JUL});
+
+  // Uma conta bancária fictícia (coleção nova `contas_bancarias`)
+  seedFV('contas_bancarias','bmock1',{banco:'Nubank',nome:'Conta principal WEN',tipo:'digital',agencia:'0001',conta:'12345-6',cor:'#8b5cf6',saldoInicial:15000,principal:true,status:'ativa',criadoEm:new Date(2026,6,1).toISOString()});
 
   function mockResposta(bodyJson){ return Promise.resolve({ ok:true, status:200, json:()=>Promise.resolve(bodyJson) }); }
   function mockFetch(url, opts){
@@ -1757,6 +1846,7 @@ function showMain(id,btn){
   if(id==='receber')renderSubPageR(subRAtivo);
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='analise')renderAnalise();
+  if(id==='contas')BC_renderPainel();
   if(id==='banco')BK_executarMatching();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;}
 }
@@ -3067,7 +3157,180 @@ async function CAT_excluir(id){
 }
 function catBadgeP(c){if(!c)return'';const ci=catInfoP(c);return`<span class="cat-badge-p" style="background:${ci.bg};color:${ci.color}">${ci.icon} ${ci.label}</span>`;}
 
+// ══════════════════════════════════════════════════════
+// FASE 1 — CONTAS BANCÁRIAS (módulo BC_)
+// Coleção nova `contas_bancarias`. 100% aditivo: não toca em meses/lancamentos.
+// Movimentação de saída = pagamentos do Pagar vinculados à conta (r.contaBancariaId).
+// ══════════════════════════════════════════════════════
+const BC_COL='contas_bancarias';
+const BC_CONTAS={}; // id -> {banco,nome,agencia,conta,tipo,cor,saldoInicial,principal,status,criadoEm}
+let BC_editandoId=null;
+const BC_TIPOS={corrente:{icon:'🏛️',label:'Conta corrente'},digital:{icon:'📱',label:'Conta digital'},investimento:{icon:'📈',label:'Investimento'},caixa:{icon:'💵',label:'Caixa físico'},personalizada:{icon:'🔧',label:'Personalizada'}};
+function BC_tipoInfo(t){return BC_TIPOS[t]||BC_TIPOS.personalizada;}
+
+async function BC_fbSalvar(id,dados){
+  const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
+  await fetch(`${FS_URL}/${BC_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+}
+async function BC_fbExcluir(id){
+  await fetch(`${FS_URL}/${BC_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});
+}
+async function BC_fbCarregarTodas(){
+  const out={};
+  try{
+    let pt=null;
+    do{
+      let url=`${FS_URL}/${BC_COL}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+      const res=await fetch(url);const json=await res.json();
+      if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));out[doc.name.split('/').pop()]=obj;});
+      pt=json.nextPageToken||null;
+    }while(pt);
+  }catch(e){console.warn('Contas bancárias:',e.message);}
+  return out;
+}
+async function BC_inicializar(){
+  const remoto=await BC_fbCarregarTodas();
+  Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);
+  Object.assign(BC_CONTAS,remoto);
+  BC_popularSelectBaixa();
+  if(mainAtivo==='contas')BC_renderPainel();
+}
+
+// ── Cálculos de saldo/movimentação (derivados do Pagar, sem gravar nada nele) ──
+// Débito de uma conta = valor efetivamente pago + juros + multa - desconto, dos lançamentos vinculados.
+function BC_debitoLancamento(r){return (Number(r.valorPago)||0)+(Number(r.juros)||0)+(Number(r.multa)||0)-(Number(r.desconto)||0);}
+function BC_movimentacoesConta(id){
+  const movs=[];
+  Object.keys(P_meses||{}).forEach(mes=>{(P_meses[mes]||[]).forEach(r=>{
+    if(String(r.contaBancariaId||'')===String(id)&&(Number(r.valorPago)||0)>0)
+      movs.push({mes,nome:r.nome,data:r.dataPagamento||'',valor:BC_debitoLancamento(r)});
+  });});
+  return movs;
+}
+function BC_saldoConta(id){
+  const c=BC_CONTAS[id];if(!c)return 0;
+  const saidas=BC_movimentacoesConta(id).reduce((a,m)=>a+m.valor,0);
+  return (Number(c.saldoInicial)||0)-saidas;
+}
+// Pagamentos já feitos que não foram vinculados a nenhuma conta (base pra Fase 7)
+function BC_naoConciliado(){
+  let total=0;
+  Object.keys(P_meses||{}).forEach(mes=>{(P_meses[mes]||[]).forEach(r=>{
+    if((Number(r.valorPago)||0)>0&&!r.contaBancariaId)total+=BC_debitoLancamento(r);
+  });});
+  return total;
+}
+function BC_contasAtivas(){return Object.keys(BC_CONTAS).filter(id=>BC_CONTAS[id].status!=='inativa');}
+
+// ── Modal CRUD ──
+function BC_abrirModal(id=null){
+  BC_editandoId=id;
+  document.getElementById('bcModalTitle').textContent=id?'✏️ Editar Conta':'➕ Nova Conta';
+  const c=id?BC_CONTAS[id]:null;
+  document.getElementById('bcFBanco').value=c?.banco||'';
+  document.getElementById('bcFNome').value=c?.nome||'';
+  document.getElementById('bcFTipo').value=c?.tipo||'corrente';
+  document.getElementById('bcFAgencia').value=c?.agencia||'';
+  document.getElementById('bcFConta').value=c?.conta||'';
+  document.getElementById('bcFSaldoInicial').value=(c&&c.saldoInicial!=null)?c.saldoInicial:'';
+  document.getElementById('bcFCor').value=c?.cor||'#16a34a';
+  document.getElementById('bcFPrincipal').checked=!!c?.principal;
+  document.getElementById('bcFAtiva').checked=c?c.status!=='inativa':true;
+  document.getElementById('bcModalBg').classList.add('open');
+}
+function BC_fecharModal(){document.getElementById('bcModalBg').classList.remove('open');BC_editandoId=null;}
+async function BC_salvar(){
+  const banco=document.getElementById('bcFBanco').value.trim();
+  const nome=document.getElementById('bcFNome').value.trim();
+  if(!banco&&!nome){toast('Informe o banco ou um nome pra conta.','#ef4444');return;}
+  const principal=document.getElementById('bcFPrincipal').checked;
+  const dados={
+    banco,nome:nome||banco,tipo:document.getElementById('bcFTipo').value,
+    agencia:document.getElementById('bcFAgencia').value.trim(),
+    conta:document.getElementById('bcFConta').value.trim(),
+    cor:document.getElementById('bcFCor').value,
+    saldoInicial:parseFloat(document.getElementById('bcFSaldoInicial').value)||0,
+    principal,
+    status:document.getElementById('bcFAtiva').checked?'ativa':'inativa',
+    criadoEm:BC_editandoId?(BC_CONTAS[BC_editandoId].criadoEm||new Date().toISOString()):new Date().toISOString()
+  };
+  const id=BC_editandoId||('b'+Date.now()+Math.floor(Math.random()*9999));
+  // Só uma principal: se marcou principal, tira das outras
+  if(principal)for(const k of Object.keys(BC_CONTAS)){if(k!==id&&BC_CONTAS[k].principal){BC_CONTAS[k].principal=false;await BC_fbSalvar(k,BC_CONTAS[k]);}}
+  BC_CONTAS[id]=dados;
+  await BC_fbSalvar(id,dados);
+  BC_fecharModal();BC_popularSelectBaixa();BC_renderPainel();
+  toast('✅ Conta salva!');
+}
+async function BC_excluir(id){
+  const movs=BC_movimentacoesConta(id).length;
+  const msg=movs?`Esta conta tem ${movs} pagamento(s) vinculado(s). Excluir a conta NÃO apaga os pagamentos — eles só deixam de somar aqui. Continuar?`:'Excluir esta conta?';
+  if(!confirm(msg))return;
+  delete BC_CONTAS[id];
+  await BC_fbExcluir(id);
+  BC_popularSelectBaixa();BC_renderPainel();
+  toast('🗑️ Conta removida.','#6b7280');
+}
+
+// ── Select de conta no modal de baixa do Pagar ──
+function BC_popularSelectBaixa(){
+  const sel=document.getElementById('pBaixaConta');if(!sel)return;
+  const val=sel.value;
+  const ativas=BC_contasAtivas().sort((a,b)=>(BC_CONTAS[b].principal?1:0)-(BC_CONTAS[a].principal?1:0));
+  sel.innerHTML='<option value="">— Não vincular —</option>'+ativas.map(id=>{const c=BC_CONTAS[id];return `<option value="${id}">${BC_tipoInfo(c.tipo).icon} ${c.nome}${c.principal?' ⭐':''}</option>`;}).join('');
+  if(val&&BC_CONTAS[val])sel.value=val;
+}
+
+// ── Painel ──
+function BC_renderPainel(){
+  const ativas=BC_contasAtivas();
+  const saldoGeral=ativas.reduce((a,id)=>a+BC_saldoConta(id),0);
+  const mref=mesAtualReal();
+  const saidasPrev=(P_meses[mref]||[]).filter(r=>String(r.status).toUpperCase()!=='PAGO').reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0);
+  const entradasPrev=(R_todosOsDados||[]).filter(r=>r.mes===mref&&Number(r.saldo)>0).reduce((a,r)=>a+Number(r.saldo||0),0);
+  const projetado=saldoGeral+entradasPrev-saidasPrev;
+  const naoConc=BC_naoConciliado();
+
+  const painel=document.getElementById('bcPainelCards');
+  if(painel)painel.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>💰 Saldo geral (contas ativas)</label><div class="val">${fmt(saldoGeral)}</div><div class="val-sub">${ativas.length} conta(s) ativa(s)</div></div>
+    <div class="card-p" style="border-left:4px solid #f59e0b"><label>⚠️ Pagamentos sem conta</label><div class="val">${fmt(naoConc)}</div><div class="val-sub">${naoConc>0?'vincule pra conciliar':'tudo vinculado ✅'}</div></div>`;
+
+  const proj=document.getElementById('bcProjecaoCards');
+  if(proj)proj.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #3b82f6"><label>📥 Entradas previstas — ${mref}</label><div class="val">${fmt(entradasPrev)}</div><div class="val-sub">A receber em aberto</div></div>
+    <div class="card-p" style="border-left:4px solid #ef4444"><label>📤 Saídas previstas — ${mref}</label><div class="val">${fmt(saidasPrev)}</div><div class="val-sub">A pagar em aberto</div></div>
+    <div class="card-p" style="border-left:4px solid #7c3aed"><label>🔮 Saldo projetado</label><div class="val" style="color:${projetado>=0?'#16a34a':'#ef4444'}">${fmt(projetado)}</div><div class="val-sub">Saldo + entradas − saídas</div></div>`;
+
+  const lista=document.getElementById('bcListaContas');
+  if(lista){
+    const ids=Object.keys(BC_CONTAS).sort((a,b)=>{const pa=BC_CONTAS[a].principal?0:1,pb=BC_CONTAS[b].principal?0:1;if(pa!==pb)return pa-pb;return (BC_CONTAS[a].nome||'').localeCompare(BC_CONTAS[b].nome||'');});
+    lista.innerHTML=ids.map(id=>{
+      const c=BC_CONTAS[id];const ti=BC_tipoInfo(c.tipo);const saldo=BC_saldoConta(id);const nMov=BC_movimentacoesConta(id).length;const inativa=c.status==='inativa';
+      return `<div style="background:#fff;border:1px solid #e5e7eb;border-top:4px solid ${c.cor||'#16a34a'};border-radius:12px;padding:14px 16px;${inativa?'opacity:.55':''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div>
+            <div style="font-weight:700;color:#0f172a;font-size:.95rem">${c.nome||c.banco}${c.principal?' <span title="Conta principal">⭐</span>':''}</div>
+            <div style="font-size:.76rem;color:#6b7280;margin-top:2px">${ti.icon} ${ti.label}${c.banco&&c.banco!==c.nome?' · '+c.banco:''}${inativa?' · inativa':''}</div>
+            ${(c.agencia||c.conta)?`<div style="font-size:.73rem;color:#9ca3af;margin-top:2px">Ag ${c.agencia||'—'} · Cc ${c.conta||'—'}</div>`:''}
+          </div>
+          <div style="display:flex;gap:4px">
+            <button onclick="BC_abrirModal('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Editar">✏️</button>
+            <button onclick="BC_excluir('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Excluir">🗑️</button>
+          </div>
+        </div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e5e7eb">
+          <div style="font-size:.72rem;color:#6b7280">Saldo atual</div>
+          <div style="font-size:1.25rem;font-weight:800;color:${saldo>=0?'#16a34a':'#ef4444'}">${fmt(saldo)}</div>
+          <div style="font-size:.72rem;color:#9ca3af;margin-top:2px">Inicial ${fmt(c.saldoInicial||0)} · ${nMov} saída(s) vinculada(s)</div>
+        </div>
+      </div>`;
+    }).join('')||'<div style="color:#9ca3af;font-size:.85rem;grid-column:1/-1">Nenhuma conta cadastrada ainda. Clique em <b>➕ Nova conta</b>.</div>';
+  }
+}
+
 // Estado Pagar
+let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
 if(!P_meses){P_meses={};const ma=mesAtualReal();P_meses[ma]=[];P_salvarStorage();}
 // Migração
@@ -3080,7 +3343,6 @@ let P_pieObj=null,P_barObj=null,P_lineObj=null,P_catChartObj=null;
 let P_pendingEdit=null,P_pendingExcluir=null,P_baixaId=null;
 let P_periodoMode='dias',P_lastPeriodoData=[];
 let P_sortCol=null,P_sortDir=1;
-let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false;
 
 function P_getMesesOrdenados(){return[...Object.keys(P_meses)].sort((a,b)=>{const[ma,ya]=a.split('/');const[mb,yb]=b.split('/');if(ya!==yb)return parseInt(ya)-parseInt(yb);return(MESES_IDX[ma]??0)-(MESES_IDX[mb]??0);});}
 function P_getData(){return P_meses[P_mesAtual]||[];}
@@ -3418,7 +3680,14 @@ function P_abrirModalBaixa(r){
   document.getElementById('pBaixaJaPago').textContent=fmt(jaPago);document.getElementById('pBaixaSaldo').textContent=fmt(r.valor-jaPago);
   document.getElementById('pBaixaTipo').value='total';document.getElementById('pBaixaParcialFields').style.display='none';
   document.getElementById('pBaixaValorPago').value='';document.getElementById('pBaixaSaldoInfo').classList.remove('show');
-  document.getElementById('pBaixaData').value=new Date().toISOString().split('T')[0];document.getElementById('pBaixaObs').value='';
+  document.getElementById('pBaixaData').value=r.dataPagamento||new Date().toISOString().split('T')[0];document.getElementById('pBaixaObs').value='';
+  // Fase 1 — conta bancária + encargos
+  BC_popularSelectBaixa();
+  const principal=BC_contasAtivas().find(id=>BC_CONTAS[id].principal);
+  document.getElementById('pBaixaConta').value=r.contaBancariaId||principal||'';
+  document.getElementById('pBaixaJuros').value=r.juros||'';
+  document.getElementById('pBaixaMulta').value=r.multa||'';
+  document.getElementById('pBaixaDesconto').value=r.desconto||'';
   document.getElementById('pModalBaixaBg').classList.add('open');
 }
 function fecharModalBaixaP(){document.getElementById('pModalBaixaBg').classList.remove('open');P_baixaId=null;}
@@ -3434,7 +3703,18 @@ function confirmarBaixaP(){
   const tipo=document.getElementById('pBaixaTipo').value;const obs=document.getElementById('pBaixaObs').value.trim();
   if(tipo==='total'){r.status='PAGO';r.valorPago=r.valor;if(obs)r.obs=(r.obs?r.obs+' | ':'')+obs;}
   else{const v=parseFloat(document.getElementById('pBaixaValorPago').value)||0;if(v<=0){toast('Informe o valor.','#ef4444');return;}r.valorPago=(r.valorPago||0)+v;if(r.valorPago>=r.valor){r.status='PAGO';r.valorPago=r.valor;}else r.status='PARCIAL';if(obs)r.obs=(r.obs?r.obs+' | ':'')+obs;}
-  P_salvarStorage();renderDashboardP();renderTabelaP();fecharModalBaixaP();
+  // Fase 1 — vínculo com conta bancária + encargos (campos opcionais, aditivos)
+  const contaId=document.getElementById('pBaixaConta').value;
+  const dataPg=document.getElementById('pBaixaData').value;
+  const juros=parseFloat(document.getElementById('pBaixaJuros').value)||0;
+  const multa=parseFloat(document.getElementById('pBaixaMulta').value)||0;
+  const desconto=parseFloat(document.getElementById('pBaixaDesconto').value)||0;
+  if(contaId)r.contaBancariaId=contaId;else delete r.contaBancariaId;
+  if(dataPg)r.dataPagamento=dataPg;
+  if(juros)r.juros=juros;else delete r.juros;
+  if(multa)r.multa=multa;else delete r.multa;
+  if(desconto)r.desconto=desconto;else delete r.desconto;
+  P_salvarStorage();renderDashboardP();renderTabelaP();if(mainAtivo==='contas')BC_renderPainel();fecharModalBaixaP();
   toast(tipo==='total'?'✅ Conta quitada!':'💰 Pagamento registrado!');
 }
 
@@ -3972,11 +4252,37 @@ async function init(){
     const inp2=document.getElementById('configAgendaUrl');if(inp2&&url)inp2.value=url;
     recarregarAgenda();
   },2000);
+
+  // 6. Lembrete de backup diário — 1x por dia, assim que os dados terminarem de carregar
+  verificarLembreteBackup();
 }
 
+// ── Lembrete de backup diário — garante que Receber + Pagar sejam baixados 1x por dia ──
+const BACKUP_LEMBRETE_KEY='wen_ultimo_backup_lembrete';
+function hojeStrBackup(){ return new Date().toISOString().slice(0,10); }
+function verificarLembreteBackup(){
+  const ultimo=localStorage.getItem(BACKUP_LEMBRETE_KEY);
+  if(ultimo===hojeStrBackup())return; // já mostrado/feito hoje
+  const bar=document.getElementById('backupLembreteBar');
+  if(bar)bar.style.display='flex';
+}
+function baixarBackupDiario(){
+  fazerBackupR();
+  exportarBackupP();
+  localStorage.setItem(BACKUP_LEMBRETE_KEY,hojeStrBackup());
+  const bar=document.getElementById('backupLembreteBar');
+  if(bar)bar.style.display='none';
+  toast('✅ Backup diário feito — Receber e Pagar salvos na pasta Downloads!');
+}
+function dispensarLembreteBackup(){
+  localStorage.setItem(BACKUP_LEMBRETE_KEY,hojeStrBackup());
+  const bar=document.getElementById('backupLembreteBar');
+  if(bar)bar.style.display='none';
+}
 
 init();
 CAT_inicializar();
+BC_inicializar();
 </script>
 <script src="js/banco.js?v=7"></script>
 </body>
