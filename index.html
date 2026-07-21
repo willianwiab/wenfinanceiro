@@ -748,6 +748,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
+  <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
   <button onclick="showMain('banco',this)">🔗 Conciliação</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
@@ -1240,6 +1241,53 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- ════════════════════════════════════════
+     CATEGORIAS FINANCEIRAS (Fase 3 — roadmap)
+════════════════════════════════════════ -->
+<style>
+.cf-ftipo{padding:5px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:20px;font-size:.8rem;font-weight:600;color:#6b7280;cursor:pointer}
+.cf-ftipo.active{background:#1e293b;color:#fff;border-color:#1e293b}
+.cf-cat-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:7px}
+.cf-aux-row{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 11px}
+</style>
+<div class="page" id="page-categorias">
+  <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+      <div>
+        <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">🏷️ Categorias Financeiras</h2>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Menu central de categorias, centros de custo e projetos. Lançamentos usam o ID — renomear não quebra o histórico.</p>
+      </div>
+      <button class="btn btn-purple" onclick="CF_abrirModal()">➕ Nova categoria</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px" id="cfFiltroTipo">
+      <button class="cf-ftipo active" data-t="todos" onclick="CF_setFiltro('todos',this)">Todas</button>
+      <button class="cf-ftipo" data-t="saida" onclick="CF_setFiltro('saida',this)">📤 Saída</button>
+      <button class="cf-ftipo" data-t="entrada" onclick="CF_setFiltro('entrada',this)">📥 Entrada</button>
+      <button class="cf-ftipo" data-t="ambos" onclick="CF_setFiltro('ambos',this)">🔁 Ambos</button>
+      <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;color:#6b7280;margin-left:8px;cursor:pointer"><input type="checkbox" id="cfMostrarInativas" onchange="CF_render()"/> mostrar inativas</label>
+    </div>
+    <div id="cfListaCategorias"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:26px">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h3 style="font-size:.95rem;font-weight:700;color:#334155">🏢 Centros de custo</h3>
+          <button class="btn btn-outline-b" style="padding:5px 10px;font-size:.78rem" onclick="CF_abrirModalAux('centro')">➕ Novo</button>
+        </div>
+        <div id="cfListaCentros" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h3 style="font-size:.95rem;font-weight:700;color:#334155">🎬 Projetos</h3>
+          <button class="btn btn-outline-b" style="padding:5px 10px;font-size:.78rem" onclick="CF_abrirModalAux('projeto')">➕ Novo</button>
+        </div>
+        <div id="cfListaProjetos" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+    <p style="font-size:.76rem;color:#9ca3af;margin-top:16px">Centros de custo e projetos entram nos lançamentos e no rateio na Fase 8. Aqui você já pode cadastrá-los.</p>
+  </div>
+</div>
+
 <div class="page" id="page-banco">
   <div class="concil-header">
     <h4>🏦 Conciliação Bancária</h4>
@@ -1697,6 +1745,68 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal categoria financeira RICA (Fase 3) -->
+<div class="modal-bg" id="cfModalBg">
+  <div class="modal" style="max-width:460px">
+    <h2 id="cfModalTitle">➕ Nova Categoria</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Nome</label><input type="text" id="cfFLabel" placeholder="Ex: Softwares e assinaturas"/></div>
+      <div class="form-group"><label>Tipo</label><select id="cfFTipo">
+        <option value="saida">📤 Saída (despesa)</option>
+        <option value="entrada">📥 Entrada (receita)</option>
+        <option value="ambos">🔁 Ambos</option>
+      </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Ícone</label><input type="text" id="cfFIcon" placeholder="🏷️" maxlength="4"/></div>
+      <div class="form-group"><label>Cor</label><input type="color" id="cfFCor" value="#3b82f6" style="width:100%;height:38px;padding:2px;cursor:pointer"/></div>
+      <div class="form-group" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:#374151;cursor:pointer;padding-bottom:8px"><input type="checkbox" id="cfFAtivo" checked style="width:15px;height:15px;accent-color:#16a34a"/> Ativa</label></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Grupo (opcional)</label><input type="text" id="cfFGrupo" placeholder="Ex: Operacional"/></div>
+      <div class="form-group"><label>Palavra-chave (Sophia)</label><input type="text" id="cfFKeyword" placeholder="Ex: adobe, canva"/></div>
+    </div>
+    <div class="form-group"><label>Subcategorias (separe por vírgula)</label><input type="text" id="cfFSubcats" placeholder="Ex: Assinaturas, Licenças"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="CF_fecharModal()">Cancelar</button>
+      <button class="btn btn-purple" onclick="CF_salvar()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal mesclar categorias (Fase 3) -->
+<div class="confirm-bg" id="cfMesclarBg">
+  <div class="confirm-box" style="max-width:440px">
+    <h3>🔀 Mesclar categorias</h3>
+    <p style="font-size:.85rem;color:#6b7280">Todos os lançamentos da categoria de <b>origem</b> passam para a de <b>destino</b>, e a origem é removida. Ação em massa — Contas a Receber não é afetado.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:13px 0">
+      <div><label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Origem (some)</label><select id="cfMescDe" style="width:100%;border:1px solid #e5e7eb;border-radius:7px;padding:8px 11px;font-size:.88rem"></select></div>
+      <div><label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Destino (fica)</label><select id="cfMescPara" style="width:100%;border:1px solid #e5e7eb;border-radius:7px;padding:8px 11px;font-size:.88rem"></select></div>
+    </div>
+    <div id="cfMescPreview" style="font-size:.8rem;color:#374151;background:#f8fafc;border-radius:7px;padding:9px 12px;margin-bottom:12px"></div>
+    <div class="confirm-btns">
+      <button class="btn btn-outline-b" onclick="document.getElementById('cfMesclarBg').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-purple" onclick="CF_confirmarMesclar()">🔀 Mesclar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal centro de custo / projeto (Fase 3) -->
+<div class="modal-bg" id="cfAuxModalBg">
+  <div class="modal" style="max-width:380px">
+    <h2 id="cfAuxTitle">➕ Novo</h2>
+    <div class="form-group"><label>Nome</label><input type="text" id="cfAuxNome" placeholder="Ex: Produção"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Cor</label><input type="color" id="cfAuxCor" value="#0891b2" style="width:100%;height:38px;padding:2px;cursor:pointer"/></div>
+      <div class="form-group" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:#374151;cursor:pointer;padding-bottom:8px"><input type="checkbox" id="cfAuxAtivo" checked style="width:15px;height:15px;accent-color:#16a34a"/> Ativo</label></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="CF_fecharModalAux()">Cancelar</button>
+      <button class="btn btn-purple" onclick="CF_salvarAux()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal criar/editar categoria -->
 <div class="modal-bg" id="catModalBg">
   <div class="modal" style="max-width:380px">
@@ -1795,7 +1905,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_bancarias:{}, cartoes:{}, cartao_lancamentos:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_bancarias:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -1844,6 +1954,10 @@ if (SIMULACAO_LOCAL){
   seedFV('cartao_lancamentos','lm1',{cartaoId:'cmock1',descricao:'Tráfego Meta',valor:800,dataCompra:'2026-07-02',parcelas:1,categoria:'marketing',responsavel:'William',obs:'',criadoEm:new Date(2026,6,2).toISOString()});
   seedFV('cartao_lancamentos','lm2',{cartaoId:'cmock1',descricao:'Assinatura Adobe',valor:300,dataCompra:'2026-07-10',parcelas:1,categoria:'servicos',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
   seedFV('cartao_lancamentos','lm3',{cartaoId:'cmock1',descricao:'Equipamento',valor:3000,dataCompra:'2026-07-10',parcelas:3,categoria:'outros',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
+
+  // Centro de custo + projeto fictícios (coleções novas — Fase 3)
+  seedFV('centros_custo','ccmock1',{nome:'Produção',cor:'#0891b2',ativo:true,criadoEm:new Date(2026,6,1).toISOString()});
+  seedFV('projetos','pjmock1',{nome:'Podcast Cliente X',cor:'#be185d',ativo:true,criadoEm:new Date(2026,6,1).toISOString()});
 
   function mockResposta(bodyJson){ return Promise.resolve({ ok:true, status:200, json:()=>Promise.resolve(bodyJson) }); }
   function mockFetch(url, opts){
@@ -1928,6 +2042,7 @@ function showMain(id,btn){
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes')CC_render();
+  if(id==='categorias')CF_render();
   if(id==='banco')BK_executarMatching();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;}
 }
@@ -3178,7 +3293,7 @@ async function CAT_inicializar(){
 function CAT_popularSelectP(){
   const sel=document.getElementById('pFCategoria');if(!sel)return;
   const val=sel.value;
-  sel.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('');
+  sel.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).filter(([k,v])=>v.ativo!==false||k===val).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('');
   if(val&&CATS_P[val])sel.value=val;
 }
 function CAT_renderGerenciar(){
@@ -3218,7 +3333,7 @@ async function CAT_salvar(){
   const color=document.getElementById('catFCor').value;
   const bg=color+'22';
   const id=CAT_editandoId||CAT_slug(label);
-  const dados={label,icon,color,bg};
+  const dados={...(CATS_P[id]||{}),label,icon,color,bg}; // preserva campos ricos (tipo/grupo/keyword/ativo) da Fase 3
   CATS_P[id]=dados;
   await CAT_fbSalvar(id,dados);
   CAT_fecharModal();
@@ -3517,7 +3632,7 @@ function CC_popularSelectsCompra(){
     sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
     if(v&&CC_CARTOES[v])sc.value=v;else if(CC_selecionado&&CC_CARTOES[CC_selecionado])sc.value=CC_selecionado;}
   const cat=document.getElementById('ccCFCategoria');
-  if(cat){const v=cat.value;cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');if(v)cat.value=v;}
+  if(cat){const v=cat.value;cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===v).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');if(v)cat.value=v;}
 }
 function CC_abrirModalCartao(id=null){
   CC_editandoCartaoId=id;const c=id?CC_CARTOES[id]:null;
@@ -3657,6 +3772,179 @@ function CC_renderFaturas(){
   wrap.innerHTML=html;
 }
 function CC_selecionar(id){CC_selecionado=id;CC_render();}
+
+// ══════════════════════════════════════════════════════
+// FASE 3 — CATEGORIAS FINANCEIRAS (módulo CF_)
+// Estende as categorias (categorias_pagar, já compartilhada por Pagar+Cartão)
+// com tipo/grupo/keyword/subcats/ativo — SEM migrar coleção (zero risco de quebra).
+// Lançamentos referenciam o ID (slug); renomear o label não quebra histórico.
+// Coleções novas leves: `centros_custo` e `projetos` (uso pleno na Fase 8).
+// Contas a Receber NÃO é tocado.
+// ══════════════════════════════════════════════════════
+const CF_COL_CENTRO='centros_custo', CF_COL_PROJ='projetos';
+const CF_CENTROS={}, CF_PROJETOS={};
+let CF_filtroTipo='todos', CF_editandoId=null, CF_auxTipo=null, CF_auxEditId=null;
+const CF_TIPO_LABEL={saida:'📤 Saída',entrada:'📥 Entrada',ambos:'🔁 Ambos'};
+
+async function CF_inicializar(){
+  const [c,p]=await Promise.all([CC_fbCarregar(CF_COL_CENTRO),CC_fbCarregar(CF_COL_PROJ)]);
+  Object.keys(CF_CENTROS).forEach(k=>delete CF_CENTROS[k]);Object.assign(CF_CENTROS,c);
+  Object.keys(CF_PROJETOS).forEach(k=>delete CF_PROJETOS[k]);Object.assign(CF_PROJETOS,p);
+  if(mainAtivo==='categorias')CF_render();
+}
+
+// Uso de uma categoria (quantidade + valor) em Pagar + Cartão (Receber não categoriza)
+function CF_uso(slug){
+  let qtd=0,valor=0;
+  Object.keys(P_meses||{}).forEach(m=>(P_meses[m]||[]).forEach(r=>{if(r.categoria===slug){qtd++;valor+=Number(r.valor)||0;}}));
+  Object.values(CC_LANCS||{}).forEach(l=>{if(l.categoria===slug){qtd++;valor+=Number(l.valor)||0;}});
+  return {qtd,valor:Math.round(valor*100)/100};
+}
+
+// ── Modal categoria rica ──
+function CF_abrirModal(id=null){
+  CF_editandoId=id;const c=id?CATS_P[id]:null;
+  document.getElementById('cfModalTitle').textContent=id?'✏️ Editar Categoria':'➕ Nova Categoria';
+  document.getElementById('cfFLabel').value=c?.label||'';
+  document.getElementById('cfFTipo').value=c?.tipo||'saida';
+  document.getElementById('cfFIcon').value=c?.icon||'🏷️';
+  document.getElementById('cfFCor').value=c?.color||'#3b82f6';
+  document.getElementById('cfFAtivo').checked=c?c.ativo!==false:true;
+  document.getElementById('cfFGrupo').value=c?.grupo||'';
+  document.getElementById('cfFKeyword').value=c?.keyword||'';
+  document.getElementById('cfFSubcats').value=(c&&Array.isArray(c.subcats))?c.subcats.join(', '):'';
+  document.getElementById('cfModalBg').classList.add('open');
+}
+function CF_fecharModal(){document.getElementById('cfModalBg').classList.remove('open');CF_editandoId=null;}
+async function CF_salvar(){
+  const label=document.getElementById('cfFLabel').value.trim();
+  if(!label){toast('Informe o nome da categoria.','#ef4444');return;}
+  const color=document.getElementById('cfFCor').value;
+  const id=CF_editandoId||CAT_slug(label);
+  const dados={...(CATS_P[id]||{}),
+    label,icon:document.getElementById('cfFIcon').value.trim()||'🏷️',color,bg:color+'22',
+    tipo:document.getElementById('cfFTipo').value,
+    grupo:document.getElementById('cfFGrupo').value.trim(),
+    keyword:document.getElementById('cfFKeyword').value.trim(),
+    subcats:document.getElementById('cfFSubcats').value.split(',').map(s=>s.trim()).filter(Boolean),
+    ativo:document.getElementById('cfFAtivo').checked,
+    padrao:CATS_P[id]?.padrao||false
+  };
+  CATS_P[id]=dados;await CAT_fbSalvar(id,dados);
+  CF_fecharModal();CF_render();CAT_popularSelectP();CAT_renderGerenciar();
+  if(typeof popularCatFiltroTabelaP==='function')popularCatFiltroTabelaP();
+  toast('✅ Categoria salva!');
+}
+async function CF_toggleAtivo(id){
+  const c=CATS_P[id];if(!c)return;c.ativo=(c.ativo===false);await CAT_fbSalvar(id,c);CF_render();CAT_popularSelectP();
+  toast(c.ativo===false?'Categoria inativada.':'Categoria reativada.','#6b7280');
+}
+async function CF_excluir(id){
+  const u=CF_uso(id);
+  const msg=u.qtd?`Esta categoria tem ${u.qtd} lançamento(s) (${fmt(u.valor)}). Excluir NÃO apaga os lançamentos — eles ficam "Sem cat.". Prefira inativar ou mesclar. Excluir mesmo assim?`:'Excluir esta categoria?';
+  if(!confirm(msg))return;
+  delete CATS_P[id];await CAT_fbExcluir(id);
+  CF_render();CAT_popularSelectP();CAT_renderGerenciar();if(typeof popularCatFiltroTabelaP==='function')popularCatFiltroTabelaP();
+  toast('🗑️ Categoria removida.','#6b7280');
+}
+
+// ── Mesclar ──
+function CF_abrirMesclar(fromId){
+  const opts=Object.keys(CATS_P).sort((a,b)=>CATS_P[a].label.localeCompare(CATS_P[b].label));
+  const mk=sel=>opts.map(k=>`<option value="${k}">${CATS_P[k].icon} ${CATS_P[k].label}</option>`).join('');
+  const de=document.getElementById('cfMescDe'),para=document.getElementById('cfMescPara');
+  de.innerHTML=mk();para.innerHTML=mk();
+  de.value=fromId||opts[0];para.value=opts.find(k=>k!==de.value)||opts[0];
+  de.onchange=para.onchange=CF_previewMesclar;CF_previewMesclar();
+  document.getElementById('cfMesclarBg').classList.add('open');
+}
+function CF_previewMesclar(){
+  const de=document.getElementById('cfMescDe').value;const u=CF_uso(de);
+  document.getElementById('cfMescPreview').textContent=`${u.qtd} lançamento(s) (${fmt(u.valor)}) serão movidos e a categoria "${CATS_P[de]?.label}" será removida.`;
+}
+async function CF_confirmarMesclar(){
+  const de=document.getElementById('cfMescDe').value,para=document.getElementById('cfMescPara').value;
+  if(!de||!para||de===para){toast('Escolha categorias diferentes.','#ef4444');return;}
+  let n=0;
+  Object.keys(P_meses||{}).forEach(m=>(P_meses[m]||[]).forEach(r=>{if(r.categoria===de){r.categoria=para;n++;}}));
+  P_salvarStorage();
+  for(const[id,l]of Object.entries(CC_LANCS)){if(l.categoria===de){l.categoria=para;await CC_fbSalvar(CC_COL_LANC,id,l);n++;}}
+  delete CATS_P[de];await CAT_fbExcluir(de);
+  document.getElementById('cfMesclarBg').classList.remove('open');
+  CF_render();CAT_popularSelectP();CAT_renderGerenciar();if(typeof popularCatFiltroTabelaP==='function')popularCatFiltroTabelaP();
+  if(mainAtivo==='pagar')renderSubPageP(subPAtivo);if(mainAtivo==='cartoes')CC_render();
+  toast(`✅ ${n} lançamento(s) movido(s). Categorias mescladas.`);
+}
+
+// ── Centros de custo / projetos ──
+function CF_auxCol(t){return t==='centro'?CF_COL_CENTRO:CF_COL_PROJ;}
+function CF_auxMap(t){return t==='centro'?CF_CENTROS:CF_PROJETOS;}
+function CF_abrirModalAux(tipo,id=null){
+  CF_auxTipo=tipo;CF_auxEditId=id;const o=id?CF_auxMap(tipo)[id]:null;
+  document.getElementById('cfAuxTitle').textContent=(id?'✏️ Editar ':'➕ Novo ')+(tipo==='centro'?'centro de custo':'projeto');
+  document.getElementById('cfAuxNome').value=o?.nome||'';
+  document.getElementById('cfAuxCor').value=o?.cor||(tipo==='centro'?'#0891b2':'#be185d');
+  document.getElementById('cfAuxAtivo').checked=o?o.ativo!==false:true;
+  document.getElementById('cfAuxModalBg').classList.add('open');
+}
+function CF_fecharModalAux(){document.getElementById('cfAuxModalBg').classList.remove('open');CF_auxTipo=null;CF_auxEditId=null;}
+async function CF_salvarAux(){
+  const nome=document.getElementById('cfAuxNome').value.trim();if(!nome){toast('Informe o nome.','#ef4444');return;}
+  const t=CF_auxTipo,map=CF_auxMap(t),col=CF_auxCol(t);
+  const dados={nome,cor:document.getElementById('cfAuxCor').value,ativo:document.getElementById('cfAuxAtivo').checked,
+    criadoEm:CF_auxEditId?(map[CF_auxEditId].criadoEm||new Date().toISOString()):new Date().toISOString()};
+  const id=CF_auxEditId||((t==='centro'?'cc':'pj')+Date.now()+Math.floor(Math.random()*9999));
+  map[id]=dados;await CC_fbSalvar(col,id,dados);
+  CF_fecharModalAux();CF_render();toast('✅ Salvo!');
+}
+async function CF_excluirAux(tipo,id){
+  if(!confirm('Excluir este item?'))return;
+  delete CF_auxMap(tipo)[id];await CC_fbExcluir(CF_auxCol(tipo),id);CF_render();toast('🗑️ Removido.','#6b7280');
+}
+
+// ── Render ──
+function CF_setFiltro(t,btn){CF_filtroTipo=t;document.querySelectorAll('#cfFiltroTipo .cf-ftipo').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');CF_render();}
+function CF_render(){CF_renderCategorias();CF_renderAux('centro');CF_renderAux('projeto');}
+function CF_renderCategorias(){
+  const el=document.getElementById('cfListaCategorias');if(!el)return;
+  const mostrarInativas=document.getElementById('cfMostrarInativas')?.checked;
+  let keys=Object.keys(CATS_P).sort((a,b)=>(CATS_P[a].label||'').localeCompare(CATS_P[b].label||''));
+  keys=keys.filter(k=>{const c=CATS_P[k];const tipo=c.tipo||'saida';
+    if(!mostrarInativas&&c.ativo===false)return false;
+    if(CF_filtroTipo==='todos')return true;
+    if(CF_filtroTipo==='ambos')return tipo==='ambos';
+    return tipo===CF_filtroTipo||tipo==='ambos'; // saída/entrada incluem as "ambos"
+  });
+  el.innerHTML=keys.map(k=>{
+    const c=CATS_P[k];const u=CF_uso(k);const inativa=c.ativo===false;const tipo=c.tipo||'saida';
+    return `<div class="cf-cat-row" style="${inativa?'opacity:.55':''}">
+      <span style="width:34px;height:34px;border-radius:8px;background:${c.bg||'#f1f5f9'};color:${c.color||'#64748b'};display:flex;align-items:center;justify-content:center;font-size:1rem">${c.icon||'🏷️'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;color:#0f172a;font-size:.9rem">${c.label}${c.padrao?' <span style="font-size:.66rem;color:#9ca3af;font-weight:500">padrão</span>':''}${inativa?' <span style="font-size:.66rem;color:#ef4444">inativa</span>':''}</div>
+        <div style="font-size:.73rem;color:#6b7280">${CF_TIPO_LABEL[tipo]}${c.grupo?' · '+c.grupo:''}${c.keyword?' · 🔑 '+c.keyword:''}</div>
+      </div>
+      <div style="text-align:right;font-size:.73rem;color:#6b7280;white-space:nowrap">${u.qtd} lanç.<br><b style="color:#0f172a">${fmt(u.valor)}</b></div>
+      <div style="display:flex;gap:2px">
+        <button onclick="CF_abrirModal('${k}')" style="background:none;border:none;cursor:pointer;font-size:.88rem;opacity:.7" title="Editar">✏️</button>
+        <button onclick="CF_abrirMesclar('${k}')" style="background:none;border:none;cursor:pointer;font-size:.88rem;opacity:.7" title="Mesclar">🔀</button>
+        <button onclick="CF_toggleAtivo('${k}')" style="background:none;border:none;cursor:pointer;font-size:.88rem;opacity:.7" title="${inativa?'Reativar':'Inativar'}">${inativa?'🔆':'🚫'}</button>
+        <button onclick="CF_excluir('${k}')" style="background:none;border:none;cursor:pointer;font-size:.88rem;opacity:.7" title="Excluir">🗑️</button>
+      </div>
+    </div>`;
+  }).join('')||'<div style="color:#9ca3af;font-size:.85rem;padding:8px 0">Nenhuma categoria neste filtro.</div>';
+}
+function CF_renderAux(tipo){
+  const el=document.getElementById(tipo==='centro'?'cfListaCentros':'cfListaProjetos');if(!el)return;
+  const map=CF_auxMap(tipo);const ids=Object.keys(map).sort((a,b)=>(map[a].nome||'').localeCompare(map[b].nome||''));
+  el.innerHTML=ids.map(id=>{const o=map[id];const inativo=o.ativo===false;
+    return `<div class="cf-aux-row" style="${inativo?'opacity:.5':''}">
+      <span style="width:12px;height:12px;border-radius:3px;background:${o.cor||'#94a3b8'}"></span>
+      <span style="flex:1;font-size:.85rem;color:#0f172a;font-weight:600">${o.nome}${inativo?' <span style="font-size:.66rem;color:#ef4444">inativo</span>':''}</span>
+      <button onclick="CF_abrirModalAux('${tipo}','${id}')" style="background:none;border:none;cursor:pointer;font-size:.82rem;opacity:.7" title="Editar">✏️</button>
+      <button onclick="CF_excluirAux('${tipo}','${id}')" style="background:none;border:none;cursor:pointer;font-size:.82rem;opacity:.7" title="Excluir">🗑️</button>
+    </div>`;
+  }).join('')||`<div style="color:#9ca3af;font-size:.8rem">Nenhum ${tipo==='centro'?'centro de custo':'projeto'} ainda.</div>`;
+}
 
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
@@ -4613,6 +4901,7 @@ init();
 CAT_inicializar();
 BC_inicializar();
 CC_inicializar();
+CF_inicializar();
 </script>
 <script src="js/banco.js?v=7"></script>
 </body>
