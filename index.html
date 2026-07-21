@@ -747,6 +747,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('receber',this)">📥 A Receber</button>
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
   <button onclick="showMain('contas',this)">🏦 Contas</button>
+  <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('banco',this)">🔗 Conciliação</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
@@ -1219,6 +1220,26 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- ════════════════════════════════════════
+     CARTÕES DE CRÉDITO (Fase 2 — roadmap)
+════════════════════════════════════════ -->
+<div class="page" id="page-cartoes">
+  <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div>
+        <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">💳 Cartões de Crédito</h2>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Limites, compras parceladas e faturas automáticas. Feche a fatura pra gerar a conta a pagar.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline-b" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
+        <button class="btn btn-purple" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
+      </div>
+    </div>
+    <div id="ccListaCartoes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+    <div id="ccFaturasWrap" style="margin-top:24px"></div>
+  </div>
+</div>
+
 <div class="page" id="page-banco">
   <div class="concil-header">
     <h4>🏦 Conciliação Bancária</h4>
@@ -1623,6 +1644,59 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal criar/editar cartão (Fase 2) -->
+<div class="modal-bg" id="ccModalCartaoBg">
+  <div class="modal" style="max-width:440px">
+    <h2 id="ccCartaoTitle">➕ Novo Cartão</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Nome do cartão</label><input type="text" id="ccFNome" placeholder="Ex: Nubank PJ"/></div>
+      <div class="form-group"><label>Banco / Instituição</label><input type="text" id="ccFBanco" placeholder="Ex: Nubank"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Final (4 díg.)</label><input type="text" id="ccFFinal" placeholder="1234" maxlength="4"/></div>
+      <div class="form-group"><label>Limite total (R$)</label><input type="number" id="ccFLimite" placeholder="0,00" step="0.01"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Dia de fechamento</label><input type="number" id="ccFFechamento" placeholder="1-31" min="1" max="31"/></div>
+      <div class="form-group"><label>Dia de vencimento</label><input type="number" id="ccFVencimento" placeholder="1-31" min="1" max="31"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cor</label><input type="color" id="ccFCor" value="#7c3aed" style="width:100%;height:38px;padding:2px;cursor:pointer"/></div>
+      <div class="form-group" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:#374151;cursor:pointer;padding-bottom:8px"><input type="checkbox" id="ccFAtivo" checked style="width:15px;height:15px;accent-color:#16a34a"/> Ativo</label></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="CC_fecharModalCartao()">Cancelar</button>
+      <button class="btn btn-purple" onclick="CC_salvarCartao()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nova compra no cartão (Fase 2) -->
+<div class="modal-bg" id="ccModalCompraBg">
+  <div class="modal" style="max-width:460px">
+    <h2 id="ccCompraTitle">🛒 Nova Compra</h2>
+    <div class="form-group"><label>Cartão</label><select id="ccCFCartao"></select></div>
+    <div class="form-group"><label>Descrição</label><input type="text" id="ccCFDesc" placeholder="Ex: Assinatura Adobe"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Valor total (R$)</label><input type="number" id="ccCFValor" placeholder="0,00" step="0.01" oninput="CC_previewParcelas()"/></div>
+      <div class="form-group"><label>Parcelas</label><input type="number" id="ccCFParcelas" value="1" min="1" max="48" oninput="CC_previewParcelas()"/></div>
+    </div>
+    <div id="ccCFPreviewParcela" style="font-size:.78rem;color:#6b7280;margin:-6px 0 10px"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Data da compra</label><input type="date" id="ccCFData"/></div>
+      <div class="form-group"><label>Categoria</label><select id="ccCFCategoria"></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Responsável</label><input type="text" id="ccCFResp" placeholder="Ex: William"/></div>
+      <div class="form-group"><label>Observação</label><input type="text" id="ccCFObs" placeholder="opcional"/></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="CC_fecharModalCompra()">Cancelar</button>
+      <button class="btn btn-purple" onclick="CC_salvarCompra()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal criar/editar categoria -->
 <div class="modal-bg" id="catModalBg">
   <div class="modal" style="max-width:380px">
@@ -1721,7 +1795,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_bancarias:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_bancarias:{}, cartoes:{}, cartao_lancamentos:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -1764,6 +1838,12 @@ if (SIMULACAO_LOCAL){
 
   // Uma conta bancária fictícia (coleção nova `contas_bancarias`)
   seedFV('contas_bancarias','bmock1',{banco:'Nubank',nome:'Conta principal WEN',tipo:'digital',agencia:'0001',conta:'12345-6',cor:'#8b5cf6',saldoInicial:15000,principal:true,status:'ativa',criadoEm:new Date(2026,6,1).toISOString()});
+
+  // Cartão + compras fictícias (coleções novas `cartoes`/`cartao_lancamentos`) — Fase 2
+  seedFV('cartoes','cmock1',{nome:'Nubank PJ',banco:'Nubank',final:'4821',limite:10000,diaFechamento:5,diaVencimento:12,cor:'#7c3aed',status:'ativo',criadoEm:new Date(2026,5,1).toISOString()});
+  seedFV('cartao_lancamentos','lm1',{cartaoId:'cmock1',descricao:'Tráfego Meta',valor:800,dataCompra:'2026-07-02',parcelas:1,categoria:'marketing',responsavel:'William',obs:'',criadoEm:new Date(2026,6,2).toISOString()});
+  seedFV('cartao_lancamentos','lm2',{cartaoId:'cmock1',descricao:'Assinatura Adobe',valor:300,dataCompra:'2026-07-10',parcelas:1,categoria:'servicos',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
+  seedFV('cartao_lancamentos','lm3',{cartaoId:'cmock1',descricao:'Equipamento',valor:3000,dataCompra:'2026-07-10',parcelas:3,categoria:'outros',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
 
   function mockResposta(bodyJson){ return Promise.resolve({ ok:true, status:200, json:()=>Promise.resolve(bodyJson) }); }
   function mockFetch(url, opts){
@@ -1847,6 +1927,7 @@ function showMain(id,btn){
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
+  if(id==='cartoes')CC_render();
   if(id==='banco')BK_executarMatching();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;}
 }
@@ -3329,6 +3410,254 @@ function BC_renderPainel(){
   }
 }
 
+// ══════════════════════════════════════════════════════
+// FASE 2 — CARTÕES DE CRÉDITO (módulo CC_)
+// Coleções novas: `cartoes` e `cartao_lancamentos`. Aditivo.
+// Faturas são DERIVADAS (não gravadas). Fatura fechada → gera conta a pagar
+// em P_meses (com faturaCartao{cartaoId,mes} p/ trava anti-duplicidade).
+// Limite usado/disponível e "fatura paga" derivam do estado; nada duplicado.
+// ══════════════════════════════════════════════════════
+const CC_COL_CARD='cartoes', CC_COL_LANC='cartao_lancamentos';
+const CC_CARTOES={}; // id -> {nome,banco,final,limite,diaFechamento,diaVencimento,cor,status,criadoEm}
+const CC_LANCS={};   // id -> {cartaoId,descricao,valor,dataCompra,parcelas,categoria,responsavel,obs,criadoEm}
+let CC_selecionado=null, CC_editandoCartaoId=null;
+
+async function CC_fbSalvar(col,id,dados){
+  const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
+  await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+}
+async function CC_fbExcluir(col,id){ await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'}); }
+async function CC_fbCarregar(col){
+  const out={};
+  try{ let pt=null;
+    do{ let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+      const res=await fetch(url);const json=await res.json();
+      if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out[doc.name.split('/').pop()]=o;});
+      pt=json.nextPageToken||null;
+    }while(pt);
+  }catch(e){console.warn('Cartões('+col+'):',e.message);}
+  return out;
+}
+async function CC_inicializar(){
+  const [cards,lancs]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC)]);
+  Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);
+  Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);
+  if(mainAtivo==='cartoes')CC_render();
+}
+
+// ── Datas / faturas ──
+function CC_addMonths(ano,mes,n){let m=mes+n;const a=ano+Math.floor(m/12);m=((m%12)+12)%12;return{ano:a,mes:m};}
+function CC_mesKey(ano,mes){return MESES_ABREV[mes]+'/'+ano;}
+// Mês de VENCIMENTO da 1ª parcela de uma compra
+function CC_baseVenc(dataCompra,diaFech,diaVenc){
+  const d=new Date((dataCompra||'')+'T12:00:00');
+  let ano=d.getFullYear(),mes=d.getMonth();const dia=d.getDate();
+  if(isNaN(ano))return{ano:new Date().getFullYear(),mes:new Date().getMonth()};
+  if(dia>diaFech)mes+=1;              // comprou depois do fechamento → próximo ciclo
+  if(diaVenc<=diaFech)mes+=1;         // vencimento cai no mês seguinte ao fechamento
+  return CC_addMonths(ano,mes,0);
+}
+// Mapa mesVencimento -> {items,total,ano,mes}
+function CC_faturasDoCartao(cid){
+  const c=CC_CARTOES[cid];if(!c)return{};
+  const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10;const map={};
+  Object.entries(CC_LANCS).filter(([id,l])=>l.cartaoId===cid).forEach(([id,l])=>{
+    const P=Math.max(1,parseInt(l.parcelas)||1);const vp=Math.round((Number(l.valor)/P)*100)/100;
+    const base=CC_baseVenc(l.dataCompra,fech,venc);
+    for(let k=0;k<P;k++){
+      const m=CC_addMonths(base.ano,base.mes,k);const key=CC_mesKey(m.ano,m.mes);
+      map[key]=map[key]||{items:[],total:0,ano:m.ano,mes:m.mes};
+      map[key].items.push({lancId:id,desc:l.descricao,parcela:k+1,parcelas:P,valor:vp,categoria:l.categoria});
+      map[key].total=Math.round((map[key].total+vp)*100)/100;
+    }
+  });
+  return map;
+}
+// Conta a pagar gerada a partir de uma fatura (trava anti-duplicidade)
+function CC_faturaLanc(cid,key){
+  for(const mes of Object.keys(P_meses||{})){
+    const r=(P_meses[mes]||[]).find(x=>x.faturaCartao&&x.faturaCartao.cartaoId===cid&&x.faturaCartao.mes===key);
+    if(r)return{r,mes};
+  }
+  return null;
+}
+function CC_isFaturaGerada(cid,key){return !!CC_faturaLanc(cid,key);}
+function CC_isFaturaPaga(cid,key){const f=CC_faturaLanc(cid,key);return !!(f&&String(f.r.status).toUpperCase()==='PAGO');}
+function CC_limiteUsado(cid){const fat=CC_faturasDoCartao(cid);let u=0;Object.keys(fat).forEach(key=>{if(!CC_isFaturaPaga(cid,key))u+=fat[key].total;});return Math.round(u*100)/100;}
+function CC_gerarContaPagar(cid,key){
+  if(CC_isFaturaGerada(cid,key)){toast('Essa fatura já virou conta a pagar.','#f59e0b');return;}
+  const c=CC_CARTOES[cid];const fat=CC_faturasDoCartao(cid)[key];if(!c||!fat)return;
+  const venc=+c.diaVencimento||10;
+  if(!P_meses[key])P_meses[key]=[];
+  P_meses[key].push({id:gerarId(),nome:'💳 Fatura '+c.nome+' · '+key,valor:Math.round(fat.total*100)/100,valorPago:0,dia:venc,mes:key,categoria:'cartoes',fixa:false,status:'PENDENTE',cod:'',obs:'Gerada da fatura do cartão',faturaCartao:{cartaoId:cid,mes:key}});
+  P_salvarStorage();
+  CC_render();if(typeof renderSubPageP==='function'&&mainAtivo==='pagar')renderSubPageP(subPAtivo);
+  toast('✅ Conta a pagar gerada em '+key+' ('+fmt(fat.total)+')');
+}
+
+// ── Status de fatura (relativo a hoje) ──
+function CC_statusFatura(cid,key,fatObj,aberturaKey){
+  if(CC_isFaturaPaga(cid,key))return{k:'paga',label:'✅ Paga',cor:'#16a34a',bg:'#dcfce7'};
+  const c=CC_CARTOES[cid];const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10;
+  // mês em que ESTA fatura fecha (venc no mês seguinte ao fechamento se venc<=fech)
+  let cm=(venc<=fech)?CC_addMonths(fatObj.ano,fatObj.mes,-1):{ano:fatObj.ano,mes:fatObj.mes};
+  const fd=new Date(cm.ano,cm.mes,fech,23,59,59);const vd=new Date(fatObj.ano,fatObj.mes,venc,23,59,59);const hoje=new Date();
+  const gerada=CC_isFaturaGerada(cid,key);
+  if(hoje>fd){ // já fechou
+    if(hoje>vd&&!gerada)return{k:'vencida',label:'🔴 Vencida',cor:'#b91c1c',bg:'#fee2e2'};
+    return gerada?{k:'gerada',label:'📄 Conta gerada',cor:'#1e40af',bg:'#dbeafe'}:{k:'fechada',label:'🔒 Fechada',cor:'#b45309',bg:'#fef3c7'};
+  }
+  return (key===aberturaKey)?{k:'aberta',label:'🟢 Aberta',cor:'#15803d',bg:'#dcfce7'}:{k:'futura',label:'🔮 Futura',cor:'#6b7280',bg:'#f1f5f9'};
+}
+
+// ── Modais ──
+function CC_popularSelectsCompra(){
+  const sc=document.getElementById('ccCFCartao');
+  if(sc){const v=sc.value;const ativos=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');
+    sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
+    if(v&&CC_CARTOES[v])sc.value=v;else if(CC_selecionado&&CC_CARTOES[CC_selecionado])sc.value=CC_selecionado;}
+  const cat=document.getElementById('ccCFCategoria');
+  if(cat){const v=cat.value;cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');if(v)cat.value=v;}
+}
+function CC_abrirModalCartao(id=null){
+  CC_editandoCartaoId=id;const c=id?CC_CARTOES[id]:null;
+  document.getElementById('ccCartaoTitle').textContent=id?'✏️ Editar Cartão':'➕ Novo Cartão';
+  document.getElementById('ccFNome').value=c?.nome||'';
+  document.getElementById('ccFBanco').value=c?.banco||'';
+  document.getElementById('ccFFinal').value=c?.final||'';
+  document.getElementById('ccFLimite').value=(c&&c.limite!=null)?c.limite:'';
+  document.getElementById('ccFFechamento').value=c?.diaFechamento||'';
+  document.getElementById('ccFVencimento').value=c?.diaVencimento||'';
+  document.getElementById('ccFCor').value=c?.cor||'#7c3aed';
+  document.getElementById('ccFAtivo').checked=c?c.status!=='inativo':true;
+  document.getElementById('ccModalCartaoBg').classList.add('open');
+}
+function CC_fecharModalCartao(){document.getElementById('ccModalCartaoBg').classList.remove('open');CC_editandoCartaoId=null;}
+async function CC_salvarCartao(){
+  const nome=document.getElementById('ccFNome').value.trim();
+  if(!nome){toast('Informe o nome do cartão.','#ef4444');return;}
+  const dados={
+    nome,banco:document.getElementById('ccFBanco').value.trim(),
+    final:document.getElementById('ccFFinal').value.trim(),
+    limite:parseFloat(document.getElementById('ccFLimite').value)||0,
+    diaFechamento:parseInt(document.getElementById('ccFFechamento').value)||1,
+    diaVencimento:parseInt(document.getElementById('ccFVencimento').value)||10,
+    cor:document.getElementById('ccFCor').value,
+    status:document.getElementById('ccFAtivo').checked?'ativo':'inativo',
+    criadoEm:CC_editandoCartaoId?(CC_CARTOES[CC_editandoCartaoId].criadoEm||new Date().toISOString()):new Date().toISOString()
+  };
+  const id=CC_editandoCartaoId||('c'+Date.now()+Math.floor(Math.random()*9999));
+  CC_CARTOES[id]=dados;await CC_fbSalvar(CC_COL_CARD,id,dados);
+  if(!CC_selecionado)CC_selecionado=id;
+  CC_fecharModalCartao();CC_render();toast('✅ Cartão salvo!');
+}
+async function CC_excluirCartao(id){
+  const nLancs=Object.values(CC_LANCS).filter(l=>l.cartaoId===id).length;
+  if(!confirm((nLancs?`Este cartão tem ${nLancs} compra(s). `:'')+'Excluir o cartão? As compras dele também serão removidas.'))return;
+  for(const[lid,l]of Object.entries(CC_LANCS)){if(l.cartaoId===id){delete CC_LANCS[lid];await CC_fbExcluir(CC_COL_LANC,lid);}}
+  delete CC_CARTOES[id];await CC_fbExcluir(CC_COL_CARD,id);
+  if(CC_selecionado===id)CC_selecionado=Object.keys(CC_CARTOES)[0]||null;
+  CC_render();toast('🗑️ Cartão removido.','#6b7280');
+}
+function CC_abrirModalCompra(){
+  if(!Object.keys(CC_CARTOES).length){toast('Cadastre um cartão primeiro.','#f59e0b');return;}
+  CC_popularSelectsCompra();
+  document.getElementById('ccCFDesc').value='';document.getElementById('ccCFValor').value='';
+  document.getElementById('ccCFParcelas').value='1';document.getElementById('ccCFData').value=new Date().toISOString().split('T')[0];
+  document.getElementById('ccCFResp').value='';document.getElementById('ccCFObs').value='';
+  CC_previewParcelas();
+  document.getElementById('ccModalCompraBg').classList.add('open');
+}
+function CC_fecharModalCompra(){document.getElementById('ccModalCompraBg').classList.remove('open');}
+function CC_previewParcelas(){
+  const v=parseFloat(document.getElementById('ccCFValor').value)||0;const p=Math.max(1,parseInt(document.getElementById('ccCFParcelas').value)||1);
+  const el=document.getElementById('ccCFPreviewParcela');if(!el)return;
+  el.textContent=(v>0&&p>1)?`${p}x de ${fmt(Math.round(v/p*100)/100)}`:(v>0?`À vista: ${fmt(v)}`:'');
+}
+async function CC_salvarCompra(){
+  const cartaoId=document.getElementById('ccCFCartao').value;
+  const desc=document.getElementById('ccCFDesc').value.trim();
+  const valor=parseFloat(document.getElementById('ccCFValor').value)||0;
+  if(!cartaoId){toast('Selecione o cartão.','#ef4444');return;}
+  if(!desc){toast('Informe a descrição.','#ef4444');return;}
+  if(valor<=0){toast('Informe o valor.','#ef4444');return;}
+  const dados={
+    cartaoId,descricao:desc,valor,
+    dataCompra:document.getElementById('ccCFData').value||new Date().toISOString().split('T')[0],
+    parcelas:Math.max(1,parseInt(document.getElementById('ccCFParcelas').value)||1),
+    categoria:document.getElementById('ccCFCategoria').value,
+    responsavel:document.getElementById('ccCFResp').value.trim(),
+    obs:document.getElementById('ccCFObs').value.trim(),
+    criadoEm:new Date().toISOString()
+  };
+  const id='l'+Date.now()+Math.floor(Math.random()*9999);
+  CC_LANCS[id]=dados;await CC_fbSalvar(CC_COL_LANC,id,dados);
+  CC_selecionado=cartaoId;CC_fecharModalCompra();CC_render();toast('✅ Compra lançada!');
+}
+async function CC_excluirCompra(id){
+  if(!confirm('Excluir esta compra? As parcelas dela somem das faturas.'))return;
+  delete CC_LANCS[id];await CC_fbExcluir(CC_COL_LANC,id);CC_render();toast('🗑️ Compra removida.','#6b7280');
+}
+
+// ── Render ──
+function CC_render(){CC_renderCartoes();CC_renderFaturas();}
+function CC_renderCartoes(){
+  const el=document.getElementById('ccListaCartoes');if(!el)return;
+  const ids=Object.keys(CC_CARTOES);
+  if(CC_selecionado&&!CC_CARTOES[CC_selecionado])CC_selecionado=null;
+  if(!CC_selecionado&&ids.length)CC_selecionado=ids[0];
+  el.innerHTML=ids.map(id=>{
+    const c=CC_CARTOES[id];const usado=CC_limiteUsado(id);const disp=Math.round(((+c.limite||0)-usado)*100)/100;
+    const pct=(+c.limite>0)?Math.min(100,Math.round(usado/c.limite*100)):0;const sel=id===CC_selecionado;const inativo=c.status==='inativo';
+    return `<div onclick="CC_selecionar('${id}')" style="cursor:pointer;background:#fff;border:2px solid ${sel?(c.cor||'#7c3aed'):'#e5e7eb'};border-radius:12px;padding:14px 16px;${inativo?'opacity:.55':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div><div style="font-weight:700;color:#0f172a;font-size:.95rem">💳 ${c.nome}</div>
+          <div style="font-size:.74rem;color:#6b7280;margin-top:2px">${c.banco||''}${c.final?' ····'+c.final:''}${inativo?' · inativo':''}</div></div>
+        <div style="display:flex;gap:4px">
+          <button onclick="event.stopPropagation();CC_abrirModalCartao('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Editar">✏️</button>
+          <button onclick="event.stopPropagation();CC_excluirCartao('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Excluir">🗑️</button>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <div style="height:7px;background:#f1f5f9;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct>85?'#ef4444':(c.cor||'#7c3aed')}"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:.73rem;color:#6b7280;margin-top:5px">
+          <span>Usado ${fmt(usado)}</span><span>Disp. <b style="color:${disp>=0?'#16a34a':'#ef4444'}">${fmt(disp)}</b></span></div>
+        <div style="font-size:.7rem;color:#9ca3af;margin-top:3px">Limite ${fmt(c.limite||0)} · fecha dia ${c.diaFechamento} · vence dia ${c.diaVencimento}</div>
+      </div>
+    </div>`;
+  }).join('')||'<div style="color:#9ca3af;font-size:.85rem;grid-column:1/-1">Nenhum cartão. Clique em <b>➕ Novo cartão</b>.</div>';
+}
+function CC_renderFaturas(){
+  const wrap=document.getElementById('ccFaturasWrap');if(!wrap)return;
+  if(!CC_selecionado||!CC_CARTOES[CC_selecionado]){wrap.innerHTML='';return;}
+  const cid=CC_selecionado;const c=CC_CARTOES[cid];const fat=CC_faturasDoCartao(cid);
+  const keys=Object.keys(fat).sort((a,b)=>{const A=fat[a],B=fat[b];return A.ano!==B.ano?A.ano-B.ano:A.mes-B.mes;});
+  // fatura aberta = a de menor data de fechamento que ainda não fechou
+  const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10,hoje=new Date();let aberturaKey=null,melhorFd=null;
+  keys.forEach(k=>{const o=fat[k];let cm=(venc<=fech)?CC_addMonths(o.ano,o.mes,-1):{ano:o.ano,mes:o.mes};const fd=new Date(cm.ano,cm.mes,fech,23,59,59);if(fd>=hoje&&(!melhorFd||fd<melhorFd)){melhorFd=fd;aberturaKey=k;}});
+  let html=`<h3 style="font-size:.95rem;font-weight:700;color:#334155;margin:0 0 10px">Faturas — ${c.nome}</h3>`;
+  if(!keys.length){html+='<div style="color:#9ca3af;font-size:.85rem">Nenhuma compra lançada ainda. Clique em <b>➕ Nova compra</b>.</div>';wrap.innerHTML=html;return;}
+  html+=keys.map(k=>{
+    const o=fat[k];const st=CC_statusFatura(cid,k,o,aberturaKey);const gerada=CC_isFaturaGerada(cid,k);const paga=st.k==='paga';
+    const podeGerar=(st.k==='fechada'||st.k==='vencida')&&!gerada;
+    return `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${st.cor};border-radius:10px;padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div><span style="font-weight:700;color:#0f172a">${k}</span> <span style="font-size:.72rem;font-weight:700;background:${st.bg};color:${st.cor};padding:2px 8px;border-radius:20px;margin-left:6px">${st.label}</span>
+          <div style="font-size:.73rem;color:#6b7280;margin-top:3px">Vence dia ${c.diaVencimento} · ${o.items.length} parcela(s)</div></div>
+        <div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;color:#0f172a">${fmt(o.total)}</div>
+          ${podeGerar?`<button class="btn btn-purple" style="padding:5px 10px;font-size:.76rem;margin-top:4px" onclick="CC_gerarContaPagar('${cid}','${k}')">📄 Gerar conta a pagar</button>`:''}
+          ${gerada&&!paga?'<div style="font-size:.7rem;color:#1e40af;margin-top:3px">Conta a pagar criada</div>':''}
+          ${paga?'<div style="font-size:.7rem;color:#16a34a;margin-top:3px">Fatura quitada</div>':''}</div>
+      </div>
+      <div style="margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px;display:flex;flex-direction:column;gap:4px">
+        ${o.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  wrap.innerHTML=html;
+}
+function CC_selecionar(id){CC_selecionado=id;CC_render();}
+
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
@@ -4283,6 +4612,7 @@ function dispensarLembreteBackup(){
 init();
 CAT_inicializar();
 BC_inicializar();
+CC_inicializar();
 </script>
 <script src="js/banco.js?v=7"></script>
 </body>
