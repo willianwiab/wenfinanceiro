@@ -776,6 +776,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-periodo',this)">🗓 Por Período</button>
     <button class="sub-pagar" onclick="showSubP('p-contas',this)">📋 Contas</button>
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
+    <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
 </div>
@@ -1175,6 +1176,15 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="pSemanaWrap"></div>
   </div>
 
+  <!-- p-competencia (Fase 4) -->
+  <div class="page" id="page-p-competencia">
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📅 Competência × Caixa</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Competência = a que mês a despesa se refere. Caixa = mês em que o dinheiro realmente saiu (data do pagamento). Ex.: energia de junho paga em julho aparece na competência JUN e no caixa JUL.</p>
+    </div>
+    <div id="compTabela" style="overflow-x:auto"></div>
+  </div>
+
   <!-- p-historico -->
   <div class="page" id="page-p-historico">
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
@@ -1547,6 +1557,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="form-group"><label>Valor (R$)</label><input type="number" id="pFValor" placeholder="0,00" step="0.01"/></div>
       <div class="form-group"><label>Status</label><select id="pFStatus"><option value="PENDENTE">🟡 Pendente</option><option value="PAGO">✅ Pago</option></select></div>
     </div>
+    <div class="form-group"><label>📅 Competência <span style="font-weight:400;color:#9ca3af">(a que mês a despesa se refere)</span></label><select id="pFCompetencia"><option value="">— mês do lançamento —</option></select></div>
     <div class="form-group"><label>Observação</label><input type="text" id="pFObs" placeholder="Ex: NO EMAIL WEN PRODUTORA"/></div>
     <div class="form-group"><label>Código de Barras / Acesso</label><textarea id="pFCod" rows="2" placeholder="Código de barras ou login/senha"></textarea></div>
     <div class="form-row">
@@ -1945,6 +1956,10 @@ if (SIMULACAO_LOCAL){
     {id:'p3',nome:'Freela edição',valor:1200,valorPago:0,dia:20,mes:'JUL/2026',categoria:'servicos',fixa:false,status:'PENDENTE',cod:'',obs:''},
   ];
   seedFV('meses','JUL%2F2026',{mes:'JUL/2026',contas:P_SEED_JUL});
+  // Cenário competência≠caixa (Fase 4): energia de JUNHO, paga em JULHO
+  seedFV('meses','JUN%2F2026',{mes:'JUN/2026',contas:[
+    {id:'pj1',nome:'Energia (junho)',valor:500,valorPago:500,dia:10,mes:'JUN/2026',categoria:'consumo',fixa:true,status:'PAGO',cod:'',obs:'',dataPagamento:'2026-07-15'}
+  ]});
 
   // Uma conta bancária fictícia (coleção nova `contas_bancarias`)
   seedFV('contas_bancarias','bmock1',{banco:'Nubank',nome:'Conta principal WEN',tipo:'digital',agencia:'0001',conta:'12345-6',cor:'#8b5cf6',saldoInicial:15000,principal:true,status:'ativa',criadoEm:new Date(2026,6,1).toISOString()});
@@ -2083,6 +2098,7 @@ function renderSubPageP(id){
   if(id==='p-historico')renderHistoricoP();
   if(id==='p-periodo')renderPeriodoSelectsP();
   if(id==='p-categorias'){CAT_renderGerenciar();renderCatMesFiltroP();renderCategoriasP();}
+  if(id==='p-competencia')COMP_render();
 }
 
 function atualizarHeaderContexto(){
@@ -3946,6 +3962,63 @@ function CF_renderAux(tipo){
   }).join('')||`<div style="color:#9ca3af;font-size:.8rem">Nenhum ${tipo==='centro'?'centro de custo':'projeto'} ainda.</div>`;
 }
 
+// ══════════════════════════════════════════════════════
+// FASE 4 — COMPETÊNCIA (módulo COMP_)
+// Competência = a que mês a despesa se refere (r.competencia, default = bucket do mês).
+// Caixa = mês em que o dinheiro saiu (mês da dataPagamento; fallback: bucket).
+// Aditivo: campos opcionais; sem competência gravada, tudo funciona como antes.
+// ══════════════════════════════════════════════════════
+function COMP_mesDeData(iso){
+  if(!iso)return null;
+  const d=new Date(iso.length<=10?iso+'T12:00:00':iso);
+  if(isNaN(d.getTime()))return null;
+  return MESES_ABREV[d.getMonth()]+'/'+d.getFullYear();
+}
+function COMP_competenciaDe(r,bucket){return r.competencia||bucket;}
+function COMP_sortMes(a,b){const[ma,ya]=a.split('/');const[mb,yb]=b.split('/');if(ya!==yb)return parseInt(ya)-parseInt(yb);return(MESES_IDX[ma]??0)-(MESES_IDX[mb]??0);}
+function COMP_popularSelectCompetencia(sel){
+  const el=document.getElementById('pFCompetencia');if(!el)return;
+  el.innerHTML='<option value="">— mês do lançamento —</option>'+P_getMesesOrdenados().map(m=>`<option value="${m}">${m}</option>`).join('');
+  el.value=sel||'';
+}
+function COMP_render(){
+  const el=document.getElementById('compTabela');if(!el)return;
+  const comp={},caixa={};
+  Object.keys(P_meses||{}).forEach(bucket=>{(P_meses[bucket]||[]).forEach(r=>{
+    const c=COMP_competenciaDe(r,bucket);comp[c]=(comp[c]||0)+(Number(r.valor)||0);
+    if(Number(r.valorPago)>0){
+      const km=COMP_mesDeData(r.dataPagamento)||bucket;
+      const val=(typeof BC_debitoLancamento==='function')?BC_debitoLancamento(r):(Number(r.valorPago)||0);
+      caixa[km]=(caixa[km]||0)+val;
+    }
+  });});
+  const meses=[...new Set([...Object.keys(comp),...Object.keys(caixa)])].sort(COMP_sortMes);
+  if(!meses.length){el.innerHTML='<div style="color:#9ca3af;font-size:.85rem">Sem lançamentos ainda.</div>';return;}
+  let tc=0,tx=0;
+  const linhas=meses.map(m=>{const c=comp[m]||0,x=caixa[m]||0;tc+=c;tx+=x;const dif=c-x;
+    return `<tr style="border-top:1px solid #eef2f7">
+      <td style="padding:9px 12px;font-weight:700;color:#0f172a">${m}</td>
+      <td style="padding:9px 12px;text-align:right">${fmt(c)}</td>
+      <td style="padding:9px 12px;text-align:right">${fmt(x)}</td>
+      <td style="padding:9px 12px;text-align:right;color:${dif>0?'#b45309':(dif<0?'#15803d':'#94a3b8')}">${dif>0?'+':''}${fmt(dif)}</td>
+    </tr>`;}).join('');
+  el.innerHTML=`<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:.86rem">
+    <thead><tr style="background:#f8fafc;color:#6b7280;font-size:.75rem;text-transform:uppercase;letter-spacing:.03em">
+      <th style="padding:10px 12px;text-align:left">Mês</th>
+      <th style="padding:10px 12px;text-align:right">📅 Competência</th>
+      <th style="padding:10px 12px;text-align:right">🏦 Caixa (pago)</th>
+      <th style="padding:10px 12px;text-align:right">Δ comp − caixa</th>
+    </tr></thead>
+    <tbody>${linhas}</tbody>
+    <tfoot><tr style="border-top:2px solid #e5e7eb;background:#f8fafc;font-weight:800">
+      <td style="padding:10px 12px">Total</td>
+      <td style="padding:10px 12px;text-align:right">${fmt(tc)}</td>
+      <td style="padding:10px 12px;text-align:right">${fmt(tx)}</td>
+      <td style="padding:10px 12px;text-align:right">${fmt(tc-tx)}</td>
+    </tr></tfoot></table>
+    <p style="font-size:.75rem;color:#9ca3af;margin-top:8px">Δ positivo = competência maior que o caixa (despesa reconhecida mas ainda não paga no mês). Pagamentos sem data caem no mês de origem do lançamento.</p>`;
+}
+
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
@@ -4234,8 +4307,8 @@ function abrirModalP(id=null){
   document.getElementById('pMesesGrupo').style.display=id?'none':'block';
   if(id){
     const mes=P_editandoMes||P_mesAtual;const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id))||Object.values(P_meses).flat().find(x=>String(x.id)===String(id));if(!r){toast('⚠️ Conta não encontrada.');return;}
-    document.getElementById('pFNome').value=r.nome;document.getElementById('pFDia').value=r.dia||'';document.getElementById('pFValor').value=r.valor;document.getElementById('pFStatus').value=r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE';document.getElementById('pFObs').value=r.obs||'';document.getElementById('pFCod').value=r.cod||'';document.getElementById('pFFixa').checked=!!r.fixa;document.getElementById('pFCategoria').value=r.categoria||'';previewCategoriaP();
-  }else{['pFNome','pFDia','pFValor','pFObs','pFCod'].forEach(x=>document.getElementById(x).value='');document.getElementById('pFStatus').value='PENDENTE';document.getElementById('pFFixa').checked=false;document.getElementById('pFCategoria').value='';previewCategoriaP();renderMesesCheckP();}
+    document.getElementById('pFNome').value=r.nome;document.getElementById('pFDia').value=r.dia||'';document.getElementById('pFValor').value=r.valor;document.getElementById('pFStatus').value=r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE';document.getElementById('pFObs').value=r.obs||'';document.getElementById('pFCod').value=r.cod||'';document.getElementById('pFFixa').checked=!!r.fixa;document.getElementById('pFCategoria').value=r.categoria||'';previewCategoriaP();COMP_popularSelectCompetencia(r.competencia||'');
+  }else{['pFNome','pFDia','pFValor','pFObs','pFCod'].forEach(x=>document.getElementById(x).value='');document.getElementById('pFStatus').value='PENDENTE';document.getElementById('pFFixa').checked=false;document.getElementById('pFCategoria').value='';previewCategoriaP();COMP_popularSelectCompetencia('');renderMesesCheckP();}
   document.getElementById('pModalBg').classList.add('open');
 }
 function fecharModalP(){document.getElementById('pModalBg').classList.remove('open');P_editandoMes=null;}
@@ -4243,21 +4316,27 @@ function fecharModalP(){document.getElementById('pModalBg').classList.remove('op
 function salvarContaP(){
   const nome=document.getElementById('pFNome').value.trim();if(!nome){toast('Informe a descrição.','#ef4444');return;}
   const novoValor=parseFloat(document.getElementById('pFValor').value)||0;const novaFixa=document.getElementById('pFFixa').checked;const novaCategoria=document.getElementById('pFCategoria').value||'';
+  const compSel=document.getElementById('pFCompetencia').value; // '' = usa o mês do bucket
   const base={nome,dia:parseInt(document.getElementById('pFDia').value)||null,valor:novoValor,status:document.getElementById('pFStatus').value,obs:document.getElementById('pFObs').value.trim(),cod:document.getElementById('pFCod').value.trim(),valorPago:document.getElementById('pFStatus').value==='PAGO'?novoValor:0,fixa:novaFixa,categoria:novaCategoria};
+  if(compSel)base.competencia=compSel; // só grava se escolhido explicitamente
   if(P_editandoId){
     const mes=P_editandoMes||P_mesAtual;const original=(P_meses[mes]||[]).find(r=>String(r.id)===String(P_editandoId))||Object.values(P_meses).flat().find(r=>String(r.id)===String(P_editandoId));
+    if(!compSel&&original&&original.competencia)delete base.competencia; // limpou o override → volta pro mês do bucket (não reintroduz o antigo via merge)
     const algumaMudanca=original&&(original.valor!==novoValor||original.fixa!==novaFixa||original.dia!==(parseInt(document.getElementById('pFDia').value)||null));
     const futuros=P_getMesesFuturos();fecharModalP();
+    // preserva campos das Fases 1/2/4 (contaBancariaId, dataPagamento, juros/multa/desconto, faturaCartao, dataCriacao) que não estão no formulário
+    const mesclado={...original,...base,competencia:base.competencia,id:P_editandoId};if(base.competencia===undefined)delete mesclado.competencia;
     if(algumaMudanca&&futuros.length>0){
-      P_pendingEdit={conta:{...base,id:P_editandoId},nomeOriginal:original.nome,mes};
+      P_pendingEdit={conta:mesclado,nomeOriginal:original.nome,mes};
       let mudancas=[];if(original.valor!==novoValor)mudancas.push(`Valor: <b>${fmt(original.valor)}</b> → <b>${fmt(novoValor)}</b>`);
       document.getElementById('pConfirmInfo').innerHTML=`<b>${nome}</b><br>${mudancas.join('<br>')||'Dados atualizados'}`;
       document.querySelectorAll('.prop-opcao').forEach((el,i)=>{el.classList.toggle('selected',i===0);el.querySelector('input').checked=i===0;});
       document.getElementById('pConfirmBg').classList.add('open');
-    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1)P_meses[mes][idx]={...base,id:original.id};P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
+    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1)P_meses[mes][idx]=mesclado;P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
   }else{
     const sel=[...document.querySelectorAll('#pMesesCheck input:checked')].map(i=>i.value);if(!sel.length){toast('Selecione ao menos um mês.','#ef4444');return;}
-    sel.forEach(m=>{if(!P_meses[m])P_meses[m]=[];P_meses[m].push({...base,id:gerarId()});});fecharModalP();P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Adicionada em '+sel.length+' mês(es)!');
+    const agora=new Date().toISOString();
+    sel.forEach(m=>{if(!P_meses[m])P_meses[m]=[];P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});});fecharModalP();P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Adicionada em '+sel.length+' mês(es)!');
   }
 }
 
