@@ -3953,6 +3953,7 @@ async function CC_inicializar(){
   const [cards,lancs]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC)]);
   Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);
   Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);
+  CC_sincronizarTodas(); // projeta as faturas futuras no Pagar automaticamente
   if(mainAtivo==='cartoes')CC_render();
   if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
 }
@@ -4006,6 +4007,24 @@ function CC_gerarContaPagar(cid,key){
   CC_render();if(typeof renderSubPageP==='function'&&mainAtivo==='pagar')renderSubPageP(subPAtivo);
   toast('✅ Conta a pagar gerada em '+key+' ('+fmt(fat.total)+')');
 }
+// AUTOMÁTICO: projeta TODAS as faturas do cartão como lançamentos agregados no Pagar.
+// Cria as faltantes, recalcula o valor das NÃO pagas, remove órfãs não pagas (compra excluída/editada).
+// Não mexe em fatura já PAGA. Anti-duplicidade por faturaCartao{cartaoId,mes}.
+function CC_sincronizarFaturasPagar(cid){
+  const c=CC_CARTOES[cid];if(!c)return 0;
+  const fats=CC_faturasDoCartao(cid);const venc=+c.diaVencimento||10;let mudou=0;
+  Object.keys(fats).forEach(key=>{
+    const novoValor=Math.round(fats[key].total*100)/100;const ex=CC_faturaLanc(cid,key);
+    if(ex){ if(String(ex.r.status).toUpperCase()!=='PAGO'&&ex.r.valor!==novoValor){ex.r.valor=novoValor;mudou++;} }
+    else{ if(!P_meses[key])P_meses[key]=[];
+      P_meses[key].push({id:gerarId(),nome:'💳 Fatura '+c.nome+' · '+key,valor:novoValor,valorPago:0,dia:venc,mes:key,categoria:'cartoes',fixa:false,status:'PENDENTE',cod:'',obs:'Fatura do cartão (agregada, automática)',faturaCartao:{cartaoId:cid,mes:key},competencia:key,dataCriacao:new Date().toISOString()});mudou++; }
+  });
+  // remove faturas não pagas que ficaram sem itens
+  Object.keys(P_meses||{}).forEach(mes=>{const antes=(P_meses[mes]||[]).length;P_meses[mes]=(P_meses[mes]||[]).filter(r=>!(r.faturaCartao&&r.faturaCartao.cartaoId===cid&&!fats[r.faturaCartao.mes]&&String(r.status).toUpperCase()!=='PAGO'));if((P_meses[mes]||[]).length!==antes)mudou++;});
+  if(mudou)P_salvarStorage();
+  return mudou;
+}
+function CC_sincronizarTodas(){let t=0;Object.keys(CC_CARTOES).forEach(cid=>t+=CC_sincronizarFaturasPagar(cid));if(t&&mainAtivo==='pagar'&&typeof renderSubPageP==='function')renderSubPageP(subPAtivo);return t;}
 
 // ── Status de fatura (relativo a hoje) ──
 function CC_statusFatura(cid,key,fatObj,aberturaKey){
@@ -4060,6 +4079,7 @@ async function CC_salvarCartao(){
   };
   const id=CC_editandoCartaoId||('c'+Date.now()+Math.floor(Math.random()*9999));
   CC_CARTOES[id]=dados;await CC_fbSalvar(CC_COL_CARD,id,dados);
+  CC_sincronizarFaturasPagar(id); // fechamento/vencimento podem ter mudado as faturas
   if(!CC_selecionado)CC_selecionado=id;
   CC_fecharModalCartao();CC_render();toast('✅ Cartão salvo!');
 }
@@ -4104,11 +4124,15 @@ async function CC_salvarCompra(){
   };
   const id='l'+Date.now()+Math.floor(Math.random()*9999);
   CC_LANCS[id]=dados;await CC_fbSalvar(CC_COL_LANC,id,dados);
+  CC_sincronizarFaturasPagar(cartaoId); // projeta/atualiza as faturas no Pagar
   CC_selecionado=cartaoId;CC_fecharModalCompra();CC_render();toast('✅ Compra lançada!');
 }
 async function CC_excluirCompra(id){
   if(!confirm('Excluir esta compra? As parcelas dela somem das faturas.'))return;
-  delete CC_LANCS[id];await CC_fbExcluir(CC_COL_LANC,id);CC_render();toast('🗑️ Compra removida.','#6b7280');
+  const cartaoId=(CC_LANCS[id]||{}).cartaoId;
+  delete CC_LANCS[id];await CC_fbExcluir(CC_COL_LANC,id);
+  if(cartaoId)CC_sincronizarFaturasPagar(cartaoId); // recalcula faturas (remove órfãs não pagas)
+  CC_render();toast('🗑️ Compra removida.','#6b7280');
 }
 
 // ── Render ──
@@ -4158,9 +4182,7 @@ function CC_renderFaturas(){
         <div><span style="font-weight:700;color:#0f172a">${k}</span> <span style="font-size:.72rem;font-weight:700;background:${st.bg};color:${st.cor};padding:2px 8px;border-radius:20px;margin-left:6px">${st.label}</span>
           <div style="font-size:.73rem;color:#6b7280;margin-top:3px">Vence dia ${c.diaVencimento} · ${o.items.length} parcela(s)</div></div>
         <div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;color:#0f172a">${fmt(o.total)}</div>
-          ${podeGerar?`<button class="btn btn-purple" style="padding:5px 10px;font-size:.76rem;margin-top:4px" onclick="CC_gerarContaPagar('${cid}','${k}')">📄 Gerar conta a pagar</button>`:''}
-          ${gerada&&!paga?'<div style="font-size:.7rem;color:#1e40af;margin-top:3px">Conta a pagar criada</div>':''}
-          ${paga?'<div style="font-size:.7rem;color:#16a34a;margin-top:3px">Fatura quitada</div>':''}</div>
+          ${paga?'<div style="font-size:.7rem;color:#16a34a;margin-top:3px">✅ Fatura quitada</div>':'<div style="font-size:.7rem;color:#1e40af;margin-top:3px">📄 No Contas a Pagar (automático)</div>'}</div>
       </div>
       <div style="margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px;display:flex;flex-direction:column;gap:4px">
         ${o.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')}
@@ -4958,6 +4980,7 @@ function IMP_importar(){
       const id='l'+Date.now()+Math.floor(Math.random()*99999);
       const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:'',responsavel:'',obs:'Importado da fatura',importId:impId,criadoEm:new Date().toISOString()};
       CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);n++;});
+    if(n>0)CC_sincronizarFaturasPagar(alvo); // projeta as faturas das compras importadas no Pagar
     toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
     IMP_fechar();if(mainAtivo==='cartoes')CC_render();
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
