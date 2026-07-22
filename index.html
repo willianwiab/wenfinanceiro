@@ -779,6 +779,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
     <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
+    <button class="sub-pagar" onclick="showSubP('p-rateio',this)">🧮 Rateio</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
 </div>
@@ -1185,6 +1186,21 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Competência = a que mês a despesa se refere. Caixa = mês em que o dinheiro realmente saiu (data do pagamento). Ex.: energia de junho paga em julho aparece na competência JUN e no caixa JUL.</p>
     </div>
     <div id="compTabela" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- p-rateio (Fase 8) -->
+  <div class="page" id="page-p-rateio">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div>
+        <h3 style="font-size:1rem;font-weight:700;color:#0f172a">🧮 Rateio do mês</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Divida uma despesa entre partes (por valor ou %). O rateio é opcional e não muda o valor da conta.</p>
+      </div>
+      <button class="btn btn-purple" onclick="RT_abrirModal()">➕ Ratear despesa</button>
+    </div>
+    <div class="cards-p" id="rtCards"></div>
+    <div id="rtPorParte" style="margin-top:16px"></div>
+    <h4 style="font-size:.9rem;font-weight:700;color:#334155;margin:22px 0 10px">Despesas rateadas</h4>
+    <div id="rtLista" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
   <!-- p-fixas (Fase 5) -->
@@ -1885,6 +1901,26 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal ratear despesa (Fase 8) -->
+<div class="modal-bg" id="rtModalBg">
+  <div class="modal" style="max-width:480px">
+    <h2>🧮 Ratear despesa</h2>
+    <div class="form-group"><label>Despesa</label><select id="rtFLanc" onchange="RT_aoTrocarLanc()"></select></div>
+    <div id="rtFTotal" style="font-size:.85rem;color:#6b7280;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn btn-outline-b" style="width:auto;padding:5px 10px;font-size:.78rem" onclick="RT_addLinha()">➕ Parte</button>
+      <button class="btn btn-outline-b" style="width:auto;padding:5px 10px;font-size:.78rem" onclick="RT_dividirIgual()">⚖️ Dividir igual</button>
+    </div>
+    <div id="rtLinhas" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div id="rtSoma" style="font-size:.82rem;margin-top:8px;font-weight:600"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="RT_fecharModal()">Cancelar</button>
+      <button class="btn btn-outline-b" onclick="RT_limparRateio()" style="color:#ef4444">Remover rateio</button>
+      <button class="btn btn-purple" onclick="RT_salvar()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal conta fixa (Fase 5) -->
 <div class="modal-bg" id="fxModalBg">
   <div class="modal" style="max-width:460px">
@@ -2268,6 +2304,7 @@ function renderSubPageP(id){
   if(id==='p-competencia')COMP_render();
   if(id==='p-vencimentos')VENC_render();
   if(id==='p-fixas')FX_render();
+  if(id==='p-rateio')RT_render();
 }
 
 function atualizarHeaderContexto(){
@@ -4254,6 +4291,86 @@ function COMP_render(){
       <td style="padding:10px 12px;text-align:right">${fmt(tc-tx)}</td>
     </tr></tfoot></table>
     <p style="font-size:.75rem;color:#9ca3af;margin-top:8px">Δ positivo = competência maior que o caixa (despesa reconhecida mas ainda não paga no mês). Pagamentos sem data caem no mês de origem do lançamento.</p>`;
+}
+
+// ══════════════════════════════════════════════════════
+// FASE 8 — RATEIO (módulo RT_)
+// Divide uma despesa do Pagar entre partes (por valor). Campo rateio[] opcional
+// no lançamento; aditivo, não muda o valor da conta nem quebra quem não tem rateio.
+// ══════════════════════════════════════════════════════
+let RT_lancRef=null;
+function RT_lancsDoMes(){const mref=mesAtualReal();return (P_meses[mref]||[]).map(r=>({id:r.id,nome:r.nome,valor:r.valor,mes:mref}));}
+function RT_getLanc(){if(!RT_lancRef)return null;return (P_meses[RT_lancRef.mes]||[]).find(r=>String(r.id)===String(RT_lancRef.id))||null;}
+function RT_abrirModal(lancId){
+  const lancs=RT_lancsDoMes();
+  if(!lancs.length){toast('Nenhuma despesa no mês atual pra ratear.','#f59e0b');return;}
+  const sel=document.getElementById('rtFLanc');
+  sel.innerHTML=lancs.map(l=>`<option value="${l.id}">${l.nome} · ${fmt(l.valor)}</option>`).join('');
+  sel.value=lancId||lancs[0].id;
+  RT_lancRef={mes:mesAtualReal(),id:sel.value};
+  RT_carregarLinhas();
+  document.getElementById('rtModalBg').classList.add('open');
+}
+function RT_fecharModal(){document.getElementById('rtModalBg').classList.remove('open');RT_lancRef=null;}
+function RT_aoTrocarLanc(){RT_lancRef={mes:mesAtualReal(),id:document.getElementById('rtFLanc').value};RT_carregarLinhas();}
+function RT_carregarLinhas(){
+  const r=RT_getLanc();document.getElementById('rtLinhas').innerHTML='';
+  document.getElementById('rtFTotal').innerHTML=r?`Valor total da despesa: <b>${fmt(r.valor)}</b>`:'';
+  if(r&&Array.isArray(r.rateio)&&r.rateio.length)r.rateio.forEach(x=>RT_addLinha(x.parte,x.valor));
+  else{RT_addLinha('','');RT_addLinha('','');}
+  RT_atualizarSoma();
+}
+function RT_addLinha(parte,valor){
+  const div=document.createElement('div');div.className='rt-linha';div.style.cssText='display:flex;gap:6px;align-items:center';
+  div.innerHTML=`<input class="rt-parte" placeholder="Parte (ex: Estúdio A, Cliente X)" value="${(parte||'').replace(/"/g,'&quot;')}" style="flex:1;border:1px solid #e5e7eb;border-radius:7px;padding:7px 10px;font-size:.85rem;outline:none"/>
+    <input class="rt-valor" type="number" step="0.01" placeholder="0,00" value="${valor!==''&&valor!=null?valor:''}" oninput="RT_atualizarSoma()" style="width:110px;border:1px solid #e5e7eb;border-radius:7px;padding:7px 10px;font-size:.85rem;outline:none"/>
+    <button onclick="this.parentElement.remove();RT_atualizarSoma()" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.6">✕</button>`;
+  document.getElementById('rtLinhas').appendChild(div);
+}
+function RT_lerLinhas(){return [...document.querySelectorAll('#rtLinhas .rt-linha')].map(el=>({parte:el.querySelector('.rt-parte').value.trim(),valor:parseFloat(el.querySelector('.rt-valor').value)||0})).filter(x=>x.parte||x.valor);}
+function RT_dividirIgual(){
+  const r=RT_getLanc();if(!r)return;let rows=[...document.querySelectorAll('#rtLinhas .rt-linha')];
+  if(rows.length<2){RT_addLinha('','');rows=[...document.querySelectorAll('#rtLinhas .rt-linha')];}
+  const v=Math.floor((Number(r.valor)/rows.length)*100)/100;let resto=Math.round((Number(r.valor)-v*rows.length)*100)/100;
+  rows.forEach((el,i)=>{el.querySelector('.rt-valor').value=(v+(i===0?resto:0)).toFixed(2);});
+  RT_atualizarSoma();
+}
+function RT_atualizarSoma(){
+  const r=RT_getLanc();const linhas=RT_lerLinhas();const soma=linhas.reduce((a,x)=>a+(Number(x.valor)||0),0);
+  const el=document.getElementById('rtSoma');if(!r){el.textContent='';return;}
+  const dif=Math.round((Number(r.valor)-soma)*100)/100;
+  el.innerHTML=`Somado: ${fmt(soma)} de ${fmt(r.valor)} · ${Math.abs(dif)<0.005?'<span style="color:#16a34a">✅ bate certo</span>':`<span style="color:#b45309">falta ${fmt(dif)}</span>`}`;
+}
+async function RT_salvar(){
+  const r=RT_getLanc();if(!r){RT_fecharModal();return;}
+  const linhas=RT_lerLinhas().filter(x=>x.parte&&x.valor>0);
+  if(!linhas.length){toast('Adicione ao menos uma parte com valor.','#ef4444');return;}
+  r.rateio=linhas;P_salvarStorage();RT_fecharModal();RT_render();
+  if(mainAtivo==='pagar'&&subPAtivo!=='p-rateio')renderSubPageP(subPAtivo);
+  toast('✅ Rateio salvo!');
+}
+async function RT_limparRateio(){const r=RT_getLanc();if(!r)return;delete r.rateio;P_salvarStorage();RT_fecharModal();RT_render();toast('Rateio removido.','#6b7280');}
+function RT_removerDe(mes,id){const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(!r)return;if(!confirm('Remover o rateio desta despesa?'))return;delete r.rateio;P_salvarStorage();RT_render();toast('Rateio removido.','#6b7280');}
+function RT_render(){
+  const mref=mesAtualReal();const data=P_meses[mref]||[];
+  const rateados=data.filter(r=>Array.isArray(r.rateio)&&r.rateio.length);
+  const totalMes=data.reduce((a,r)=>a+(Number(r.valor)||0),0);
+  const totalRateado=rateados.reduce((a,r)=>a+r.rateio.reduce((s,x)=>s+(Number(x.valor)||0),0),0);
+  const porParte={};rateados.forEach(r=>r.rateio.forEach(x=>{const p=x.parte||'(sem nome)';porParte[p]=(porParte[p]||0)+(Number(x.valor)||0);}));
+  const cards=document.getElementById('rtCards');
+  if(cards)cards.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #7c3aed"><label>🧮 Total rateado — ${mref}</label><div class="val">${fmt(totalRateado)}</div><div class="val-sub">${rateados.length} despesa(s)</div></div>
+    <div class="card-p" style="border-left:4px solid #94a3b8"><label>Sem rateio</label><div class="val">${fmt(totalMes-rateados.reduce((a,r)=>a+(Number(r.valor)||0),0))}</div><div class="val-sub">do total ${fmt(totalMes)}</div></div>
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>Partes distintas</label><div class="val">${Object.keys(porParte).length}</div><div class="val-sub">no mês</div></div>`;
+  const pp=document.getElementById('rtPorParte');
+  const partes=Object.keys(porParte).sort((a,b)=>porParte[b]-porParte[a]);
+  if(pp)pp.innerHTML=partes.length?`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px"><h4 style="font-size:.85rem;font-weight:700;color:#334155;margin-bottom:8px">Por parte</h4>${partes.map(p=>`<div style="display:flex;justify-content:space-between;font-size:.86rem;padding:6px 0;border-bottom:1px solid #eef2f7"><span>${p}</span><b>${fmt(porParte[p])}</b> <span style="color:#9ca3af;font-size:.75rem">(${Math.round(porParte[p]/totalRateado*100)||0}%)</span></div>`).join('')}</div>`:'<div style="color:#9ca3af;font-size:.85rem">Nenhuma despesa rateada neste mês ainda.</div>';
+  const lista=document.getElementById('rtLista');
+  if(lista)lista.innerHTML=rateados.map(r=>`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700;color:#0f172a">${r.nome} <span style="color:#9ca3af;font-size:.8rem">· ${fmt(r.valor)}</span></div>
+      <div style="display:flex;gap:2px"><button onclick="RT_abrirModal('${r.id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Editar rateio">✏️</button><button onclick="RT_removerDe('${mref}','${r.id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Remover rateio">🗑️</button></div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${r.rateio.map(x=>`<span style="font-size:.75rem;background:#f1f5f9;border-radius:20px;padding:2px 9px">${x.parte}: <b>${fmt(x.valor)}</b></span>`).join('')}</div>
+  </div>`).join('')||'<div style="color:#9ca3af;font-size:.85rem">Nenhuma despesa rateada. Clique em <b>➕ Ratear despesa</b>.</div>';
 }
 
 // ══════════════════════════════════════════════════════
