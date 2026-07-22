@@ -793,8 +793,10 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
      FLUXO DE CAIXA
 ════════════════════════════════════════ -->
 <div class="page active" id="page-fluxo">
+  <div id="fcxLembretes" style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px"></div>
   <div id="fcResumoExec"></div>
   <div class="fc-grid" id="fcCards"></div>
+  <div id="fcxPizza"></div>
   <div class="alertas-fc" id="fcAlertas"></div>
   <div class="fc-sec">Receita vs Despesa — Mensal</div>
   <div class="charts1">
@@ -2344,7 +2346,7 @@ function showMain(id,btn){
   if(id==='receber')document.getElementById('subnav-receber')?.classList.add('active');
   if(id==='pagar')document.getElementById('subnav-pagar')?.classList.add('active');
   atualizarHeaderContexto();
-  if(id==='fluxo')renderFluxoCaixa();
+  if(id==='fluxo'){renderFluxoCaixa();FCX_render();}
   if(id==='receber')renderSubPageR(subRAtivo);
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='analise')renderAnalise();
@@ -3693,6 +3695,7 @@ async function BC_inicializar(){
   BC_MOVS=movs; BC_TRANSFS=transfs;
   BC_popularSelectBaixa();
   if(mainAtivo==='contas')BC_renderPainel();
+  if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
 }
 
 // ── Livro-razão ──
@@ -3941,6 +3944,7 @@ async function CC_inicializar(){
   Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);
   Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);
   if(mainAtivo==='cartoes')CC_render();
+  if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
 }
 
 // ── Datas / faturas ──
@@ -5133,6 +5137,89 @@ window.RPT_imprimir=function(){if(!RPT_ultimo){toast('Gere um relatório primeir
   const h=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${RPT_ultimo.titulo}</title><style>body{font-family:'Segoe UI',sans-serif;padding:20px;color:#0f172a}h1{font-size:1.2rem}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{padding:7px 9px;border-bottom:1px solid #ddd;font-size:.9rem;text-align:left}</style></head><body><h1>📈 ${RPT_ultimo.titulo}</h1><div style="color:#666">${RPT_ultimo.periodo} · WEN Produtora</div><table><tr>${RPT_ultimo.colunas.map(c=>`<th>${c}</th>`).join('')}</tr>${RPT_ultimo.linhas.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table></body></html>`;
   try{const w=window.open('','_blank');if(w){w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);}else toast('Permita pop-ups.','#f59e0b');}catch(e){toast('Erro: '+e.message,'#ef4444');}
 };
+
+// ══════════════════════════════════════════════════════
+// DASHBOARD FLUXO — cards do Nossa Semente (módulo FCX_):
+// lembretes (vencimento + gasto acima do normal/Sophia), Vencimentos & atrasos, e donut Rateio geral do mês.
+// Aditivo: injeta em containers próprios (#fcxLembretes/#fcxPizza), não toca renderFluxoCaixa.
+// ══════════════════════════════════════════════════════
+let FCX_pie=null, FCX_dismiss={venc:false,gasto:false};
+function FCX_ddmmaa(d){if(!d)return'';const dt=(d instanceof Date)?d:new Date(d);if(isNaN(dt.getTime()))return'';const p=n=>String(n).padStart(2,'0');return p(dt.getDate())+'/'+p(dt.getMonth()+1)+'/'+String(dt.getFullYear()).slice(2);}
+function FCX_addDias(n){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);return d;}
+// vencimentos (contas + faturas de cartão) com dias e data
+function FCX_coletarVenc(){
+  const arr=[];
+  (typeof VENC_coletar==='function'?VENC_coletar():[]).forEach(p=>arr.push({nome:p.nome,valor:p.saldo,diff:p.diff,due:p.due||FCX_addDias(p.diff)}));
+  (typeof VENC_faturasCartao==='function'?VENC_faturasCartao():[]).forEach(f=>arr.push({nome:'Fatura '+f.cartao+' ('+f.mes+')',valor:f.total,diff:f.diff,due:FCX_addDias(f.diff)}));
+  return arr;
+}
+// despesas do mês por categoria (Pagar sem a fatura-a-pagar + itens da fatura do cartão) — sem duplicar
+function FCX_despesasCat(mref){
+  const acc={};
+  (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const c=r.categoria||'';acc[c]=(acc[c]||0)+(Number(r.valor)||0);});
+  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{const c=it.categoria||'';acc[c]=(acc[c]||0)+(Number(it.valor)||0);});});
+  return acc;
+}
+function FCX_anomalias(){
+  const mref=mesAtualReal();const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
+  for(let i=Math.max(0,idx-3);i<idx;i++)prev.push(ord[i]);
+  const soma={},cnt={};prev.forEach(m=>(P_meses[m]||[]).forEach(r=>{if(!r.categoria)return;soma[r.categoria]=(soma[r.categoria]||0)+(Number(r.valor)||0);cnt[r.categoria]=(cnt[r.categoria]||0)+1;}));
+  const out=[];(P_meses[mref]||[]).forEach(r=>{if(!r.categoria)return;const media=cnt[r.categoria]?soma[r.categoria]/cnt[r.categoria]:0;const v=Number(r.valor)||0;if(media>0&&v>media*2)out.push({valor:v,ci:catInfoP(r.categoria),desc:r.nome,x:v/media});});
+  return out.sort((a,b)=>b.x-a.x).slice(0,6);
+}
+window.FCX_dispensar=function(k){FCX_dismiss[k]=true;FCX_render();};
+function FCX_render(){FCX_renderLembretes();FCX_renderBlocos();}
+function FCX_renderLembretes(){
+  const el=document.getElementById('fcxLembretes');if(!el)return;let html='';
+  const venc=FCX_coletarVenc();const atras=venc.filter(v=>v.diff<0).sort((a,b)=>a.diff-b.diff);
+  if(atras.length&&!FCX_dismiss.venc){
+    html+=`<div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:14px;padding:16px 18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:1rem;color:#9d174d">🔔 Lembrete de vencimento</b><a onclick="FCX_dispensar('venc')" style="color:#be185d;font-size:.82rem;text-decoration:underline;cursor:pointer">agora não</a></div>
+      ${atras.slice(0,6).map(v=>`<div style="font-size:.9rem;color:#374151;margin:3px 0">🔴 <b>${v.nome}</b> — vencida há ${Math.abs(v.diff)} dia(s) · ${fmt(v.valor)}</div>`).join('')}
+      <button class="btn" style="width:auto;margin-top:10px;background:#ec4899;color:#fff" onclick="showMain('pagar',document.querySelectorAll('.nav-main button')[2])">💸 Ver contas a pagar</button>
+    </div>`;
+  }
+  const anom=FCX_anomalias();
+  if(anom.length&&!FCX_dismiss.gasto){
+    html+=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:16px 18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><b style="font-size:1rem;color:#92400e">🚨 Gasto acima do normal</b><span style="display:flex;align-items:center;gap:8px"><span style="font-size:.72rem;font-weight:700;background:#fce7f3;color:#be185d;border-radius:20px;padding:2px 10px">✨ Sophia</span><a onclick="FCX_dispensar('gasto')" style="color:#b45309;font-size:.82rem;text-decoration:underline;cursor:pointer">agora não</a></span></div>
+      <p style="font-size:.84rem;color:#6b7280;margin:0 0 8px">Estes gastos destoaram do padrão. Se já eram esperados, tudo bem — é só um aviso. 🌱</p>
+      ${anom.map(a=>`<div style="font-size:.88rem;color:#374151;margin:4px 0">${a.ci.icon} <b>${fmt(a.valor)}</b> em ${a.ci.label} <span style="color:#9ca3af">— ${a.desc} (~${a.x.toFixed(1)}× o normal)</span></div>`).join('')}
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+function FCX_renderBlocos(){
+  const el=document.getElementById('fcxPizza');if(!el)return;
+  const venc=FCX_coletarVenc();const atras=venc.filter(v=>v.diff<0).sort((a,b)=>a.diff-b.diff);const prox=venc.filter(v=>v.diff>=0&&v.diff<=7).sort((a,b)=>a.diff-b.diff);
+  const soma=a=>a.reduce((s,x)=>s+(x.valor||0),0);
+  let html='';
+  // Vencimentos & atrasos
+  html+=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-top:16px">
+    <b style="font-size:1rem;color:#0f172a">🔔 Vencimentos &amp; atrasos</b>
+    <p style="font-size:.82rem;color:#6b7280;margin:2px 0 12px">Contas a pagar de todos os meses, pelo que ainda falta pagar.</p>`;
+  if(atras.length)html+=`<div style="border:1px solid #fecaca;border-radius:12px;padding:10px 14px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;font-weight:700;color:#b91c1c;margin-bottom:6px"><span>🔴 Vencidas</span><span>${fmt(soma(atras))}</span></div>
+    ${atras.map(v=>`<div style="display:flex;justify-content:space-between;font-size:.88rem;padding:4px 0"><span>${v.nome}<br><span style="font-size:.74rem;color:#ef4444">${Math.abs(v.diff)} dia(s) em atraso · venceu ${FCX_ddmmaa(v.due)}</span></span><b>${fmt(v.valor)}</b></div>`).join('')}</div>`;
+  if(prox.length)html+=`<div style="border:1px solid #fde68a;border-radius:12px;padding:10px 14px">
+    <div style="display:flex;justify-content:space-between;font-weight:700;color:#b45309;margin-bottom:6px"><span>🟠 Vencem em 7 dias</span><span>${fmt(soma(prox))}</span></div>
+    ${prox.map(v=>`<div style="display:flex;justify-content:space-between;font-size:.88rem;padding:4px 0"><span>${v.nome}<br><span style="font-size:.74rem;color:#9ca3af">${v.diff===0?'vence hoje':'em '+v.diff+' dia(s)'} · ${FCX_ddmmaa(v.due)}</span></span><b>${fmt(v.valor)}</b></div>`).join('')}</div>`;
+  if(!atras.length&&!prox.length)html+='<div style="color:#16a34a;font-size:.86rem">✅ Nada vencido nem vencendo nos próximos 7 dias.</div>';
+  html+=`</div>`;
+  // Rateio geral do mês (donut)
+  const mref=mesAtualReal();const acc=FCX_despesasCat(mref);
+  const arr=Object.entries(acc).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);const tot=arr.reduce((a,x)=>a+x[1],0);
+  html+=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-top:16px">
+    <b style="font-size:1rem;color:#0f172a">🧩 Rateio geral do mês</b>
+    <p style="font-size:.82rem;color:#6b7280;margin:2px 0 12px">Todas as despesas do mês por categoria (contas a pagar + itens da fatura, sem duplicar).</p>`;
+  if(!arr.length)html+='<div style="color:#9ca3af;font-size:.86rem">Sem despesas no mês.</div>';
+  else html+=`<div style="height:240px;margin-bottom:12px"><canvas id="fcxPieCanvas"></canvas></div>
+    ${arr.map(([slug,v])=>{const ci=catInfoP(slug);return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="width:12px;height:12px;border-radius:3px;background:${ci.color};flex-shrink:0"></span><span style="flex:1;font-size:.88rem;color:#0f172a">${ci.icon} ${ci.label}</span><b style="font-size:.88rem">${fmt(v)}</b><span style="color:#9ca3af;font-size:.78rem;width:44px;text-align:right">${tot?Math.round(v/tot*100):0}%</span></div>`;}).join('')}`;
+  html+=`</div>`;
+  el.innerHTML=html;
+  if(FCX_pie){FCX_pie.destroy();FCX_pie=null;}
+  if(arr.length&&typeof Chart!=='undefined'){const ctx=document.getElementById('fcxPieCanvas');if(ctx)FCX_pie=new Chart(ctx,{type:'doughnut',data:{labels:arr.map(x=>catInfoP(x[0]).label),datasets:[{data:arr.map(x=>x[1]),backgroundColor:arr.map(x=>catInfoP(x[0]).color)}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false}}}});}
+}
 
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
