@@ -4084,7 +4084,7 @@ const CC_LANCS={};   // id -> {cartaoId,descricao,valor,dataCompra,parcelas,cate
 const CC_PARCELAS={}; // id -> {compraId,cartaoId,numero,total,valor,competencia,descricao,categoria,status,criadoEm}
 const CC_REGRAS={}; // id -> {termo, categoria, criadoEm}  (auto-categorização na importação)
 let CC_selecionado=null, CC_editandoCartaoId=null, CC_subaba='cartoes';
-let CC_faturaFiltro='todos', CC_faturaSelKey=null, CC_faturaSelCid=null, CC_faturaPie=null, CC_faturaCatFiltro='todas';
+let CC_faturaFiltro='todos', CC_faturaSelKey=null, CC_faturaSelCid=null, CC_faturaPie=null, CC_faturaCatFiltro='todas', CC_faturaAprender=true;
 
 async function CC_fbSalvar(col,id,dados){
   const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
@@ -4116,7 +4116,10 @@ async function CC_inicializar(){
 // ── Parcelas persistidas (Fase 2) ──
 // Congela a competência (mês de vencimento) na geração. Não recomputa parcela cuja
 // fatura já está PAGA (preserva histórico). Idempotente: só grava o que mudou.
-function CC_competenciaParcela(l,c,k){const base=CC_baseVenc(l.dataCompra,+c.diaFechamento||1,+c.diaVencimento||10);const m=CC_addMonths(base.ano,base.mes,k);return CC_mesKey(m.ano,m.mes);}
+function CC_competenciaParcela(l,c,k){
+  if(l.competenciaInicio){const ma=CC_mesAnoDaKey(l.competenciaInicio);const m=CC_addMonths(ma.ano,ma.mes,k);return CC_mesKey(m.ano,m.mes);}
+  const base=CC_baseVenc(l.dataCompra,+c.diaFechamento||1,+c.diaVencimento||10);const m=CC_addMonths(base.ano,base.mes,k);return CC_mesKey(m.ano,m.mes);
+}
 async function CC_reconciliarParcelasCompra(compraId){
   const l=CC_LANCS[compraId];const c=l?CC_CARTOES[l.cartaoId]:null;
   if(!l||!c){ // compra sumiu → remove parcelas órfãs (menos as de fatura paga)
@@ -4124,16 +4127,18 @@ async function CC_reconciliarParcelasCompra(compraId){
     return;
   }
   const P=Math.max(1,parseInt(l.parcelas)||1);const vp=Math.round((Number(l.valor)/P)*100)/100;
+  const base=Math.max(1,parseInt(l.parcelaBase)||1);      // 1ª parcela desta compra (importada pode começar em X)
+  const total=Math.max(base+P-1,parseInt(l.parcelaTotal)||P); // total do parcelamento (p/ mostrar X/N)
   for(let k=0;k<P;k++){
-    const numero=k+1;const pid=compraId+'_'+numero;const ex=CC_PARCELAS[pid];
+    const numero=base+k;const pid=compraId+'_'+numero;const ex=CC_PARCELAS[pid];
     const congelada=ex&&CC_isFaturaPaga(ex.cartaoId,ex.competencia); // fatura paga → não move
     const competencia=congelada?ex.competencia:CC_competenciaParcela(l,c,k);
-    const dados={compraId,cartaoId:l.cartaoId,numero,total:P,valor:vp,competencia,descricao:l.descricao,categoria:l.categoria||'',status:(ex&&ex.status)||'aberta',criadoEm:(ex&&ex.criadoEm)||new Date().toISOString()};
+    const dados={compraId,cartaoId:l.cartaoId,numero,total,valor:vp,competencia,descricao:l.descricao,categoria:l.categoria||'',status:(ex&&ex.status)||'aberta',criadoEm:(ex&&ex.criadoEm)||new Date().toISOString()};
     const mudou=!ex||['cartaoId','total','valor','competencia','descricao','categoria'].some(f=>ex[f]!==dados[f]);
     CC_PARCELAS[pid]=dados;if(mudou)await CC_fbSalvar(CC_COL_PARC,pid,dados);
   }
-  // remove parcelas extras (compra teve nº de parcelas reduzido), exceto fatura paga
-  for(const[pid,p]of Object.entries(CC_PARCELAS)){if(p.compraId===compraId&&p.numero>P&&!CC_isFaturaPaga(p.cartaoId,p.competencia)){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}}
+  // remove parcelas fora da faixa atual [base..base+P-1] (nº de parcelas mudou), exceto fatura paga
+  for(const[pid,p]of Object.entries(CC_PARCELAS)){if(p.compraId===compraId&&(p.numero<base||p.numero>base+P-1)&&!CC_isFaturaPaga(p.cartaoId,p.competencia)){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}}
 }
 async function CC_reconciliarParcelasTodas(){for(const id of Object.keys(CC_LANCS))await CC_reconciliarParcelasCompra(id);}
 async function CC_reconciliarParcelasCartao(cid){for(const[id,l]of Object.entries(CC_LANCS))if(l.cartaoId===cid)await CC_reconciliarParcelasCompra(id);}
@@ -4153,6 +4158,8 @@ function CC_baseVenc(dataCompra,diaFech,diaVenc){
 // Mapa mesVencimento -> {items,total,ano,mes}
 // Fase 2: lê as PARCELAS PERSISTIDAS (fallback deriva on-the-fly se ainda não migrou).
 function CC_mesAnoDaKey(key){const p=(key||'').split('/');return{mes:MESES_IDX[p[0]]??0,ano:parseInt(p[1])||new Date().getFullYear()};}
+function CC_ymToKey(ym){const p=(ym||'').split('-');if(p.length<2)return null;const mi=(parseInt(p[1])||1)-1;return (MESES_ABREV[mi]||'JAN')+'/'+p[0];}
+function IMP_faturaMesKey(mv){const el=document.getElementById('ccImpMes');if(el&&el.value){const k=CC_ymToKey(el.value);if(k)return k;}const c=CC_CARTOES[IMP_ctx.getAlvo()]||{};const b=CC_baseVenc(mv.data,+c.diaFechamento||1,+c.diaVencimento||10);return CC_mesKey(b.ano,b.mes);}
 function CC_faturasDoCartao(cid){
   const c=CC_CARTOES[cid];if(!c)return{};
   const parc=Object.values(CC_PARCELAS).filter(p=>p.cartaoId===cid);
@@ -4518,8 +4525,11 @@ function CC_renderFaturas(){
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><span style="font-size:.66rem;color:#6b7280;letter-spacing:.06em">TOTAL</span><span style="font-size:1.05rem;font-weight:800;color:#0f172a">${fmt(sel.total)}</span></div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px">${chips}</div>
-      <div style="margin-top:12px;border-top:1px dashed #e5e7eb;padding-top:10px;display:flex;flex-direction:column;gap:6px">
-        ${itensF.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.8rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>'}
+      <label style="display:flex;align-items:center;gap:7px;font-size:.78rem;color:#334155;margin-top:12px;cursor:pointer"><input type="checkbox" ${CC_faturaAprender?'checked':''} onchange="CC_faturaAprender=this.checked" style="width:15px;height:15px;accent-color:#16a34a"> Ao trocar categoria, aprender p/ próximas faturas deste estabelecimento</label>
+      <div style="margin-top:10px;border-top:1px dashed #e5e7eb;padding-top:10px;display:flex;flex-direction:column;gap:7px">
+        ${itensF.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem;color:#374151"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span>
+          <select onchange="CC_recatItemFatura('${it.lancId}',this.value)" onclick="event.stopPropagation()" style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 7px;font-size:.76rem;max-width:150px;background:#fff">${IMP_catOptions(it.categoria||'')}</select>
+          <b style="flex-shrink:0;white-space:nowrap">${fmt(it.valor)}</b></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>'}
       </div>
     </div>`;
   }
@@ -4532,6 +4542,21 @@ function CC_renderFaturas(){
   }
 }
 function CC_selFatura(cid,key){CC_faturaSelCid=cid;CC_faturaSelKey=key;CC_faturaCatFiltro='todas';CC_renderFaturas();}
+// recategoriza um item da fatura (atualiza a compra + parcelas) e, se marcado, aprende uma regra
+async function CC_recatItemFatura(compraId,novaCat){
+  const l=CC_LANCS[compraId];if(!l)return;
+  l.categoria=novaCat||'';await CC_fbSalvar(CC_COL_LANC,compraId,l);
+  await CC_reconciliarParcelasCompra(compraId);CC_sincronizarFaturasPagar(l.cartaoId);
+  if(CC_faturaAprender&&novaCat){
+    const termo=(l.descricao||'').replace(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/,'').replace(/\s+/g,' ').trim();
+    if(termo.length>=3&&!Object.values(CC_REGRAS).some(r=>IMP_normDesc(r.termo)===IMP_normDesc(termo))){
+      const id='rg'+Date.now()+Math.floor(Math.random()*9999);const dados={termo,categoria:novaCat,criadoEm:new Date().toISOString()};
+      CC_REGRAS[id]=dados;CC_fbSalvar(CC_COL_REGRA,id,dados);toast('🏷️ Aprendido: "'+termo+'" → '+catInfoP(novaCat).label);
+    }
+  }
+  if(typeof AUD_log==='function')AUD_log('editar','cartao_lancamentos',l.descricao,'Recategorizado p/ '+catInfoP(novaCat).label,null,null);
+  CC_renderFaturas();
+}
 function CC_selecionar(id){CC_selecionado=id;CC_faturaFiltro=id;CC_faturaSelCid=null;CC_faturaSelKey=null;CC_renderCartoes();CC_aba('faturas');}
 
 // ══════════════════════════════════════════════════════
@@ -5449,12 +5474,26 @@ async function IMP_importar(){
   if(IMP_tipo==='cartao'){
     if(!alvo||!CC_CARTOES[alvo]){toast('Escolha o cartão.','#ef4444');return;}
     const novos=[];
-    itens.forEach(mv=>{const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
-      if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
-      const parcTxt=mv.parcela?(' · parcela '+mv.parcela.atual+'/'+mv.parcela.total):'';
-      const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
-      const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:mv.categoria||'',responsavel:'',obs:'Importado da fatura'+parcTxt,importId:impId,criadoEm:new Date().toISOString()};
-      CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;});
+    itens.forEach(mv=>{
+      if(mv.parcela&&mv.parcela.total>1){
+        // PARCELAMENTO: projeta a parcela atual + as futuras (X..N). Idempotente por descrição+total (reimportar não duplica).
+        const N=mv.parcela.total,X=Math.min(mv.parcela.atual||1,N);
+        // remove o "X/N" da descrição pra chave do grupo ser estável entre os meses (senão duplica)
+        const descBase=(mv.descricao||'Compra').replace(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/,'').replace(/\s+/g,' ').trim()||'Compra';
+        const norm=IMP_normDesc(descBase).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50);
+        const pid='pg_'+alvo+'_'+norm+'_'+N;
+        // âncora na 1ª parcela = mês da fatura − (X−1). Assim importar 5/6 em JUL ou 6/6 em AGO cai no MESMO início.
+        const ma=CC_mesAnoDaKey(IMP_faturaMesKey(mv));const ini=CC_addMonths(ma.ano,ma.mes,-(X-1));const iniKey=CC_mesKey(ini.ano,ini.mes);
+        const dados={cartaoId:alvo,descricao:descBase,valor:Math.abs(Number(mv.valor)||0)*N,dataCompra:mv.data||BC_hoje(),parcelas:N,parcelaBase:1,parcelaTotal:N,competenciaInicio:iniKey,categoria:mv.categoria||'',responsavel:'',obs:'Importado — parcelamento '+N+'x (parcelas futuras entram como prévia)',importParcelamento:true,criadoEm:(CC_LANCS[pid]&&CC_LANCS[pid].criadoEm)||new Date().toISOString()};
+        const novo=!CC_LANCS[pid];CC_LANCS[pid]=dados;CC_fbSalvar(CC_COL_LANC,pid,dados);novos.push(pid);if(novo)n++;
+      }else{
+        const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
+        if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
+        const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
+        const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:mv.categoria||'',responsavel:'',obs:'Importado da fatura',importId:impId,criadoEm:new Date().toISOString()};
+        CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;
+      }
+    });
     for(const id of novos)await CC_reconciliarParcelasCompra(id);
     if(n>0)CC_sincronizarFaturasPagar(alvo);
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
