@@ -1359,7 +1359,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Onde o dinheiro da WEN está — saldo, livre e previsão. Livro-razão por conta.</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-outline-b" onclick="IMP_abrir('conta')">📥 Trazer extrato</button>
+        <button class="btn btn-outline-b" onclick="CONC_irImportar()">📥 Trazer extrato</button>
         <button class="btn btn-outline-b" onclick="BC_novaTransf()">🔄 Transferência</button>
         <button class="btn btn-purple" onclick="BC_abrirModal()">➕ Nova conta</button>
       </div>
@@ -1423,6 +1423,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
           <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CC_impArquivo(this,'ofx')"/></label>
         </div>
+        <div id="ccImpAviso" style="font-size:.82rem;margin-top:12px"></div>
+        <div id="ccImpReview" style="margin-top:12px"></div>
       </div>
     </div>
 
@@ -4376,8 +4378,8 @@ function CC_impArquivo(input,modo){
   const cid=document.getElementById('ccImpCartao').value;
   if(!cid||!CC_CARTOES[cid]){toast('Escolha o cartão primeiro.','#f59e0b');input.value='';return;}
   if(!input.files||!input.files.length)return;
-  IMP_abrir('cartao');
-  const alvo=document.getElementById('impAlvo');if(alvo)alvo.value=cid;
+  // revisão INLINE na própria aba (sem modal)
+  IMP_iniciarInline('cartao',()=>document.getElementById('ccImpCartao').value,'ccImpAviso','ccImpReview',function(){const r=document.getElementById('ccImpReview');if(r)r.innerHTML='';CC_render();CC_aba('faturas');});
   if(modo==='ofx')IMP_ofxArquivo(input);else IMP_gemini(input);
 }
 function CC_mesIdx(key){const p=(key||'').split('/');return parseInt(p[1])*12+(MESES_IDX[p[0]]??0);}
@@ -5223,10 +5225,19 @@ function AUD_render(){
 // Importa movimentações pra conta escolhida (livro-razão), anti-duplicidade por id.
 // ══════════════════════════════════════════════════════
 let IMP_previa=[], IMP_tipo='conta';
-function IMP_setAviso(html){const el=document.getElementById('impAviso');if(el)el.innerHTML=html;}
+// contexto de renderização: modal (padrão) ou inline (na própria tela)
+let IMP_ctx={aviso:'impAviso',preview:'impPreview',getAlvo:()=>document.getElementById('impAlvo')?.value||'',onDone:null};
+function IMP_setAviso(html){const el=document.getElementById(IMP_ctx.aviso);if(el)el.innerHTML=html;}
+// prepara uma importação INLINE (sem modal): renderiza a revisão dentro dos containers dados
+function IMP_iniciarInline(tipo,getAlvo,avisoEl,previewEl,onDone){
+  IMP_tipo=tipo;IMP_previa=[];
+  IMP_ctx={aviso:avisoEl,preview:previewEl,getAlvo,onDone};
+  const pv=document.getElementById(previewEl);if(pv)pv.innerHTML='';
+}
 // Abre o modal de importação. tipo='conta' (extrato→movimentação) ou 'cartao' (fatura→compras).
 function IMP_abrir(tipo,alvoId){
   IMP_tipo=tipo;IMP_previa=[];
+  IMP_ctx={aviso:'impAviso',preview:'impPreview',getAlvo:()=>document.getElementById('impAlvo')?.value||'',onDone:null};
   document.getElementById('impTitulo').textContent=tipo==='cartao'?'📥 Importar fatura':'📥 Trazer extrato';
   document.getElementById('impAlvoLabel').textContent=tipo==='cartao'?'Cartão':'Conta de destino';
   const sel=document.getElementById('impAlvo');
@@ -5294,14 +5305,14 @@ const IMP_CONF={alta:{c:'#15803d',bg:'#dcfce7',l:'✓ alta'},media:{c:'#b45309',
 function IMP_catOptions(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
 function IMP_dupConta(mv,contaId){const chave='mov_ofx_'+contaId+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);return (typeof BC_MOVS!=='undefined')&&BC_MOVS.some(x=>x.id===chave);}
 function IMP_renderPreview(){
-  const p=document.getElementById('impPreview');if(!p)return;
+  const p=document.getElementById(IMP_ctx.preview);if(!p)return;
   if(!IMP_previa.length){p.innerHTML='';return;}
   IMP_renderPreviewRico(p);
 }
 // Revisão rica (cartão E conta): sugere categoria, detecta duplicado, confiança, edita valor/categoria
 function IMP_renderPreviewRico(p){
   const isCartao=(IMP_tipo==='cartao');
-  const alvo=document.getElementById('impAlvo').value;
+  const alvo=IMP_ctx.getAlvo();
   IMP_previa.forEach(mv=>{if(mv._enriq)return;mv._enriq=true;if(mv.categoria==null||mv.categoria==='')mv.categoria=IMP_sugerirCat(mv.descricao);mv.parcela=isCartao?IMP_parcelaInfo(mv.descricao):'';mv.conf=IMP_confianca(mv);});
   const total=IMP_previa.reduce((a,mv)=>a+Math.abs(Number(mv.valor)||0),0);
   let dups=0;
@@ -5328,7 +5339,7 @@ function IMP_renderPreviewRico(p){
   p.innerHTML=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div style="font-size:.82rem;color:#334155"><b>${IMP_previa.length}</b> lançamento(s) · total <b>${fmt(total)}</b>${dups?` · <span style="color:#b91c1c">${dups} possível(is) duplicado(s)</span>`:''}</div>
-      <label style="font-size:.78rem;color:#6b7280;display:flex;align-items:center;gap:5px"><input type="checkbox" checked onchange="document.querySelectorAll('#impPreview .imp-chk').forEach(c=>c.checked=this.checked)"/> marcar todos</label>
+      <label style="font-size:.78rem;color:#6b7280;display:flex;align-items:center;gap:5px"><input type="checkbox" checked onchange="document.querySelectorAll('#${IMP_ctx.preview} .imp-chk').forEach(c=>c.checked=this.checked)"/> marcar todos</label>
     </div>
     ${cards}
     <div style="text-align:right;margin-top:12px"><button class="btn btn-purple" style="width:auto" onclick="IMP_importar()">✅ Importar selecionadas ${isCartao?'pro cartão':'pra conta'}</button></div>
@@ -5336,8 +5347,9 @@ function IMP_renderPreviewRico(p){
   </div>`;
 }
 async function IMP_importar(){
-  const alvo=document.getElementById('impAlvo').value;
-  const sel=[...document.querySelectorAll('#impPreview .imp-chk:checked')].map(c=>parseInt(c.dataset.i));
+  const alvo=IMP_ctx.getAlvo();
+  const q=cl=>document.querySelector('#'+IMP_ctx.preview+' '+cl);
+  const sel=[...document.querySelectorAll('#'+IMP_ctx.preview+' .imp-chk:checked')].map(c=>parseInt(c.dataset.i));
   if(!sel.length){toast('Selecione ao menos uma transação.','#ef4444');return;}
   let n=0,dup=0;
   if(IMP_tipo==='cartao'){
@@ -5345,37 +5357,36 @@ async function IMP_importar(){
     const novos=[];
     sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
       if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
-      // usa categoria/valor revisados pelo usuário na tela de revisão
-      const catEl=document.querySelector('#impPreview .imp-cat[data-i="'+i+'"]');
-      const valEl=document.querySelector('#impPreview .imp-val[data-i="'+i+'"]');
+      const catEl=q('.imp-cat[data-i="'+i+'"]');const valEl=q('.imp-val[data-i="'+i+'"]');
       const categoria=catEl?catEl.value:(mv.categoria||'');
       const valor=valEl?Math.abs(parseFloat(valEl.value)||0):Math.abs(Number(mv.valor)||0);
       const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
       const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor,dataCompra:mv.data||BC_hoje(),parcelas:1,categoria,responsavel:'',obs:'Importado da fatura'+(mv.parcela?(' · parcela '+mv.parcela):''),importId:impId,criadoEm:new Date().toISOString()};
       CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;});
-    for(const id of novos)await CC_reconciliarParcelasCompra(id); // gera as parcelas persistidas das importadas
-    if(n>0)CC_sincronizarFaturasPagar(alvo); // projeta as faturas das compras importadas no Pagar
-    toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
-    IMP_fechar();if(mainAtivo==='cartoes')CC_render();
+    for(const id of novos)await CC_reconciliarParcelasCompra(id);
+    if(n>0)CC_sincronizarFaturasPagar(alvo);
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
+    IMP_previa=[];
+    if(IMP_ctx.onDone)IMP_ctx.onDone(n,dup,0);else{IMP_fechar();if(mainAtivo==='cartoes')CC_render();}
+    toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
   }else{
     if(!alvo||!BC_CONTAS[alvo]){toast('Escolha a conta de destino.','#ef4444');return;}
     let saidas=0;
     sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
       if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
-      const catEl=document.querySelector('#impPreview .imp-cat[data-i="'+i+'"]');
-      const valEl=document.querySelector('#impPreview .imp-val[data-i="'+i+'"]');
+      const catEl=q('.imp-cat[data-i="'+i+'"]');const valEl=q('.imp-val[data-i="'+i+'"]');
       const categoria=catEl?(catEl.value||null):null;
       const valor=valEl?Math.abs(parseFloat(valEl.value)||0):Math.abs(Number(mv.valor)||0);
       const mov={id:chave,contaId:alvo,tipo:mv.tipo,valor,data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
       BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;if(mv.tipo==='saida')saidas++;});
-    IMP_fechar();if(mainAtivo==='contas')BC_renderPainel();
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[alvo].nome,n+' movimentação(ões) importada(s)',null,null);
-    if(saidas>0){ // leva direto pra conciliar os débitos com as contas a pagar
-      const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);
-      const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);
-      toast(`✅ ${n} importada(s). Agora concilie ${saidas} débito(s) com suas contas a pagar. 🔗`);
-    } else toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
+    IMP_previa=[];
+    if(IMP_ctx.onDone)IMP_ctx.onDone(n,dup,saidas);
+    else{
+      IMP_fechar();if(mainAtivo==='contas')BC_renderPainel();
+      if(saidas>0){const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);}
+    }
+    toast(saidas>0?`✅ ${n} importada(s). Concilie ${saidas} débito(s) abaixo. 🔗`:`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
   }
 }
 
@@ -6767,7 +6778,23 @@ function CONC_render(){
   const resumo=document.getElementById('concResumo');const lista=document.getElementById('concLista');if(!lista)return;
   const abertos=CONC_extratoAberto();
   const links=Object.values(CONC_LINKS).filter(x=>x&&x.tipo==='pagar'&&x.movId);
-  if(resumo)resumo.innerHTML=`<div class="cards-p">
+  const contasIds=(typeof BC_contasAtivas==='function'?BC_contasAtivas():Object.keys(BC_CONTAS));
+  const optContas=contasIds.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join('')||'<option value="">— cadastre uma conta —</option>';
+  if(resumo)resumo.innerHTML=`
+  <div class="card-cc" style="margin-bottom:14px">
+    <h3 style="font-size:1rem;font-weight:700;color:#0f172a;margin:0">📥 Trazer extrato</h3>
+    <p style="font-size:.82rem;color:#6b7280;margin:4px 0 10px">Importe o extrato (OFX, PDF ou foto) e concilie aqui mesmo. A Sophia lê, categoriza e você revisa — nada é lançado sem sua confirmação.</p>
+    <div class="form-group" style="max-width:340px"><label>Conta do extrato</label><select id="concImpConta">${optContas}</select></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px">
+      <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
+      <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens do extrato</span><input type="file" accept="image/*" multiple style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
+      <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
+      <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CONC_impArquivo(this,'ofx')"/></label>
+    </div>
+    <div id="concImpAviso" style="font-size:.82rem;margin-top:12px"></div>
+    <div id="concImpReview" style="margin-top:12px"></div>
+  </div>
+  <div class="cards-p">
     <div class="card-p" style="border-left:4px solid #ef4444"><label>🧾 Débitos do extrato a conciliar</label><div class="val">${abertos.length}</div><div class="val-sub">${fmt(abertos.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0))}</div></div>
     <div class="card-p" style="border-left:4px solid #16a34a"><label>🔗 Conciliados</label><div class="val">${links.length}</div></div>
   </div>`;
@@ -6815,6 +6842,14 @@ async function CONC_conciliar(movId){
   if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato ('+(BC_dataBR(mov.data)||'')+')',null,r.valorPago);
   CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
   toast('🔗 Conciliado: '+r.nome+' ↔ extrato.');
+}
+function CONC_irImportar(){const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);}
+function CONC_impArquivo(input,modo){
+  const cid=document.getElementById('concImpConta').value;
+  if(!cid||!BC_CONTAS[cid]){toast('Escolha a conta do extrato.','#f59e0b');input.value='';return;}
+  if(!input.files||!input.files.length)return;
+  IMP_iniciarInline('conta',()=>document.getElementById('concImpConta').value,'concImpAviso','concImpReview',function(){CONC_render();if(subPAtivo==='p-contas')renderTabelaP();});
+  if(modo==='ofx')IMP_ofxArquivo(input);else IMP_gemini(input);
 }
 async function CONC_desfazer(chave){
   const x=CONC_LINKS[chave];if(!x)return;
