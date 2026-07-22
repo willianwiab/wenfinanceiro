@@ -749,7 +749,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
-  <button onclick="showMain('banco',this)">📥 Importar</button>
   <button onclick="showMain('sophia',this)">✨ Sophia</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
@@ -1313,6 +1312,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Onde o dinheiro da WEN está — saldo, livre e previsão. Livro-razão por conta.</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline-b" onclick="IMP_abrir('conta')">📥 Trazer extrato</button>
         <button class="btn btn-outline-b" onclick="BC_novaTransf()">🔄 Transferência</button>
         <button class="btn btn-purple" onclick="BC_abrirModal()">➕ Nova conta</button>
       </div>
@@ -1338,6 +1338,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Limites, compras parceladas e faturas automáticas. Feche a fatura pra gerar a conta a pagar.</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline-b" onclick="IMP_abrir('cartao')">📥 Importar fatura</button>
         <button class="btn btn-outline-b" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
         <button class="btn btn-purple" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
       </div>
@@ -1397,23 +1398,20 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ════════════════════════════════════════
      TRAZER OS DADOS — Importar (OFX + foto/PDF via Gemini) — Fase 7
 ════════════════════════════════════════ -->
-<div class="page" id="page-banco">
-  <div class="container">
-    <div style="margin-bottom:14px">
-      <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">📥 Trazer os dados</h2>
-      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Importe o extrato por <b>OFX</b> (arquivo do banco) ou, com a chave Gemini, por <b>foto/PDF</b> da fatura ou extrato. As movimentações entram na conta escolhida (livro-razão), sem duplicar.</p>
-    </div>
-    <div class="form-row" style="max-width:520px">
-      <div class="form-group"><label>Conta de destino</label><select id="impConta"></select></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
+<!-- Modal de importação (extrato→conta / fatura→cartão) — Fase 7 -->
+<div class="modal-bg" id="impModalBg">
+  <div class="modal" style="max-width:580px">
+    <h2 id="impTitulo">📥 Trazer extrato</h2>
+    <div class="form-group"><label id="impAlvoLabel">Conta de destino</label><select id="impAlvo"></select></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
       <label class="btn btn-blue" style="cursor:pointer;width:auto">⬆ Arquivo OFX (.ofx)<input type="file" accept=".ofx,.qfx" style="display:none" onchange="IMP_ofxArquivo(this)"/></label>
-      <label class="btn btn-outline-b" id="impFotoBtn" style="cursor:pointer;width:auto">📸 Foto / PDF da fatura<input type="file" accept="image/*,.pdf" style="display:none" onchange="IMP_gemini(this)"/></label>
+      <label class="btn btn-outline-b" id="impFotoBtn" style="cursor:pointer;width:auto">📸 Foto / PDF<input type="file" accept="image/*,.pdf" style="display:none" onchange="IMP_gemini(this)"/></label>
     </div>
-    <div id="impAviso" style="font-size:.82rem;margin-bottom:12px"></div>
-    <div id="impPreview"></div>
+    <div id="impAviso" style="font-size:.82rem;margin-bottom:10px"></div>
+    <div id="impPreview" style="max-height:48vh;overflow-y:auto"></div>
+    <div class="modal-actions"><button class="btn btn-outline-b" onclick="IMP_fechar()">Fechar</button></div>
   </div>
-</div><!-- /page-banco -->
+</div>
 
 <!-- ════════════════════════════════════════
      SOPHIA — assistente financeira (Fase 10)
@@ -2302,7 +2300,6 @@ function showMain(id,btn){
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes')CC_render();
   if(id==='categorias')CF_render();
-  if(id==='banco')IMP_render();
   if(id==='sophia')SOPHIA_abrir();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();}
 }
@@ -3840,7 +3837,7 @@ function BC_renderPainel(){
 function BC_cardHTML(id){
   const c=BC_CONTAS[id];const cor=c.cor||'#16a34a';const saldo=BC_saldoConta(id);
   const chips=[c.principal?'<span class="bc-chip principal">⭐ Principal</span>':'','<span class="bc-chip">'+(c.titular||'WEN')+'</span>','<span class="bc-chip">'+BC_tipoInfo(c.tipo).label+'</span>',c.arquivada?'<span class="bc-chip">🗄️ Arquivada</span>':''].join('');
-  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
+  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();IMP_abrir('conta','${id}')">📥 Importar extrato</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
   return `<div class="bc-card${c.arquivada?' arquivada':''}" onclick="BC_abrirExtrato('${id}')">
     <div class="bc-faixa" style="background:${cor}"></div>
     <div class="bc-body">
@@ -4816,14 +4813,23 @@ function AUD_render(){
 // FASE 7 — TRAZER OS DADOS (módulo IMP_): OFX (sem IA) + foto/PDF (Gemini)
 // Importa movimentações pra conta escolhida (livro-razão), anti-duplicidade por id.
 // ══════════════════════════════════════════════════════
-let IMP_previa=[];
+let IMP_previa=[], IMP_tipo='conta';
 function IMP_setAviso(html){const el=document.getElementById('impAviso');if(el)el.innerHTML=html;}
-function IMP_render(){
-  const sel=document.getElementById('impConta');if(sel){const ativas=BC_contasAtivas();sel.innerHTML=ativas.length?ativas.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join(''):'<option value="">— cadastre uma conta em 🏦 Contas —</option>';const pr=BC_principal();if(pr)sel.value=pr;}
+// Abre o modal de importação. tipo='conta' (extrato→movimentação) ou 'cartao' (fatura→compras).
+function IMP_abrir(tipo,alvoId){
+  IMP_tipo=tipo;IMP_previa=[];
+  document.getElementById('impTitulo').textContent=tipo==='cartao'?'📥 Importar fatura':'📥 Trazer extrato';
+  document.getElementById('impAlvoLabel').textContent=tipo==='cartao'?'Cartão':'Conta de destino';
+  const sel=document.getElementById('impAlvo');
+  if(tipo==='cartao'){const ids=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');sel.innerHTML=ids.length?ids.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}</option>`).join(''):'<option value="">— cadastre um cartão —</option>';}
+  else{const ids=BC_contasAtivas();sel.innerHTML=ids.length?ids.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join(''):'<option value="">— cadastre uma conta —</option>';}
+  if(alvoId)sel.value=alvoId;else if(tipo==='conta'){const pr=BC_principal();if(pr)sel.value=pr;}
   const btn=document.getElementById('impFotoBtn');if(btn)btn.style.opacity=IA_temChave()?'1':'.55';
   IMP_setAviso(IA_temChave()?'<span style="color:#16a34a">✅ IA ligada — foto/PDF disponível.</span> OFX funciona sempre.':'<span style="color:#9ca3af">📸 Foto/PDF precisa da chave Gemini (Config → Inteligência Artificial). OFX funciona sem chave.</span>');
-  IMP_previa=[];const p=document.getElementById('impPreview');if(p)p.innerHTML='';
+  document.getElementById('impPreview').innerHTML='';
+  document.getElementById('impModalBg').classList.add('open');
 }
+function IMP_fechar(){document.getElementById('impModalBg').classList.remove('open');IMP_previa=[];}
 function IMP_fileB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
 function IMP_fileText(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=rej;r.readAsText(f);});}
 function IMP_parseOFX(text){
@@ -4869,23 +4875,35 @@ function IMP_renderPreview(){
   </tr>`).join('');
   p.innerHTML=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:6px 10px 14px;overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="color:#6b7280;font-size:.72rem;text-transform:uppercase"><th style="padding:8px"><input type="checkbox" checked onchange="document.querySelectorAll('.imp-chk').forEach(c=>c.checked=this.checked)"/></th><th style="padding:8px;text-align:left">Data</th><th style="padding:8px;text-align:left">Descrição</th><th style="padding:8px;text-align:right">Valor</th></tr></thead><tbody>${linhas}</tbody></table>
-    <div style="text-align:right;margin-top:12px"><button class="btn btn-purple" style="width:auto" onclick="IMP_importar()">✅ Importar selecionadas pra conta</button></div>
-    <p style="font-size:.74rem;color:#9ca3af;margin-top:6px">Entra como movimentação na conta escolhida (livro-razão). Reimportar o mesmo arquivo não duplica.</p>
+    <div style="text-align:right;margin-top:12px"><button class="btn btn-purple" style="width:auto" onclick="IMP_importar()">✅ Importar selecionadas ${IMP_tipo==='cartao'?'pro cartão':'pra conta'}</button></div>
+    <p style="font-size:.74rem;color:#9ca3af;margin-top:6px">${IMP_tipo==='cartao'?'Entra como compra no cartão escolhido.':'Entra como movimentação na conta escolhida (livro-razão).'} Reimportar o mesmo arquivo não duplica.</p>
   </div>`;
 }
 function IMP_importar(){
-  const contaId=document.getElementById('impConta').value;
-  if(!contaId||!BC_CONTAS[contaId]){toast('Escolha a conta de destino.','#ef4444');return;}
+  const alvo=document.getElementById('impAlvo').value;
   const sel=[...document.querySelectorAll('#impPreview .imp-chk:checked')].map(c=>parseInt(c.dataset.i));
-  if(!sel.length){toast('Selecione ao menos uma movimentação.','#ef4444');return;}
+  if(!sel.length){toast('Selecione ao menos uma transação.','#ef4444');return;}
   let n=0,dup=0;
-  sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+contaId+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
-    if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
-    const mov={id:chave,contaId,tipo:mv.tipo,valor:Math.abs(Number(mv.valor)||0),data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria:null,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
-    BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;});
-  toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
-  IMP_previa=[];IMP_render();if(mainAtivo==='contas')BC_renderPainel();
-  if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[contaId].nome,n+' movimentação(ões) importada(s)',null,null);
+  if(IMP_tipo==='cartao'){
+    if(!alvo||!CC_CARTOES[alvo]){toast('Escolha o cartão.','#ef4444');return;}
+    sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
+      if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
+      const id='l'+Date.now()+Math.floor(Math.random()*99999);
+      const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:'',responsavel:'',obs:'Importado da fatura',importId:impId,criadoEm:new Date().toISOString()};
+      CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);n++;});
+    toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
+    IMP_fechar();if(mainAtivo==='cartoes')CC_render();
+    if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
+  }else{
+    if(!alvo||!BC_CONTAS[alvo]){toast('Escolha a conta de destino.','#ef4444');return;}
+    sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
+      if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
+      const mov={id:chave,contaId:alvo,tipo:mv.tipo,valor:Math.abs(Number(mv.valor)||0),data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria:null,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
+      BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;});
+    toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
+    IMP_fechar();if(mainAtivo==='contas')BC_renderPainel();
+    if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[alvo].nome,n+' movimentação(ões) importada(s)',null,null);
+  }
 }
 
 // ══════════════════════════════════════════════════════
