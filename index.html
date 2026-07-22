@@ -1457,6 +1457,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="iaKeyStatus" style="margin-top:10px;font-size:.85rem"></div>
   </div>
 
+  <div class="backup-box" style="border:1px solid #bbf7d0;background:#f0fdf4">
+    <h3>💾 Backup geral (roadmap)</h3>
+    <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Backup técnico = tudo, pra restaurar o sistema. Pacote pra IA = resumo limpo do mês pra análise (JSON + HTML executivo). O Contas a Receber entra só como leitura.</p>
+    <div class="backup-actions">
+      <button class="btn btn-green" onclick="BKP_baixarTecnico()">⬇ Backup técnico completo (.json)</button>
+      <button class="btn btn-blue" onclick="BKP_baixarPacoteIA()">🤖 Pacote pra IA (.json)</button>
+      <button class="btn btn-outline-b" onclick="BKP_baixarExecutivoHTML()">📄 Resumo executivo (HTML)</button>
+    </div>
+    <div id="bkpStatus" style="margin-top:10px;font-size:.84rem;color:#6b7280"></div>
+  </div>
+
   <div class="backup-box">
     <h3>☁️ Banco de Dados — Contas a Receber</h3>
     <p style="font-size:.86rem;color:#6b7280;margin-bottom:14px">Dados salvos automaticamente no Firebase (coleção: lancamentos). Ficam em cache local no navegador — cada carregamento de página só busca o que mudou desde a última vez, pra não estourar a cota do Firebase.</p>
@@ -4655,6 +4666,57 @@ async function IA_testarUI(){
     else{const t=await r.text();el.innerHTML=`<span style="color:#ef4444">⚠️ Chave recusada pelo Google (${r.status}). Confira se copiou certo.</span>`;}
   }catch(e){el.innerHTML='<span style="color:#ef4444">⚠️ Erro de rede: '+e.message+'</span>';}
 }
+
+// ══════════════════════════════════════════════════════
+// FASE 11 — BACKUP (módulo BKP_): técnico completo + pacote pra IA + HTML executivo
+// ══════════════════════════════════════════════════════
+function BKP_baixar(nome,conteudo,mime){try{const blob=new Blob([conteudo],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=nome;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},600);}catch(e){toast('Erro no download: '+e.message,'#ef4444');}}
+function BKP_dataTag(){return new Date().toISOString().slice(0,10);}
+function BKP_dadosTecnicos(){
+  return {__meta__:{app:'wen-financeiro',tipo:'backup-tecnico',geradoEm:new Date().toISOString(),versao:'roadmap-v1'},
+    meses:(typeof P_meses!=='undefined'?P_meses:{}), lancamentos_receber:(typeof R_todosOsDados!=='undefined'?R_todosOsDados:[]),
+    contas_financeiras:BC_CONTAS, movimentacoes_contas:BC_MOVS, transferencias_contas:BC_TRANSFS,
+    cartoes:CC_CARTOES, cartao_lancamentos:CC_LANCS, categorias:CATS_P,
+    centros_custo:CF_CENTROS, projetos:CF_PROJETOS, contas_fixas:FX_FIXAS};
+}
+function BKP_baixarTecnico(){BKP_baixar('WEN_backup_tecnico_'+BKP_dataTag()+'.json',JSON.stringify(BKP_dadosTecnicos(),null,1),'application/json');const el=document.getElementById('bkpStatus');if(el)el.textContent='✅ Backup técnico gerado ('+BKP_dataTag()+'). Guarde em local seguro.';}
+function BKP_resumoMes(mref){
+  const R=(R_todosOsDados||[]).filter(r=>r.mes===mref);const P=(P_meses[mref]||[]);
+  const entradas=R.reduce((a,r)=>a+Number(r.valorTotal||0),0);const recebido=R.reduce((a,r)=>a+Number(r.valorReserva||0),0);const aReceber=R.reduce((a,r)=>a+Number(r.saldo||0),0);
+  const saidas=P.reduce((a,r)=>a+(Number(r.valor)||0),0);const pago=P.filter(r=>String(r.status).toUpperCase()==='PAGO').reduce((a,r)=>a+(Number(r.valor)||0),0);
+  const hoje=getDia();const atrasadas=P.filter(r=>String(r.status).toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).reduce((a,r)=>a+((Number(r.valor)||0)-(Number(r.valorPago)||0)),0);
+  const porCategoria={};P.forEach(r=>{if(r.categoria){const ci=catInfoP(r.categoria);porCategoria[ci.label]=(porCategoria[ci.label]||0)+(Number(r.valor)||0);}});
+  const rateioPorParte={};P.forEach(r=>{if(Array.isArray(r.rateio))r.rateio.forEach(x=>{rateioPorParte[x.parte]=(rateioPorParte[x.parte]||0)+(Number(x.valor)||0);});});
+  const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const ant=idx>0?ord[idx-1]:null;const saidasAnt=ant?(P_meses[ant]||[]).reduce((a,r)=>a+(Number(r.valor)||0),0):null;
+  return {periodo:mref,entradas,recebido,aReceber,saidas,pago,aPagar:saidas-pago,atrasadas,
+    custosFixos:(typeof PN_custosFixosMes==='function'?PN_custosFixosMes(mref):0),
+    faturasCartaoAberto:(typeof PN_faturasAberto==='function'?PN_faturasAberto():0),
+    resultado:entradas-saidas,porCategoria,rateioPorParte,
+    comparacaoMesAnterior:{mes:ant,saidas:saidasAnt,variacaoPct:(saidasAnt?Math.round((saidas/saidasAnt-1)*100):null)}};
+}
+function BKP_baixarPacoteIA(){const mref=mesAtualReal();const d={__meta__:{app:'wen-financeiro',tipo:'pacote-ia',geradoEm:new Date().toISOString()},resumo:BKP_resumoMes(mref)};BKP_baixar('WEN_pacote_ia_'+BKP_dataTag()+'.json',JSON.stringify(d,null,1),'application/json');const el=document.getElementById('bkpStatus');if(el)el.textContent='✅ Pacote pra IA gerado ('+mref+').';}
+function BKP_executivoHTML(mref){
+  const r=BKP_resumoMes(mref);
+  const linhaCat=Object.entries(r.porCategoria).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td style="text-align:right">${fmt(v)}</td></tr>`).join('')||'<tr><td colspan=2 style="color:#999">—</td></tr>';
+  const linhaRat=Object.entries(r.rateioPorParte).map(([k,v])=>`<tr><td>${k}</td><td style="text-align:right">${fmt(v)}</td></tr>`).join('')||'<tr><td colspan=2 style="color:#999">sem rateio</td></tr>';
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>WEN — Resumo ${mref}</title><style>body{font-family:'Segoe UI',sans-serif;max-width:760px;margin:24px auto;color:#0f172a;padding:0 16px}h1{background:linear-gradient(135deg,#14532d,#1e3a8a);color:#fff;padding:18px;border-radius:12px;font-size:1.3rem}.g{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.c{border:1px solid #e5e7eb;border-radius:10px;padding:12px;font-size:.82rem;color:#6b7280}.c b{font-size:1.25rem;display:block;color:#0f172a}table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:6px 8px;border-bottom:1px solid #eee;font-size:.9rem}h3{margin-top:20px}</style></head><body>
+  <h1>📊 WEN — Resumo financeiro · ${mref}</h1>
+  <div class="g">
+    <div class="c">💰 Entradas<b>${fmt(r.entradas)}</b>recebido ${fmt(r.recebido)}</div>
+    <div class="c">📤 Saídas<b>${fmt(r.saidas)}</b>pago ${fmt(r.pago)}</div>
+    <div class="c">📥 A receber<b>${fmt(r.aReceber)}</b></div>
+    <div class="c">🔴 A pagar<b>${fmt(r.aPagar)}</b>atrasadas ${fmt(r.atrasadas)}</div>
+    <div class="c">📊 Resultado<b>${fmt(r.resultado)}</b></div>
+    <div class="c">📌 Custos fixos<b>${fmt(r.custosFixos)}</b></div>
+    <div class="c">💳 Faturas cartão<b>${fmt(r.faturasCartaoAberto)}</b>em aberto</div>
+    <div class="c">📈 vs ${r.comparacaoMesAnterior.mes||'—'}<b>${r.comparacaoMesAnterior.variacaoPct!=null?(r.comparacaoMesAnterior.variacaoPct>=0?'+':'')+r.comparacaoMesAnterior.variacaoPct+'%':'—'}</b>nas saídas</div>
+  </div>
+  <h3>Despesas por categoria</h3><table>${linhaCat}</table>
+  <h3>Rateio por parte</h3><table>${linhaRat}</table>
+  <p style="color:#999;font-size:.8rem">Gerado pela WEN Financeiro em ${new Date().toLocaleString('pt-BR')}</p>
+  </body></html>`;
+}
+function BKP_baixarExecutivoHTML(){const mref=mesAtualReal();BKP_baixar('WEN_resumo_'+mref.replace('/','-')+'.html',BKP_executivoHTML(mref),'text/html;charset=utf-8');const el=document.getElementById('bkpStatus');if(el)el.textContent='✅ Resumo executivo gerado ('+mref+').';}
 
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
