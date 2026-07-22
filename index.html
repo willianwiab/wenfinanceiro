@@ -4733,9 +4733,20 @@ function C_migrarFaturasAntigas(){
   }catch(e){}
 }
 
+// Cache local: faturas/parcelamentos/regras sobrevivem ao refresh mesmo com o Firestore fora (quota 429)
+function C_salvarCache(){try{localStorage.setItem('wen_c_dados',JSON.stringify({faturas:C_faturas,parcelamentos:C_parcelamentos,regras:C_regras}));}catch(e){}}
+function C_carregarCache(){try{const c=JSON.parse(localStorage.getItem('wen_c_dados')||'{}');if(Array.isArray(c.faturas))C_faturas=c.faturas;if(Array.isArray(c.parcelamentos))C_parcelamentos=c.parcelamentos;if(Array.isArray(c.regras))C_regras=c.regras;}catch(e){}}
 async function C_carregarTudo(){
-  const [cs,fs,ps,rs]=await Promise.all([BC_fbCarregar(C_COL_CARD),BC_fbCarregar(C_COL_FAT),BC_fbCarregar(C_COL_PARC),BC_fbCarregar(C_COL_REGRA)]);
-  C_cartoes=cs; C_faturas=fs; C_parcelamentos=ps; C_regras=rs; C_carregado=true;
+  C_carregarCache(); // 1) instantâneo, do cache local
+  try{
+    const [cs,fs,ps,rs]=await Promise.all([BC_fbCarregar(C_COL_CARD),BC_fbCarregar(C_COL_FAT),BC_fbCarregar(C_COL_PARC),BC_fbCarregar(C_COL_REGRA)]);
+    if(cs&&cs.length)C_cartoes=cs;
+    // 2) só substitui se a nuvem RESPONDEU com dados; se veio vazia (429/quota), mantém o cache local
+    if(fs&&fs.length)C_faturas=fs;
+    if(ps&&ps.length)C_parcelamentos=ps;
+    if(rs&&rs.length)C_regras=rs;
+  }catch(e){console.warn('C_carregarTudo',e.message);}
+  C_carregado=true; C_salvarCache();
 }
 function C_fbSet(col,id,obj){try{return BC_fbUpsert(col,id,obj);}catch(e){}}
 
@@ -4743,6 +4754,7 @@ function C_fbSet(col,id,obj){try{return BC_fbUpsert(col,id,obj);}catch(e){}}
 async function C_salvarFatura(fatura){
   const i=C_faturas.findIndex(f=>f.id===fatura.id);
   if(i>=0)C_faturas[i]=fatura; else C_faturas.push(fatura);
+  C_salvarCache(); // grava local ANTES da nuvem (sobrevive mesmo se o Firestore recusar)
   await C_fbSet(C_COL_FAT,fatura.id,fatura);
 }
 
@@ -4760,6 +4772,7 @@ function C_projetarParcelamentos(fatura){
     if(ex)Object.assign(ex,dados); else C_parcelamentos.push(dados);
     C_fbSet(C_COL_PARC,gid,dados);
   });
+  C_salvarCache();
 }
 
 // Posta 1 conta agregada IMUTÁVEL da fatura no Pagar (dedup por faturaId; preserva pagamento no reimport)
@@ -4954,6 +4967,7 @@ async function C_mudarCatItem(fitid,novaCat){
   const it=(f.itens||[]).find(x=>x.fitid===fitid); if(!it)return;
   if((it.categoria||'')===novaCat)return;
   it.categoria=novaCat;
+  C_salvarCache();
   await C_fbSet(C_COL_FAT,f.id,f);
   if(it.parcela){const gid=('p_'+f.cartaoId+'_'+C_norm(it.descricao).replace(/[^a-z0-9]+/g,'_')+'_'+it.parcela.total).slice(0,140);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,gid,pex);}}
   C_renderDetalhe();
@@ -4995,8 +5009,7 @@ window.C_importarDaPrevia=async function(){
   }));
   const totalItens=Math.round(itens.reduce((a,x)=>a+x.valor,0)*100)/100;
   const fatura={id:cid+'_'+anoMes,cartaoId:cid,mesFatura:anoMes,totalItens,totalDeclarado:IMP_totalLido||null,fechada:true,itens};
-  await C_confirmarImportacaoDados(fatura);
-  await C_carregarTudo();
+  await C_confirmarImportacaoDados(fatura); // já grava em memória + cache local (não recarrega do Firestore, que pode estar 429)
   IMP_previa=[];IMP_destinoC=false;
   const rr=document.getElementById('cImportResultado');if(rr)rr.innerHTML='';
   const av=document.getElementById('cImpAviso2');if(av)av.innerHTML='';
