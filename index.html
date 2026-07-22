@@ -4118,11 +4118,13 @@ const CC_REGRAS={}; // id -> {termo, categoria, criadoEm}  (auto-categorização
 let CC_selecionado=null, CC_editandoCartaoId=null, CC_subaba='cartoes';
 let CC_faturaFiltro='todos', CC_faturaSelKey=null, CC_faturaSelCid=null, CC_faturaPie=null, CC_faturaCatFiltro='todas', CC_faturaAprender=true;
 
+function CC_salvarCache(){try{localStorage.setItem('wen_cc',JSON.stringify({cartoes:CC_CARTOES,lancs:CC_LANCS,parcelas:CC_PARCELAS,regras:CC_REGRAS}));}catch(e){}}
 async function CC_fbSalvar(col,id,dados){
   const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
-  await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+  try{await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}catch(e){}
+  CC_salvarCache(); // cache local sobrevive ao refresh mesmo se o Firestore falhar
 }
-async function CC_fbExcluir(col,id){ await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'}); }
+async function CC_fbExcluir(col,id){ try{await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}catch(e){} CC_salvarCache(); }
 async function CC_fbCarregar(col){
   const out={};
   try{ let pt=null;
@@ -4135,12 +4137,19 @@ async function CC_fbCarregar(col){
   return out;
 }
 async function CC_inicializar(){
+  // 1) localStorage primeiro (sobrevive ao refresh mesmo sem Firestore)
+  try{const c=JSON.parse(localStorage.getItem('wen_cc')||'{}');
+    if(c.cartoes)Object.assign(CC_CARTOES,c.cartoes);if(c.lancs)Object.assign(CC_LANCS,c.lancs);
+    if(c.parcelas)Object.assign(CC_PARCELAS,c.parcelas);if(c.regras)Object.assign(CC_REGRAS,c.regras);
+  }catch(e){}
+  // 2) Firestore por cima (se tiver dados) — mantém multi-dispositivo
   const [cards,lancs,parc,regras]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC),CC_fbCarregar(CC_COL_PARC),CC_fbCarregar(CC_COL_REGRA)]);
-  Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);
-  Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);
-  Object.keys(CC_PARCELAS).forEach(k=>delete CC_PARCELAS[k]);Object.assign(CC_PARCELAS,parc);
-  Object.keys(CC_REGRAS).forEach(k=>delete CC_REGRAS[k]);Object.assign(CC_REGRAS,regras);
+  if(Object.keys(cards).length){Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);}
+  if(Object.keys(lancs).length){Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);}
+  if(Object.keys(parc).length){Object.keys(CC_PARCELAS).forEach(k=>delete CC_PARCELAS[k]);Object.assign(CC_PARCELAS,parc);}
+  if(Object.keys(regras).length){Object.keys(CC_REGRAS).forEach(k=>delete CC_REGRAS[k]);Object.assign(CC_REGRAS,regras);}
   await CC_reconciliarParcelasTodas(); // gera/atualiza parcelas persistidas das compras (migração idempotente)
+  CC_salvarCache();
   CC_sincronizarTodas(); // projeta as faturas futuras no Pagar automaticamente
   if(mainAtivo==='cartoes')CC_render();
   if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
@@ -5132,14 +5141,18 @@ function IA_getKey(){return (IA_prov==='claude'?IA_claudeKey:IA_gemKey)||'';}
 function IA_temChave(){return !!IA_getKey();}
 function IA_provNome(){return IA_prov==='claude'?'Claude':'Gemini';}
 async function IA_carregarChave(){
+  // 1) localStorage (instantâneo, sobrevive ao refresh mesmo sem Firestore)
+  try{const c=JSON.parse(localStorage.getItem('wen_ia_cfg')||'{}');IA_gemKey=c.geminiKey||'';IA_claudeKey=c.claudeKey||'';IA_prov=c.provedor==='claude'?'claude':'gemini';}catch(e){}
+  // 2) Firestore por cima (se tiver e conseguir ler — mantém multi-dispositivo)
   try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);const j=await res.json();
-    if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields){IA_gemKey=(fromFV(d.fields.geminiKey)||'').trim();IA_claudeKey=(fromFV(d.fields.claudeKey)||'').trim();IA_prov=(fromFV(d.fields.provedor)||'gemini')==='claude'?'claude':'gemini';}}
+    if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields){const g=(fromFV(d.fields.geminiKey)||'').trim(),cl=(fromFV(d.fields.claudeKey)||'').trim(),pv=fromFV(d.fields.provedor);if(g)IA_gemKey=g;if(cl)IA_claudeKey=cl;if(pv)IA_prov=pv==='claude'?'claude':'gemini';}}
   }catch(e){}
   if(IA_prov==='claude'&&!IA_claudeKey&&IA_gemKey)IA_prov='gemini';
   IA_refreshStatus();
 }
 async function IA_persistir(){
-  await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_gemKey),claudeKey:toFV(IA_claudeKey),provedor:toFV(IA_prov)}})});
+  try{localStorage.setItem('wen_ia_cfg',JSON.stringify({geminiKey:IA_gemKey,claudeKey:IA_claudeKey,provedor:IA_prov}));}catch(e){}
+  try{await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_gemKey),claudeKey:toFV(IA_claudeKey),provedor:toFV(IA_prov)}})});}catch(e){}
 }
 function IA_refreshStatus(){
   const provSel=document.getElementById('iaProvSel');if(provSel)provSel.value=IA_prov;
@@ -5343,7 +5356,7 @@ function IMP_stagePaginas(input){const fs=input&&input.files?[...input.files]:[]
 window.IMP_addMais=function(input){IMP_stagePaginas(input);};
 window.IMP_moverPagina=function(i,dir){const j=i+dir;if(j<0||j>=IMP_paginas.length)return;const t=IMP_paginas[i];IMP_paginas[i]=IMP_paginas[j];IMP_paginas[j]=t;IMP_renderPaginas();};
 window.IMP_removerPagina=function(i){IMP_paginas.splice(i,1);if(!IMP_paginas.length){const p=document.getElementById(IMP_ctx.preview);if(p)p.innerHTML='';IMP_setAviso('');return;}IMP_renderPaginas();};
-window.IMP_processarPaginas=function(){if(!IMP_paginas.length)return;IMP_gemini({files:IMP_paginas.slice(),value:''});};
+window.IMP_processarPaginas=function(){if(!IMP_paginas.length){toast('Adicione ao menos uma página.','#f59e0b');return;}if(!IA_temChave()){toast('Conecte a chave da IA em Config → Inteligência Artificial (Claude ou Gemini) pra ler as páginas.','#f59e0b');return;}IMP_gemini({files:IMP_paginas.slice(),value:''});};
 function IMP_renderPaginas(){
   const p=document.getElementById(IMP_ctx.preview);if(!p)return;
   const thumbs=IMP_paginas.map((f,i)=>{let url='';try{url=URL.createObjectURL(f);}catch(e){}
