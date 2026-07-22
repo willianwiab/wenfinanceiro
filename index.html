@@ -4227,7 +4227,10 @@ function CC_baseVenc(dataCompra,diaFech,diaVenc){
 // Fase 2: lê as PARCELAS PERSISTIDAS (fallback deriva on-the-fly se ainda não migrou).
 function CC_mesAnoDaKey(key){const p=(key||'').split('/');return{mes:MESES_IDX[p[0]]??0,ano:parseInt(p[1])||new Date().getFullYear()};}
 function CC_ymToKey(ym){const p=(ym||'').split('-');if(p.length<2)return null;const mi=(parseInt(p[1])||1)-1;return (MESES_ABREV[mi]||'JAN')+'/'+p[0];}
-function IMP_faturaMesKey(mv){const el=document.getElementById('ccImpMes');if(el&&el.value){const k=CC_ymToKey(el.value);if(k)return k;}const c=CC_CARTOES[IMP_ctx.getAlvo()]||{};const b=CC_baseVenc(mv.data,+c.diaFechamento||1,+c.diaVencimento||10);return CC_mesKey(b.ano,b.mes);}
+function IMP_faturaMesKey(mv){const el=document.getElementById('ccImpMes');if(el&&el.value){const k=CC_ymToKey(el.value);if(k)return k;}
+  // TODOS os itens da fatura caem no MÊS ESCOLHIDO — nada de espalhar por data de compra
+  // (o usuário importa a fatura já fechada e diz a que mês ela pertence). Sem o campo, usa o mês atual.
+  const d=new Date();return CC_mesKey(d.getFullYear(),d.getMonth());}
 function CC_faturasDoCartao(cid){
   const c=CC_CARTOES[cid];if(!c)return{};
   const parc=Object.values(CC_PARCELAS).filter(p=>p.cartaoId===cid);
@@ -5368,13 +5371,13 @@ function AUD_render(){
 // FASE 7 — TRAZER OS DADOS (módulo IMP_): OFX (sem IA) + foto/PDF (Gemini)
 // Importa movimentações pra conta escolhida (livro-razão), anti-duplicidade por id.
 // ══════════════════════════════════════════════════════
-let IMP_previa=[], IMP_tipo='conta';
+let IMP_previa=[], IMP_tipo='conta', IMP_totalLido=null; // IMP_totalLido = "Valor total desta fatura" lido pela IA (conferência)
 // contexto de renderização: modal (padrão) ou inline (na própria tela)
 let IMP_ctx={aviso:'impAviso',preview:'impPreview',getAlvo:()=>document.getElementById('impAlvo')?.value||'',onDone:null};
 function IMP_setAviso(html){const el=document.getElementById(IMP_ctx.aviso);if(el)el.innerHTML=html;}
 // prepara uma importação INLINE (sem modal): renderiza a revisão dentro dos containers dados
 function IMP_iniciarInline(tipo,getAlvo,avisoEl,previewEl,onDone){
-  IMP_tipo=tipo;IMP_previa=[];IMP_paginas=[];
+  IMP_tipo=tipo;IMP_previa=[];IMP_paginas=[];IMP_totalLido=null;
   IMP_ctx={aviso:avisoEl,preview:previewEl,getAlvo,onDone};
   const pv=document.getElementById(previewEl);if(pv)pv.innerHTML='';
 }
@@ -5448,10 +5451,12 @@ async function IMP_gemini(input){
     const prompt='Você é a SophIA lendo um documento financeiro brasileiro que pode ter VÁRIAS páginas/imagens — leia TODAS as páginas. '+sinal+'\n'
       +'Extraia TODAS as transações/lançamentos, linha por linha, SEM PULAR NENHUMA e SEM INVENTAR. NÃO inclua linhas de total, subtotal, saldo anterior, limite, pagamento mínimo, encargos informativos ou cabeçalhos.\n'
       +'Para cada transação devolva: data ("YYYY-MM-DD"; se só houver dia/mês, use o ano da fatura), descricao (nome do estabelecimento como aparece, mantendo o "X/Y" da parcela se houver), valor (número), parcela ("X/Y" se for parcelada; senão "").\n'
-      +'Responda SOMENTE JSON, sem texto fora do JSON: {"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
+      +(isCartao?'Devolva também "totalFatura": o número do "Valor total desta fatura" (o valor final a pagar, já com créditos/ajustes descontados) impresso no documento; se não achar, use 0.\n':'')
+      +'Responda SOMENTE JSON, sem texto fora do JSON: {"totalFatura":0,"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
     const imagens=[];for(const f of files){const b64=await IMP_fileB64(f);imagens.push({mime:f.type||'image/jpeg',b64});}
     let txt;try{txt=await IA_gerarConteudo(prompt,imagens,{json:true});}catch(err){IMP_setAviso('⚠️ '+err.message);return;}
     let dados;try{dados=JSON.parse(txt);}catch(e){dados=null;}
+    IMP_totalLido=(dados&&Number(dados.totalFatura))?Math.abs(Number(dados.totalFatura)):null; // total impresso na fatura (p/ conferência)
     let arr=dados&&Array.isArray(dados.itens)?dados.itens:(Array.isArray(dados)?dados:IMP_extrairJSON(txt));
     IMP_previa=(Array.isArray(arr)?arr:[]).map((x,i)=>{
       let v=Number(x.valor)||0;let desc=x.descricao||'Item';
@@ -5578,7 +5583,11 @@ function IMP_renderPreviewRico(p){
       <div class="imp-box ${dupN?'dup':''}"><div class="n">${dupN}</div><div class="l">duplicidades</div></div>
       <div class="imp-box ok"><div class="n">${fmt(total)}</div><div class="l">total identificado</div></div>
     </div>
-    <div class="imp-alerta" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✓ ${incl.length} lançamento(s) somam <b>${fmt(total)}</b>. Confira a soma com o total da ${isCartao?'fatura':'conta'}.</div>
+    ${(isCartao&&IMP_totalLido)?(()=>{const diff=Math.round((total-IMP_totalLido)*100)/100;const bate=Math.abs(diff)<0.01;
+      return bate
+        ? `<div class="imp-alerta" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ Bate exato! Os ${incl.length} itens somam <b>${fmt(total)}</b> = o total da fatura lido pela IA (<b>${fmt(IMP_totalLido)}</b>). Este mês vai fechar certinho.</div>`
+        : `<div class="imp-alerta" style="background:#fef2f2;border-color:#fecaca;color:#991b1b">⚠️ Os itens somam <b>${fmt(total)}</b>, mas a IA leu o total da fatura como <b>${fmt(IMP_totalLido)}</b> — diferença de <b>${fmt(Math.abs(diff))}</b> ${diff<0?'(faltou item)':'(item a mais)'}. A IA pode ter perdido/duplicado uma linha. Confira a lista antes de confirmar pra o mês fechar exato.</div>`;
+      })():`<div class="imp-alerta" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✓ ${incl.length} lançamento(s) somam <b>${fmt(total)}</b>. Confira a soma com o total da ${isCartao?'fatura':'conta'}.</div>`}
     ${parcN?`<div class="imp-alerta" style="background:#fffbeb;border-color:#fde68a;color:#a86b1e">🔒 Esta fatura tem <b>${parcN} parcela(s)</b>. Confira se nenhuma está duplicada antes de confirmar — ao confirmar, elas são reconciliadas com os próximos meses (nunca somam em dobro).</div>`:''}
     <div class="imp-filtros">${chip('todos','Todos',IMP_previa.length)}${chip('pendencias','Pendências',pend)}${chip('duplicidades','Possíveis duplicidades',dupN)}${chip('excluidos','Excluídos',excl)}</div>
     <div style="overflow-x:auto"><table class="r-tab"><thead><tr><th>✓</th><th>Descrição</th><th>Data</th><th>Valor</th><th>Categoria</th><th>Confiança</th></tr></thead>
