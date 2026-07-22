@@ -1401,6 +1401,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ════════════════════════════════════════
      TRAZER OS DADOS — Importar (OFX + foto/PDF via Gemini) — Fase 7
 ════════════════════════════════════════ -->
+<!-- Modal "Ver todos os rateios / recategorizar" -->
+<div class="modal-bg" id="fcxTodosBg">
+  <div class="modal" style="max-width:560px">
+    <h2>🔎 Rateio do mês — todos os itens</h2>
+    <p style="font-size:.82rem;color:#6b7280;margin-bottom:10px">Recategorize qualquer conta a pagar ou item de fatura. Salva na hora.</p>
+    <div class="form-group"><label>Filtrar por categoria</label><select id="fcxTodosFiltro" onchange="FCX_todosSetFiltro(this.value)"></select></div>
+    <div id="fcxTodosLista" style="max-height:52vh;overflow-y:auto"></div>
+    <div class="modal-actions"><button class="btn btn-purple" onclick="FCX_fecharTodos()">Fechar</button></div>
+  </div>
+</div>
+
 <!-- Modal de importação (extrato→conta / fatura→cartão) — Fase 7 -->
 <div class="modal-bg" id="impModalBg">
   <div class="modal" style="max-width:580px">
@@ -5144,7 +5155,7 @@ window.RPT_imprimir=function(){if(!RPT_ultimo){toast('Gere um relatório primeir
 // lembretes (vencimento + gasto acima do normal/Sophia), Vencimentos & atrasos, e donut Rateio geral do mês.
 // Aditivo: injeta em containers próprios (#fcxLembretes/#fcxPizza), não toca renderFluxoCaixa.
 // ══════════════════════════════════════════════════════
-let FCX_pie=null, FCX_dismiss={venc:false,gasto:false};
+let FCX_pie=null, FCX_dismiss={venc:false,gasto:false}, FCX_catAberta=null, FCX_todosFiltro='';
 function FCX_ddmmaa(d){if(!d)return'';const dt=(d instanceof Date)?d:new Date(d);if(isNaN(dt.getTime()))return'';const p=n=>String(n).padStart(2,'0');return p(dt.getDate())+'/'+p(dt.getMonth()+1)+'/'+String(dt.getFullYear()).slice(2);}
 function FCX_addDias(n){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);return d;}
 // vencimentos (contas + faturas de cartão) com dias e data
@@ -5160,6 +5171,42 @@ function FCX_despesasCat(mref){
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const c=r.categoria||'';acc[c]=(acc[c]||0)+(Number(r.valor)||0);});
   Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{const c=it.categoria||'';acc[c]=(acc[c]||0)+(Number(it.valor)||0);});});
   return acc;
+}
+// itens (contas a pagar + itens da fatura) de uma categoria no mês — pra expandir/recategorizar
+function FCX_itensCategoria(mref,slug){
+  const out=[];
+  (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;if((r.categoria||'')===slug)out.push({tipo:'pagar',id:r.id,mes:mref,nome:r.nome,valor:Number(r.valor)||0});});
+  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{if((it.categoria||'')===slug)out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0});});});
+  return out;
+}
+function FCX_optsCat(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
+window.FCX_toggleCat=function(slug){FCX_catAberta=(FCX_catAberta===slug?null:slug);FCX_renderBlocos();};
+window.FCX_recategorizar=function(tipo,id,mes,novo){
+  if(tipo==='pagar'){const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(r){const antiga=r.categoria;r.categoria=novo;P_salvarStorage();if(typeof AUD_log==='function')AUD_log('editar','meses',r.nome,'Recategorizado no rateio',antiga||'—',novo||'—');}}
+  else{const l=CC_LANCS[id];if(l){l.categoria=novo;CC_fbSalvar(CC_COL_LANC,id,l);}}
+  FCX_renderBlocos();
+  if(document.getElementById('fcxTodosBg')&&document.getElementById('fcxTodosBg').classList.contains('open'))FCX_renderTodos();
+  if(mainAtivo==='cartoes'&&typeof CC_render==='function')CC_render();
+  if(mainAtivo==='pagar'&&subPAtivo==='p-rateio'&&typeof RT_render==='function')RT_render();
+  toast('✅ Recategorizado!');
+};
+function FCX_todosItens(mref){
+  const out=[];
+  (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;out.push({tipo:'pagar',id:r.id,mes:mref,nome:r.nome,valor:Number(r.valor)||0,cat:r.categoria||''});});
+  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0,cat:it.categoria||''});});});
+  return out.sort((a,b)=>b.valor-a.valor);
+}
+window.FCX_abrirTodos=function(){FCX_todosFiltro='';const f=document.getElementById('fcxTodosFiltro');if(f)f.value='';document.getElementById('fcxTodosBg').classList.add('open');FCX_renderTodos();};
+window.FCX_fecharTodos=function(){document.getElementById('fcxTodosBg').classList.remove('open');};
+window.FCX_todosSetFiltro=function(v){FCX_todosFiltro=v;FCX_renderTodos();};
+function FCX_renderTodos(){
+  const mref=mesAtualReal();
+  const f=document.getElementById('fcxTodosFiltro');
+  if(f&&f.dataset.pop!=='1'){f.innerHTML='<option value="">Todas as categorias</option>'+Object.entries(CATS_P).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');f.dataset.pop='1';}
+  let itens=FCX_todosItens(mref);if(FCX_todosFiltro)itens=itens.filter(i=>i.cat===FCX_todosFiltro);
+  const tot=itens.reduce((a,i)=>a+i.valor,0);
+  const el=document.getElementById('fcxTodosLista');if(!el)return;
+  el.innerHTML=`<div style="font-size:.8rem;color:#6b7280;margin-bottom:6px">${itens.length} item(ns) · ${fmt(tot)}</div>`+ (itens.map(it=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:.85rem"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#0f172a">${it.nome}</span><b style="flex-shrink:0">${fmt(it.valor)}</b><select onchange="FCX_recategorizar('${it.tipo}','${it.id}',${it.mes?"'"+it.mes+"'":'null'},this.value)" style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:.78rem;max-width:150px">${FCX_optsCat(it.cat)}</select></div>`).join('')||'<div style="color:#9ca3af">Nenhum item nesse filtro.</div>');
 }
 function FCX_anomalias(){
   const mref=mesAtualReal();const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
@@ -5214,8 +5261,20 @@ function FCX_renderBlocos(){
     <b style="font-size:1rem;color:#0f172a">🧩 Rateio geral do mês</b>
     <p style="font-size:.82rem;color:#6b7280;margin:2px 0 12px">Todas as despesas do mês por categoria (contas a pagar + itens da fatura, sem duplicar).</p>`;
   if(!arr.length)html+='<div style="color:#9ca3af;font-size:.86rem">Sem despesas no mês.</div>';
-  else html+=`<div style="height:240px;margin-bottom:12px"><canvas id="fcxPieCanvas"></canvas></div>
-    ${arr.map(([slug,v])=>{const ci=catInfoP(slug);return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f1f5f9"><span style="width:12px;height:12px;border-radius:3px;background:${ci.color};flex-shrink:0"></span><span style="flex:1;font-size:.88rem;color:#0f172a">${ci.icon} ${ci.label}</span><b style="font-size:.88rem">${fmt(v)}</b><span style="color:#9ca3af;font-size:.78rem;width:44px;text-align:right">${tot?Math.round(v/tot*100):0}%</span></div>`;}).join('')}`;
+  else{html+=`<div style="height:240px;margin-bottom:12px"><canvas id="fcxPieCanvas"></canvas></div>`;
+    html+=arr.map(([slug,v])=>{const ci=catInfoP(slug);const aberta=FCX_catAberta===slug;
+      let bloco=`<div onclick="FCX_toggleCat('${slug}')" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #f1f5f9;cursor:pointer">
+        <span style="width:12px;height:12px;border-radius:3px;background:${ci.color};flex-shrink:0"></span>
+        <span style="flex:1;font-size:.88rem;color:#0f172a">${ci.icon} ${ci.label}</span>
+        <b style="font-size:.88rem">${fmt(v)}</b>
+        <span style="color:#9ca3af;font-size:.78rem;width:40px;text-align:right">${tot?Math.round(v/tot*100):0}%</span>
+        <span style="color:#9ca3af;width:14px;text-align:center;transform:rotate(${aberta?'90':'0'}deg);transition:.15s">▸</span></div>`;
+      if(aberta){const itens=FCX_itensCategoria(mref,slug);
+        bloco+=`<div style="background:#f8fafc;border-radius:10px;padding:8px 10px;margin:2px 0 8px">${itens.length?itens.map(it=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:.82rem"><span style="flex:1;color:#374151;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.nome}</span><b style="flex-shrink:0">${fmt(it.valor)}</b><select onchange="FCX_recategorizar('${it.tipo}','${it.id}',${it.mes?"'"+it.mes+"'":'null'},this.value)" onclick="event.stopPropagation()" style="border:1px solid #e5e7eb;border-radius:6px;padding:3px 6px;font-size:.76rem;max-width:130px">${FCX_optsCat(slug)}</select></div>`).join(''):'<div style="color:#9ca3af;font-size:.8rem">Sem itens detalhados.</div>'}</div>`;}
+      return bloco;
+    }).join('');
+    html+=`<button onclick="FCX_abrirTodos()" style="width:100%;margin-top:10px;border:1px dashed #d8b4fe;background:#faf5ff;color:#7c3aed;border-radius:12px;padding:10px;font-weight:700;font-size:.85rem;cursor:pointer">🔎 Ver todos os rateios / recategorizar</button>`;
+  }
   html+=`</div>`;
   el.innerHTML=html;
   if(FCX_pie){FCX_pie.destroy();FCX_pie=null;}
