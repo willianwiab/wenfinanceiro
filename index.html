@@ -777,6 +777,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-contas',this)">📋 Contas</button>
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
+    <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
 </div>
@@ -1183,6 +1184,16 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Competência = a que mês a despesa se refere. Caixa = mês em que o dinheiro realmente saiu (data do pagamento). Ex.: energia de junho paga em julho aparece na competência JUN e no caixa JUL.</p>
     </div>
     <div id="compTabela" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- p-vencimentos (Fase 6) -->
+  <div class="page" id="page-p-vencimentos">
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">🔔 Vencimentos e atrasos</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Leitura rápida do que vence e do que está atrasado — contas a pagar e faturas de cartão.</p>
+    </div>
+    <div class="cards-p" id="vencCards"></div>
+    <div id="vencListas" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px"></div>
   </div>
 
   <!-- p-historico -->
@@ -2201,6 +2212,7 @@ function renderSubPageP(id){
   if(id==='p-periodo')renderPeriodoSelectsP();
   if(id==='p-categorias'){CAT_renderGerenciar();renderCatMesFiltroP();renderCategoriasP();}
   if(id==='p-competencia')COMP_render();
+  if(id==='p-vencimentos')VENC_render();
 }
 
 function atualizarHeaderContexto(){
@@ -4187,6 +4199,53 @@ function COMP_render(){
       <td style="padding:10px 12px;text-align:right">${fmt(tc-tx)}</td>
     </tr></tfoot></table>
     <p style="font-size:.75rem;color:#9ca3af;margin-top:8px">Δ positivo = competência maior que o caixa (despesa reconhecida mas ainda não paga no mês). Pagamentos sem data caem no mês de origem do lançamento.</p>`;
+}
+
+// ══════════════════════════════════════════════════════
+// FASE 6 — VENCIMENTOS E ATRASOS (módulo VENC_)
+// Leitura operacional: vence hoje / próximos 7 dias / atrasadas / faturas de cartão.
+// 100% derivado de P_meses + faturas do cartão. Só leitura.
+// ══════════════════════════════════════════════════════
+function VENC_hoje0(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function VENC_dataVenc(mesKey,dia){const p=(mesKey||'').split('/');const mi=MESES_ABREV.indexOf(p[0]);if(mi<0||!dia)return null;return new Date(parseInt(p[1]),mi,dia);}
+function VENC_coletar(){
+  const hoje=VENC_hoje0();const pend=[];
+  Object.keys(P_meses||{}).forEach(mes=>(P_meses[mes]||[]).forEach(r=>{
+    if(String(r.status).toUpperCase()==='PAGO')return;
+    const saldo=(Number(r.valor)||0)-(Number(r.valorPago)||0);if(saldo<=0)return;
+    const d=VENC_dataVenc(mes,r.dia);if(!d)return;
+    pend.push({nome:r.nome,mes,dia:r.dia,saldo,due:d,diff:Math.round((d-hoje)/86400000),cat:r.categoria});
+  }));
+  return pend;
+}
+function VENC_faturasCartao(){
+  const hoje=VENC_hoje0();const out=[];
+  Object.keys(CC_CARTOES||{}).forEach(cid=>{const c=CC_CARTOES[cid];const fats=CC_faturasDoCartao(cid);
+    Object.keys(fats).forEach(key=>{if(CC_isFaturaPaga(cid,key))return;const d=VENC_dataVenc(key,+c.diaVencimento||10);if(!d)return;const diff=Math.round((d-hoje)/86400000);if(diff<=15)out.push({cartao:c.nome,mes:key,total:fats[key].total,diff});});
+  });
+  return out.sort((a,b)=>a.diff-b.diff);
+}
+function VENC_render(){
+  const pend=VENC_coletar();
+  const hojeL=pend.filter(p=>p.diff===0), prox=pend.filter(p=>p.diff>=1&&p.diff<=7), atras=pend.filter(p=>p.diff<0);
+  const catFat=VENC_faturasCartao();
+  const soma=arr=>arr.reduce((a,x)=>a+(x.saldo||x.total||0),0);
+  const cards=document.getElementById('vencCards');
+  if(cards)cards.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #ef4444"><label>🔴 Vencem hoje</label><div class="val">${hojeL.length}</div><div class="val-sub">${fmt(soma(hojeL))}</div></div>
+    <div class="card-p" style="border-left:4px solid #f59e0b"><label>🟠 Próximos 7 dias</label><div class="val">${prox.length}</div><div class="val-sub">${fmt(soma(prox))}</div></div>
+    <div class="card-p" style="border-left:4px solid #b91c1c"><label>⚫ Atrasadas</label><div class="val">${atras.length}</div><div class="val-sub">${fmt(soma(atras))}</div></div>
+    <div class="card-p" style="border-left:4px solid #7c3aed"><label>💳 Faturas de cartão</label><div class="val">${catFat.length}</div><div class="val-sub">${fmt(soma(catFat))} até 15 dias</div></div>`;
+  const bloco=(titulo,cor,arr,tipo)=>{
+    if(!arr.length)return `<div><h4 style="font-size:.85rem;font-weight:700;color:${cor};margin-bottom:8px">${titulo}</h4><div style="color:#9ca3af;font-size:.82rem">Nada aqui ✅</div></div>`;
+    const linhas=arr.slice().sort((a,b)=>(a.diff||0)-(b.diff||0)).map(x=>{
+      if(tipo==='cartao')return `<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:6px 0;border-bottom:1px solid #eef2f7"><span>💳 ${x.cartao} · ${x.mes}${x.diff<0?' <span style="color:#b91c1c">('+Math.abs(x.diff)+'d atraso)</span>':(x.diff===0?' <span style="color:#ef4444">(hoje)</span>':' <span style="color:#6b7280">('+x.diff+'d)</span>')}</span><b>${fmt(x.total)}</b></div>`;
+      return `<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:6px 0;border-bottom:1px solid #eef2f7"><span>${catBadgeP(x.cat)||''} ${x.nome} <span style="color:#9ca3af">· dia ${x.dia}/${x.mes}${x.diff<0?' ('+Math.abs(x.diff)+'d)':''}</span></span><b>${fmt(x.saldo)}</b></div>`;
+    }).join('');
+    return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px"><h4 style="font-size:.85rem;font-weight:700;color:${cor};margin-bottom:8px">${titulo} (${arr.length})</h4>${linhas}</div>`;
+  };
+  const listas=document.getElementById('vencListas');
+  if(listas)listas.innerHTML=bloco('⚫ Atrasadas','#b91c1c',atras)+bloco('🔴 Vencem hoje','#ef4444',hojeL)+bloco('🟠 Próximos 7 dias','#f59e0b',prox)+bloco('💳 Faturas de cartão','#7c3aed',catFat,'cartao');
 }
 
 // ══════════════════════════════════════════════════════
