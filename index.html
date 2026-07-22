@@ -62,6 +62,25 @@ body{background:#f0f4f8;color:#1e293b}
 .sophia-badge{background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:20px}
 .sophia-chip{background:#fff;border:1px solid #e5e7eb;border-radius:22px;padding:9px 15px;font-size:.85rem;font-weight:600;color:#334155;cursor:pointer;transition:all .12s}
 .sophia-chip:hover{border-color:#16a34a;color:#16a34a;background:#f0fdf4}
+/* ── Revisão de importação (estilo NS) ── */
+.imp-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:12px 0}
+.imp-box{border:1px solid #e5e7eb;border-radius:12px;padding:12px;text-align:center;background:#fff}
+.imp-box .n{font-size:1.5rem;font-weight:800;color:#0f172a}.imp-box .l{font-size:.72rem;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;margin-top:2px}
+.imp-box.ok{background:#f0fdf4;border-color:#bbf7d0}.imp-box.ok .n{color:#16a34a}
+.imp-box.rem{background:#fef2f2;border-color:#fecaca}.imp-box.rem .n{color:#b91c1c}
+.imp-box.dup{background:#fef3c7;border-color:#fde68a}.imp-box.dup .n{color:#b45309}
+.imp-alerta{border:1px solid #e5e7eb;border-radius:12px;padding:11px 14px;font-size:.85rem;margin:8px 0}
+.imp-filtros{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.imp-filtro{background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:6px 14px;font-size:.82rem;font-weight:600;color:#64748b;cursor:pointer}
+.imp-filtro.ativo{background:#f0fdf4;border-color:#16a34a;color:#16a34a}
+.r-tab{width:100%;border-collapse:collapse;font-size:.85rem}
+.r-tab th{text-align:left;color:#6b7280;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid #e5e7eb}
+.r-tab td{padding:9px 10px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.r-tab tr.excl{opacity:.5}
+.imp-parc{font-size:.66rem;font-weight:700;background:#e0f2fe;color:#0369a1;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.imp-dupb{font-size:.66rem;font-weight:700;background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:20px}
+.conf-pill{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px}
+.conf-alta{background:#dcfce7;color:#15803d}.conf-media{background:#fef3c7;color:#b45309}.conf-baixa{background:#ffedd5;color:#c2410c}.conf-revisar{background:#fee2e2;color:#b91c1c}
 
 /* ── CONTAINER ── */
 .container{max-width:1280px;margin:0 auto;padding:22px 16px}
@@ -4372,6 +4391,7 @@ function CC_prepararImportar(){
   sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}${CC_CARTOES[id].final?(' ··'+CC_CARTOES[id].final):''}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
   if(prev&&CC_CARTOES[prev])sc.value=prev;else if(CC_selecionado&&CC_CARTOES[CC_selecionado]&&CC_CARTOES[CC_selecionado].status!=='inativo')sc.value=CC_selecionado;
   const mes=document.getElementById('ccImpMes');if(mes&&!mes.value){const d=new Date();mes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+  if(typeof IMP_ofereceRascunho==='function'&&!IMP_previa.length)IMP_ofereceRascunho('cartao',sc.value,'ccImpAviso');
 }
 // os 4 modos da aba "Importar fatura" reaproveitam o importador (já mirando o cartão escolhido)
 function CC_impArquivo(input,modo){
@@ -5284,103 +5304,174 @@ async function IMP_gemini(input){
     IMP_renderPreview();
   }catch(e){IMP_setAviso('⚠️ Erro na leitura: '+e.message);}
 }
-// ── Revisão rica (cartão): sugere categoria, detecta duplicado, confiança, edita ──
+// ══ Revisão de importação estilo NS (estatísticas, filtros, tabela, confiança) ══
+let IMP_filtro='todos';
 function IMP_normDesc(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();}
-function IMP_sugerirCat(desc){
-  const d=IMP_normDesc(desc);if(!d)return '';
-  // 1) regras de categorização criadas pelo usuário têm prioridade
-  if(typeof CC_regraSugerir==='function'){const rg=CC_regraSugerir(desc);if(rg)return rg;}
-  // 2) palpite pelo nome/keyword da categoria
-  for(const[k,c]of Object.entries(CATS_P)){if(c.ativo===false)continue;
-    const kws=[];if(c.keyword)kws.push(...String(c.keyword).split(/[,;]+/));kws.push(String(c.label||''));
-    for(const kw of kws){const t=IMP_normDesc(kw);if(t.length>=3&&d.includes(t))return k;}
-  }
-  return '';
+function IMP_parseParcela(desc){const m=(desc||'').match(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/);if(m){const a=+m[1],t=+m[2];if(t>1&&a<=t)return {atual:a,total:t};}return null;}
+function IMP_sugerirCatConf(desc){
+  if(typeof CC_regraSugerir==='function'){const rg=CC_regraSugerir(desc);if(rg)return {cat:rg,conf:'alta',origem:'regra'};}
+  const d=IMP_normDesc(desc);
+  for(const[k,c]of Object.entries(CATS_P)){if(c.ativo===false)continue;const kws=[];if(c.keyword)kws.push(...String(c.keyword).split(/[,;]+/));kws.push(String(c.label||''));
+    for(const kw of kws){const t=IMP_normDesc(kw);if(t.length>=3&&d.includes(t))return {cat:k,conf:'media',origem:'palpite'};}}
+  return {cat:'',conf:'revisar',origem:null};
 }
-function IMP_confianca(mv){let s=0;if(mv.data&&/^\d{4}-\d{2}-\d{2}$/.test(mv.data))s++;if(Math.abs(Number(mv.valor)||0)>0)s++;if((mv.descricao||'').trim().length>=4)s++;return s>=3?'alta':(s===2?'media':'baixa');}
-function IMP_parcelaInfo(desc){const m=(desc||'').match(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/);if(m){const a=+m[1],t=+m[2];if(t>1&&a<=t)return a+'/'+t;}return '';}
 function IMP_dupCartao(mv,cid){const norm=IMP_normDesc(mv.descricao);const v=Math.abs(Number(mv.valor)||0);
   return Object.values(CC_LANCS).some(l=>l.cartaoId===cid&&Math.abs((Number(l.valor)||0)-v)<0.01&&IMP_normDesc(l.descricao)===norm&&l.dataCompra===mv.data);}
-const IMP_CONF={alta:{c:'#15803d',bg:'#dcfce7',l:'✓ alta'},media:{c:'#b45309',bg:'#fef3c7',l:'~ média'},baixa:{c:'#b91c1c',bg:'#fee2e2',l:'! baixa'}};
-function IMP_catOptions(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
 function IMP_dupConta(mv,contaId){const chave='mov_ofx_'+contaId+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);return (typeof BC_MOVS!=='undefined')&&BC_MOVS.some(x=>x.id===chave);}
-function IMP_renderPreview(){
-  const p=document.getElementById(IMP_ctx.preview);if(!p)return;
-  if(!IMP_previa.length){p.innerHTML='';return;}
-  IMP_renderPreviewRico(p);
+function IMP_confPill(c){const lbl=c==='alta'?'alta':c==='media'?'média':c==='baixa'?'baixa':'revisar';const cls=c==='alta'?'conf-alta':c==='media'?'conf-media':c==='baixa'?'conf-baixa':'conf-revisar';return `<span class="conf-pill ${cls}">${lbl}</span>`;}
+function IMP_catOptions(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
+// enriquece cada item 1x: parcela, categoria sugerida + confiança, duplicidade (lote + já existente), incluir
+function IMP_enriquecer(){
+  const isCartao=(IMP_tipo==='cartao');const alvo=IMP_ctx.getAlvo();const vistos=new Set();
+  IMP_previa.forEach(mv=>{if(mv._enriq)return;mv._enriq=true;
+    mv.parcela=isCartao?IMP_parseParcela(mv.descricao):null;
+    if(mv.categoria==null||mv.categoria===''){const s=IMP_sugerirCatConf(mv.descricao);mv.categoria=s.cat;mv.conf=s.cat?s.conf:'revisar';mv.origem=s.origem;}
+    else if(mv.conf==null)mv.conf=mv.categoria?'alta':'revisar';
+    const chave=IMP_normDesc(mv.descricao)+'|'+Math.round(Math.abs(Number(mv.valor)||0)*100)+'|'+(mv.data||'');
+    let dup=false;if(vistos.has(chave))dup=true;else vistos.add(chave);
+    if(!dup&&alvo)dup=isCartao?IMP_dupCartao(mv,alvo):IMP_dupConta(mv,alvo);
+    mv.dup=dup;if(mv.incluir==null)mv.incluir=!dup;
+  });
 }
-// Revisão rica (cartão E conta): sugere categoria, detecta duplicado, confiança, edita valor/categoria
+window.IMP_setCat=function(i,cat){const m=IMP_previa[i];if(!m)return;m.categoria=cat||'';m.conf=cat?'alta':'revisar';m.origem=cat?'usuario':null;IMP_renderPreview();};
+window.IMP_toggleIncluir=function(i){const m=IMP_previa[i];if(!m)return;m.incluir=!m.incluir;IMP_renderPreview();};
+window.IMP_setFiltro=function(f){IMP_filtro=f;IMP_renderPreview();};
+window.IMP_limparParcela=function(i){const m=IMP_previa[i];if(!m)return;m.parcela=null;IMP_renderPreview();};
+window.IMP_aceitarTodas=function(){IMP_previa.forEach(m=>{if(m.incluir&&m.categoria)m.conf='alta';});IMP_renderPreview();toast('✅ Sugestões aceitas.');};
+window.IMP_cancelarRev=function(){if(!confirm('Cancelar esta importação? Os itens lidos serão descartados.'))return;IMP_previa=[];IMP_filtro='todos';const p=document.getElementById(IMP_ctx.preview);if(p)p.innerHTML='';IMP_setAviso('');};
+// ── Rascunho (salvar e retomar depois) ──
+function IMP_rascKey(tipo,alvo){return 'imp_rasc_'+tipo+'_'+(alvo||'x');}
+function IMP_rascunhoDe(tipo,alvo){try{const r=localStorage.getItem(IMP_rascKey(tipo,alvo));return r?JSON.parse(r):null;}catch(e){return null;}}
+window.IMP_salvarRascunho=function(){
+  const alvo=IMP_ctx.getAlvo();if(!IMP_previa.length){toast('Nada pra salvar ainda.','#f59e0b');return;}
+  try{localStorage.setItem(IMP_rascKey(IMP_tipo,alvo),JSON.stringify({tipo:IMP_tipo,alvo,preview:IMP_ctx.preview,aviso:IMP_ctx.aviso,itens:IMP_previa,ts:new Date().toISOString()}));toast('💾 Rascunho salvo — você pode voltar e continuar depois.');}
+  catch(e){toast('Não consegui salvar o rascunho.','#ef4444');}
+};
+// mostra no aviso um convite pra retomar, se houver rascunho pra este destino
+function IMP_ofereceRascunho(tipo,alvo,avisoEl){
+  const el=document.getElementById(avisoEl);if(!el)return;const r=IMP_rascunhoDe(tipo,alvo);
+  if(r&&r.itens&&r.itens.length&&(!IMP_previa.length)){
+    el.innerHTML=`<div class="imp-alerta" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af">↩️ Há um rascunho com <b>${r.itens.length}</b> lançamento(s) deste destino. <a onclick="IMP_retomarRascunho('${tipo}','${alvo}')" style="color:#1d4ed8;font-weight:700;cursor:pointer;text-decoration:underline">Retomar</a> · <a onclick="IMP_descartarRascunho('${tipo}','${alvo}')" style="color:#6b7280;cursor:pointer;text-decoration:underline">descartar</a></div>`;
+  }
+}
+window.IMP_descartarRascunho=function(tipo,alvo){try{localStorage.removeItem(IMP_rascKey(tipo,alvo));}catch(e){}const el=document.getElementById(tipo==='cartao'?'ccImpAviso':'concImpAviso');if(el)el.innerHTML='';toast('Rascunho descartado.','#6b7280');};
+window.IMP_retomarRascunho=function(tipo,alvo){
+  const r=IMP_rascunhoDe(tipo,alvo);if(!r||!r.itens){toast('Rascunho não encontrado.','#ef4444');return;}
+  if(tipo==='cartao'){const sc=document.getElementById('ccImpCartao');if(sc&&alvo)sc.value=alvo;
+    IMP_iniciarInline('cartao',()=>document.getElementById('ccImpCartao').value,'ccImpAviso','ccImpReview',function(){var el=document.getElementById('ccImpReview');if(el)el.innerHTML='';IMP_descartarRascunho('cartao',alvo);CC_render();CC_aba('faturas');});}
+  else{const sc=document.getElementById('concImpConta');if(sc&&alvo)sc.value=alvo;
+    IMP_iniciarInline('conta',()=>document.getElementById('concImpConta').value,'concImpAviso','concImpReview',function(){IMP_descartarRascunho('conta',alvo);CONC_render();});}
+  IMP_previa=r.itens;IMP_filtro='todos';IMP_renderPreview();toast('↩️ Rascunho retomado.');
+};
+async function IMP_categorizarIA(descricoes,key){
+  const cats=Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false).map(([k,c])=>({k,label:c.label}));
+  const lista=descricoes.map((d,i)=>i+': '+String(d||'').slice(0,120)).join('\n');
+  const prompt='Você categoriza despesas de uma produtora de audiovisual (empresa brasileira). Para cada item escolha a MELHOR categoria da lista abaixo (use o texto EXATO de uma delas). Se não tiver confiança, devolva "". NUNCA invente categoria fora da lista.\nCategorias válidas: '+cats.map(c=>c.label).join(' | ')+'\nItens (índice: descrição):\n'+lista+'\nResponda só JSON: {"itens":[{"i":0,"categoria":"..."}]}';
+  const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
+  const body={contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json'}};
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('A IA recusou ('+r.status+'). Confira a chave.');
+  const j=await r.json();const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+  let dados;try{dados=JSON.parse(txt||'{}');}catch(e){throw new Error('Não consegui interpretar a resposta da IA.');}
+  const out=new Array(descricoes.length).fill('');
+  (dados.itens||[]).forEach(it=>{const i=Number(it&&it.i);const label=it&&it.categoria;if(i>=0&&label){const f=cats.find(c=>c.label===label);if(f)out[i]=f.k;}});
+  return out;
+}
+window.IMP_sophiaCompleta=async function(){
+  const key=IA_getKey();if(!key){toast('Conecte a chave do Gemini em Config.','#f59e0b');return;}
+  const idx=IMP_previa.map((m,i)=>(m.incluir&&!m.categoria)?i:-1).filter(i=>i>=0);
+  if(!idx.length){toast('Todos os itens já têm categoria 💚');return;}
+  const btn=document.getElementById('impBtnIA');if(btn){btn.disabled=true;btn.textContent='🧠 Categorizando…';}
+  try{const sug=await IMP_categorizarIA(idx.map(i=>IMP_previa[i].descricao||''),key);let n=0;
+    idx.forEach((ix,k)=>{if(sug[k]){IMP_previa[ix].categoria=sug[k];IMP_previa[ix].conf='baixa';IMP_previa[ix].origem='ia';n++;}});
+    IMP_renderPreview();toast(n?`✨ A SophIA categorizou ${n} de ${idx.length} — confira as marcadas como "baixa".`:'A SophIA não teve certeza desta vez.');
+  }catch(e){if(btn){btn.disabled=false;}IMP_renderPreview();toast(e.message||'Não consegui categorizar agora.','#ef4444');}
+};
+function IMP_renderPreview(){const p=document.getElementById(IMP_ctx.preview);if(!p)return;if(!IMP_previa.length){p.innerHTML='';return;}IMP_renderPreviewRico(p);}
 function IMP_renderPreviewRico(p){
-  const isCartao=(IMP_tipo==='cartao');
-  const alvo=IMP_ctx.getAlvo();
-  IMP_previa.forEach(mv=>{if(mv._enriq)return;mv._enriq=true;if(mv.categoria==null||mv.categoria==='')mv.categoria=IMP_sugerirCat(mv.descricao);mv.parcela=isCartao?IMP_parcelaInfo(mv.descricao):'';mv.conf=IMP_confianca(mv);});
-  const total=IMP_previa.reduce((a,mv)=>a+Math.abs(Number(mv.valor)||0),0);
-  let dups=0;
-  const cards=IMP_previa.map((mv,i)=>{
-    const dup=alvo?(isCartao?IMP_dupCartao(mv,alvo):IMP_dupConta(mv,alvo)):false;if(dup)dups++;
-    const cf=IMP_CONF[mv.conf]||IMP_CONF.media;
-    const saida=isCartao||mv.tipo==='saida';
-    return `<div class="imp-item" style="border:1px solid ${dup?'#fecaca':'#e5e7eb'};border-radius:12px;padding:10px 12px;margin-bottom:8px;background:${dup?'#fef2f2':'#fff'}">
-      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <input type="checkbox" class="imp-chk" data-i="${i}" ${dup?'':'checked'} style="width:16px;height:16px;accent-color:#16a34a"/>
-        <span style="font-size:.78rem;color:#6b7280">${BC_dataBR(mv.data)||'sem data'}</span>
-        <span class="cc-fat-badge" style="background:${cf.bg};color:${cf.c}">${cf.l}</span>
-        ${!isCartao?`<span class="cc-fat-badge" style="background:${saida?'#fee2e2':'#dcfce7'};color:${saida?'#b91c1c':'#15803d'}">${saida?'saída':'entrada'}</span>`:''}
-        ${mv.parcela?`<span class="cc-fat-badge" style="background:#ede9fe;color:#7c3aed">parcela ${mv.parcela}</span>`:''}
-        ${dup?`<span class="cc-fat-badge" style="background:#fee2e2;color:#b91c1c">possível duplicado</span>`:''}
-        <span style="flex:1"></span>
-        <span style="font-weight:800;color:${saida?'#ef4444':'#16a34a'}">${saida?'−':'+'}</span>
-        <input type="number" step="0.01" class="imp-val" data-i="${i}" value="${Math.abs(Number(mv.valor)||0)}" style="width:104px;text-align:right;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-weight:700;color:#0f172a"/>
-      </div>
-      <div style="font-size:.86rem;color:#0f172a;margin:8px 0 8px">${(mv.descricao||'').replace(/</g,'&lt;')}</div>
-      <select class="imp-cat" data-i="${i}" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 9px;font-size:.82rem;background:#fff">${IMP_catOptions(mv.categoria||'')}</select>
-    </div>`;
-  }).join('');
-  p.innerHTML=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:.82rem;color:#334155"><b>${IMP_previa.length}</b> lançamento(s) · total <b>${fmt(total)}</b>${dups?` · <span style="color:#b91c1c">${dups} possível(is) duplicado(s)</span>`:''}</div>
-      <label style="font-size:.78rem;color:#6b7280;display:flex;align-items:center;gap:5px"><input type="checkbox" checked onchange="document.querySelectorAll('#${IMP_ctx.preview} .imp-chk').forEach(c=>c.checked=this.checked)"/> marcar todos</label>
+  IMP_enriquecer();
+  const isCartao=(IMP_tipo==='cartao');const alvo=IMP_ctx.getAlvo();
+  const nome=isCartao?((CC_CARTOES[alvo]||{}).nome||'cartão'):((BC_CONTAS[alvo]||{}).nome||'conta');
+  const incl=IMP_previa.filter(m=>m.incluir);
+  const total=incl.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0);
+  const prontos=incl.filter(m=>m.categoria&&!m.dup).length;
+  const pend=incl.filter(m=>!m.categoria).length;
+  const dupN=IMP_previa.filter(m=>m.dup).length;
+  const excl=IMP_previa.filter(m=>!m.incluir).length;
+  const parcN=isCartao?incl.filter(m=>m.parcela).length:0;
+  const semCatIA=incl.filter(m=>!m.categoria).length;
+  const f=IMP_filtro||'todos';
+  const chip=(id,lbl,n)=>`<button class="imp-filtro ${f===id?'ativo':''}" onclick="IMP_setFiltro('${id}')">${lbl}${n!=null?' ('+n+')':''}</button>`;
+  const visiveis=IMP_previa.map((m,i)=>({m,i})).filter(({m})=> f==='pendencias'?(m.incluir&&!m.categoria): f==='duplicidades'?!!m.dup : f==='excluidos'?!m.incluir : true);
+  const linha=({m,i})=>{const saida=isCartao||m.tipo==='saida';
+    const parc=m.parcela?` <span class="imp-parc">parc ${m.parcela.atual}/${m.parcela.total} <span onclick="IMP_limparParcela(${i})" title="Não é parcela" style="cursor:pointer;opacity:.6">✕</span></span>`:'';
+    const dupb=m.dup?' <span class="imp-dupb">possível duplicidade</span>':'';
+    return `<tr class="${m.incluir?'':'excl'}">
+      <td style="text-align:center"><input type="checkbox" ${m.incluir?'checked':''} onchange="IMP_toggleIncluir(${i})" style="width:17px;height:17px;accent-color:#16a34a"></td>
+      <td>${(m.descricao||'').replace(/</g,'&lt;')}${parc}${dupb}</td>
+      <td style="white-space:nowrap">${BC_dataBR(m.data)||'—'}</td>
+      <td style="font-weight:700;white-space:nowrap;color:${saida?'#0f172a':'#16a34a'}">${saida?'':'+'}${fmt(Math.abs(Number(m.valor)||0))}</td>
+      <td><select onchange="IMP_setCat(${i},this.value)" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:.82rem;background:#fff;max-width:190px">${IMP_catOptions(m.categoria||'')}</select></td>
+      <td>${IMP_confPill(m.conf)}</td></tr>`;};
+  p.innerHTML=`
+    <div style="font-size:1.05rem;font-weight:800;color:#0f172a">Revisar lançamentos</div>
+    <p style="font-size:.82rem;color:#6b7280;margin:2px 0 4px"><b>${nome}</b> · confira e ajuste — nada é lançado antes de você confirmar.</p>
+    <div class="imp-resumo">
+      <div class="imp-box"><div class="n">${IMP_previa.length}</div><div class="l">encontrados</div></div>
+      <div class="imp-box ok"><div class="n">${prontos}</div><div class="l">prontos</div></div>
+      <div class="imp-box ${pend?'rem':''}"><div class="n">${pend}</div><div class="l">com pendência</div></div>
+      <div class="imp-box ${dupN?'dup':''}"><div class="n">${dupN}</div><div class="l">duplicidades</div></div>
+      <div class="imp-box ok"><div class="n">${fmt(total)}</div><div class="l">total identificado</div></div>
     </div>
-    ${cards}
-    <div style="text-align:right;margin-top:12px"><button class="btn btn-purple" style="width:auto" onclick="IMP_importar()">✅ Importar selecionadas ${isCartao?'pro cartão':'pra conta'}</button></div>
-    <p style="font-size:.74rem;color:#9ca3af;margin-top:8px">Revise categoria e valor de cada item. ${isCartao?'Cada linha entra como uma compra do mês nesse cartão.':'Cada linha entra como movimentação na conta (livro-razão), já categorizada.'} A Sophia sugere a categoria (edite as regras na aba Regras do cartão). Duplicados vêm desmarcados; reimportar o mesmo arquivo não duplica.</p>
-  </div>`;
+    <div class="imp-alerta" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✓ ${incl.length} lançamento(s) somam <b>${fmt(total)}</b>. Confira a soma com o total da ${isCartao?'fatura':'conta'}.</div>
+    ${parcN?`<div class="imp-alerta" style="background:#fffbeb;border-color:#fde68a;color:#a86b1e">🔒 Esta fatura tem <b>${parcN} parcela(s)</b>. Confira se nenhuma está duplicada antes de confirmar — ao confirmar, elas são reconciliadas com os próximos meses (nunca somam em dobro).</div>`:''}
+    <div class="imp-filtros">${chip('todos','Todos',IMP_previa.length)}${chip('pendencias','Pendências',pend)}${chip('duplicidades','Possíveis duplicidades',dupN)}${chip('excluidos','Excluídos',excl)}</div>
+    <div style="overflow-x:auto"><table class="r-tab"><thead><tr><th>✓</th><th>Descrição</th><th>Data</th><th>Valor</th><th>Categoria</th><th>Confiança</th></tr></thead>
+      <tbody>${visiveis.map(linha).join('')||'<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:14px">Nenhum item neste filtro.</td></tr>'}</tbody></table></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline-b" style="width:auto" onclick="IMP_salvarRascunho()">💾 Salvar rascunho</button>
+        <button class="btn btn-outline-b" style="width:auto" onclick="IMP_cancelarRev()">Cancelar importação</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        ${parcN?`<label style="display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:800;color:#a86b1e;cursor:pointer"><input type="checkbox" id="impChkParc" onchange="var b=document.getElementById('impBtnConfirmar');if(b)b.disabled=!this.checked" style="width:17px;height:17px;accent-color:#16a34a"> Conferi as parcelas</label>`:''}
+        ${(semCatIA&&IA_temChave())?`<button class="btn btn-outline-b" id="impBtnIA" style="width:auto" onclick="IMP_sophiaCompleta()">✨ SophIA completa (${semCatIA})</button>`:''}
+        <button class="btn btn-outline-b" style="width:auto" onclick="IMP_aceitarTodas()">✅ Aceitar sugestões</button>
+        <button class="btn btn-purple" id="impBtnConfirmar" style="width:auto"${parcN?' disabled':''} onclick="IMP_importar()">Importar ${incl.length} lançamento${incl.length===1?'':'s'}</button>
+      </div>
+    </div>`;
 }
 async function IMP_importar(){
   const alvo=IMP_ctx.getAlvo();
-  const q=cl=>document.querySelector('#'+IMP_ctx.preview+' '+cl);
-  const sel=[...document.querySelectorAll('#'+IMP_ctx.preview+' .imp-chk:checked')].map(c=>parseInt(c.dataset.i));
-  if(!sel.length){toast('Selecione ao menos uma transação.','#ef4444');return;}
+  const itens=IMP_previa.filter(m=>m.incluir);
+  if(!itens.length){toast('Nenhum item marcado pra importar.','#ef4444');return;}
   let n=0,dup=0;
   if(IMP_tipo==='cartao'){
     if(!alvo||!CC_CARTOES[alvo]){toast('Escolha o cartão.','#ef4444');return;}
     const novos=[];
-    sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
+    itens.forEach(mv=>{const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
       if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
-      const catEl=q('.imp-cat[data-i="'+i+'"]');const valEl=q('.imp-val[data-i="'+i+'"]');
-      const categoria=catEl?catEl.value:(mv.categoria||'');
-      const valor=valEl?Math.abs(parseFloat(valEl.value)||0):Math.abs(Number(mv.valor)||0);
+      const parcTxt=mv.parcela?(' · parcela '+mv.parcela.atual+'/'+mv.parcela.total):'';
       const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
-      const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor,dataCompra:mv.data||BC_hoje(),parcelas:1,categoria,responsavel:'',obs:'Importado da fatura'+(mv.parcela?(' · parcela '+mv.parcela):''),importId:impId,criadoEm:new Date().toISOString()};
+      const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:mv.categoria||'',responsavel:'',obs:'Importado da fatura'+parcTxt,importId:impId,criadoEm:new Date().toISOString()};
       CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;});
     for(const id of novos)await CC_reconciliarParcelasCompra(id);
     if(n>0)CC_sincronizarFaturasPagar(alvo);
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
-    IMP_previa=[];
+    try{localStorage.removeItem(IMP_rascKey('cartao',alvo));}catch(e){}
+    IMP_previa=[];IMP_filtro='todos';
     if(IMP_ctx.onDone)IMP_ctx.onDone(n,dup,0);else{IMP_fechar();if(mainAtivo==='cartoes')CC_render();}
     toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
   }else{
     if(!alvo||!BC_CONTAS[alvo]){toast('Escolha a conta de destino.','#ef4444');return;}
     let saidas=0;
-    sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
+    itens.forEach(mv=>{const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
       if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
-      const catEl=q('.imp-cat[data-i="'+i+'"]');const valEl=q('.imp-val[data-i="'+i+'"]');
-      const categoria=catEl?(catEl.value||null):null;
-      const valor=valEl?Math.abs(parseFloat(valEl.value)||0):Math.abs(Number(mv.valor)||0);
-      const mov={id:chave,contaId:alvo,tipo:mv.tipo,valor,data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
+      const mov={id:chave,contaId:alvo,tipo:mv.tipo,valor:Math.abs(Number(mv.valor)||0),data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria:mv.categoria||null,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
       BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;if(mv.tipo==='saida')saidas++;});
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[alvo].nome,n+' movimentação(ões) importada(s)',null,null);
-    IMP_previa=[];
+    try{localStorage.removeItem(IMP_rascKey('conta',alvo));}catch(e){}
+    IMP_previa=[];IMP_filtro='todos';
     if(IMP_ctx.onDone)IMP_ctx.onDone(n,dup,saidas);
     else{
       IMP_fechar();if(mainAtivo==='contas')BC_renderPainel();
@@ -6846,6 +6937,8 @@ function CONC_render(){
       </div>`;}).join('');
   }
   lista.innerHTML=html;
+  const sc=document.getElementById('concImpConta');
+  if(typeof IMP_ofereceRascunho==='function'&&!IMP_previa.length&&sc)IMP_ofereceRascunho('conta',sc.value,'concImpAviso');
 }
 async function CONC_conciliar(movId,val){
   if(!val){const sel=document.getElementById('conc-sel-'+movId);val=sel?sel.value:'';}
