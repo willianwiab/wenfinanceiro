@@ -781,6 +781,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
     <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
     <button class="sub-pagar" onclick="showSubP('p-rateio',this)">🧮 Rateio</button>
+    <button class="sub-pagar" onclick="showSubP('p-auditoria',this)">🕵️ Auditoria</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
 </div>
@@ -1198,6 +1199,15 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="cards-p" id="pnCards"></div>
     <div class="cards-p" id="pnCards2" style="margin-top:12px"></div>
     <div id="pnAlertas" style="margin-top:18px"></div>
+  </div>
+
+  <!-- p-auditoria (Fase 14) -->
+  <div class="page" id="page-p-auditoria">
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">🕵️ Auditoria</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Registro de alterações no Contas a Pagar (criação, edição, pagamento, exclusão) — data, ação, valores.</p>
+    </div>
+    <div id="audLista" style="display:flex;flex-direction:column;gap:6px"></div>
   </div>
 
   <!-- p-rateio (Fase 8) -->
@@ -2147,7 +2157,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{}, config_ia:{}, contas_fixas:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{}, config_ia:{}, contas_fixas:{}, auditoria:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -2339,6 +2349,7 @@ function renderSubPageP(id){
   if(id==='p-fixas')FX_render();
   if(id==='p-rateio')RT_render();
   if(id==='p-painel')PN_render();
+  if(id==='p-auditoria')AUD_render();
 }
 
 function atualizarHeaderContexto(){
@@ -4774,6 +4785,34 @@ function REL_gerarHTML(mref){
 function REL_baixarMes(){const mref=mesAtualReal();BKP_baixar('WEN_relatorio_'+mref.replace('/','-')+'.html',REL_gerarHTML(mref),'text/html;charset=utf-8');const el=document.getElementById('relStatus');if(el)el.textContent='✅ Relatório de '+mref+' gerado.';}
 function REL_abrirMes(){const mref=mesAtualReal();try{const w=window.open('','_blank');if(w){w.document.write(REL_gerarHTML(mref));w.document.close();}else toast('Permita pop-ups pra ver na tela.','#f59e0b');}catch(e){toast('Erro: '+e.message,'#ef4444');}}
 
+// ══════════════════════════════════════════════════════
+// FASE 14 — AUDITORIA (módulo AUD_): log de alterações do Pagar
+// Coleção `auditoria`. AUD_log é aditivo e fire-and-forget (não trava a UI).
+// ══════════════════════════════════════════════════════
+const AUD_COL='auditoria'; let AUD_LOGS=[];
+const AUD_ICONE={criar:'➕',editar:'✏️',pagar:'💰',excluir:'🗑️'};
+function AUD_log(acao,colecao,alvo,descricao,ant,novo){
+  const id='a'+Date.now()+Math.floor(Math.random()*9999);
+  const rec={id,ts:new Date().toISOString(),acao,colecao:colecao||'',alvo:alvo||'',descricao:descricao||'',valorAnterior:(ant!=null?ant:null),valorNovo:(novo!=null?novo:null)};
+  AUD_LOGS.unshift(rec);
+  try{const fields={};Object.keys(rec).forEach(k=>{if(k!=='id')fields[k]=toFV(rec[k]);});fetch(`${FS_URL}/${AUD_COL}/${id}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}catch(e){}
+  if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();
+}
+async function AUD_inicializar(){try{const l=await BC_fbCarregar(AUD_COL);AUD_LOGS=l.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));}catch(e){}if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();}
+function AUD_dataHora(iso){try{return new Date(iso).toLocaleString('pt-BR');}catch(e){return iso;}}
+function AUD_render(){
+  const el=document.getElementById('audLista');if(!el)return;
+  const logs=AUD_LOGS.slice().sort((a,b)=>(b.ts||'').localeCompare(a.ts||'')).slice(0,100);
+  el.innerHTML=logs.map(r=>{
+    const vA=r.valorAnterior!=null?fmt(r.valorAnterior):null, vN=r.valorNovo!=null?fmt(r.valorNovo):null;
+    const val=(vA!=null&&vN!=null)?`${vA} → ${vN}`:(vN!=null?vN:(vA!=null?vA:''));
+    return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:9px;padding:9px 13px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0"><span style="font-weight:700;color:#0f172a">${AUD_ICONE[r.acao]||'•'} ${r.descricao||r.acao}</span> <span style="color:#9ca3af;font-size:.78rem">· ${r.alvo||''}</span><div style="font-size:.72rem;color:#9ca3af">${AUD_dataHora(r.ts)}</div></div>
+      ${val?`<div style="font-weight:700;color:#334155;font-size:.85rem">${val}</div>`:''}
+    </div>`;
+  }).join('')||'<div style="color:#9ca3af;font-size:.85rem">Nenhum registro ainda. As alterações no Contas a Pagar aparecem aqui.</div>';
+}
+
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
@@ -5087,11 +5126,11 @@ function salvarContaP(){
       document.getElementById('pConfirmInfo').innerHTML=`<b>${nome}</b><br>${mudancas.join('<br>')||'Dados atualizados'}`;
       document.querySelectorAll('.prop-opcao').forEach((el,i)=>{el.classList.toggle('selected',i===0);el.querySelector('input').checked=i===0;});
       document.getElementById('pConfirmBg').classList.add('open');
-    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1)P_meses[mes][idx]=mesclado;P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
+    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1)P_meses[mes][idx]=mesclado;AUD_log('editar','meses',nome,'Conta editada',original?original.valor:null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
   }else{
     const sel=[...document.querySelectorAll('#pMesesCheck input:checked')].map(i=>i.value);if(!sel.length){toast('Selecione ao menos um mês.','#ef4444');return;}
     const agora=new Date().toISOString();
-    sel.forEach(m=>{if(!P_meses[m])P_meses[m]=[];P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});});fecharModalP();P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Adicionada em '+sel.length+' mês(es)!');
+    sel.forEach(m=>{if(!P_meses[m])P_meses[m]=[];P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});});fecharModalP();AUD_log('criar','meses',nome,'Conta a pagar criada em '+sel.length+' mês(es)',null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Adicionada em '+sel.length+' mês(es)!');
   }
 }
 
@@ -5120,6 +5159,7 @@ function confirmarExcluirP(){
   if(opcao==='somente'){P_meses[m]=(P_meses[m]||[]).filter(r=>String(r.id)!==String(id));toast('🗑️ Removida deste mês!','#ef4444');}
   else if(opcao==='futuros'){P_meses[m]=(P_meses[m]||[]).filter(r=>String(r.id)!==String(id));P_getMesesOrdenados().filter(k=>k>m).forEach(ms=>{P_meses[ms]=(P_meses[ms]||[]).filter(r=>r.nome!==nome);});toast('🗑️ Removida deste mês e futuros!','#ef4444');}
   else{Object.keys(P_meses).forEach(ms=>{P_meses[ms]=(P_meses[ms]||[]).filter(r=>r.nome!==nome);});toast('🗑️ Removida de todos!','#ef4444');}
+  AUD_log('excluir','meses',nome,'Conta excluída ('+opcao+')',null,null); // Fase 14 auditoria
   P_pendingExcluir=null;P_salvarStorage();renderTabelaP();renderDashboardP();
 }
 function P_editarContaCtx(id,mes){const m=mes||P_mesAtual;const prev=P_mesAtual;P_mesAtual=m;P_editandoMes=m;abrirModalP(id);P_mesAtual=prev;}
@@ -5166,6 +5206,7 @@ function confirmarBaixaP(){
   if(multa)r.multa=multa;else delete r.multa;
   if(desconto)r.desconto=desconto;else delete r.desconto;
   BC_syncMovPagar(r); // posta/atualiza a movimentação (saída) no livro-razão da conta
+  AUD_log('pagar','meses',r.nome,tipo==='total'?'Pagamento total':'Pagamento parcial',null,r.valorPago); // Fase 14 auditoria
   P_salvarStorage();renderDashboardP();renderTabelaP();if(mainAtivo==='contas')BC_renderPainel();fecharModalBaixaP();
   toast(tipo==='total'?'✅ Conta quitada!':'💰 Pagamento registrado!');
 }
@@ -5738,6 +5779,7 @@ BC_inicializar();
 CC_inicializar();
 CF_inicializar();
 FX_inicializar();
+AUD_inicializar();
 IA_carregarChave();
 </script>
 <script src="js/banco.js?v=7"></script>
