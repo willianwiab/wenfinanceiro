@@ -750,6 +750,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
   <button onclick="showMain('sophia',this)">✨ Sophia</button>
+  <button onclick="showMain('relatorios',this)">📈 Relatórios</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
 </div>
@@ -1429,6 +1430,52 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <input type="text" id="sophiaInput" placeholder="Ex: quais contas estão atrasadas?" onkeydown="if(event.key==='Enter')SOPHIA_perguntar()" style="flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:.9rem;outline:none"/>
       <button class="btn btn-purple" style="width:auto" onclick="SOPHIA_perguntar()">Perguntar</button>
     </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     RELATÓRIOS (adotado do Nossa Semente) — Fase 12+
+════════════════════════════════════════ -->
+<div class="page" id="page-relatorios">
+  <div class="container">
+    <div style="margin-bottom:12px">
+      <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">📈 Relatórios</h2>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Escolha o relatório e o período. Valores por categoria, cliente, cartão, rateio e fluxo.</p>
+    </div>
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:16px">
+      <div class="form-row">
+        <div class="form-group"><label>Relatório</label><select id="rptTipo" onchange="RPT_gerar()">
+          <option value="cat">📤 Despesas por categoria</option>
+          <option value="cli">📥 Receitas por cliente</option>
+          <option value="rat">🧮 Rateio por parte</option>
+          <option value="cartao">💳 Gastos por cartão</option>
+          <option value="fluxo">💰 Fluxo mensal (receita × despesa)</option>
+          <option value="fixas">📌 Contas fixas</option>
+          <option value="atraso">⚫ Contas atrasadas</option>
+        </select></div>
+        <div class="form-group"><label>Período</label><select id="rptPeriodo" onchange="RPT_periodoChange();RPT_gerar()">
+          <option value="mes">Mês atual</option>
+          <option value="3m">Últimos 3 meses</option>
+          <option value="6m">Últimos 6 meses</option>
+          <option value="ano">Ano atual</option>
+          <option value="tudo">Tudo</option>
+          <option value="custom">Personalizado</option>
+        </select></div>
+      </div>
+      <div class="form-row rpt-custom" style="display:none">
+        <div class="form-group"><label>De</label><select id="rptDe"></select></div>
+        <div class="form-group"><label>Até</label><select id="rptAte"></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Filtrar categoria (opcional)</label><select id="rptCategoria" onchange="RPT_gerar()"></select></div>
+        <div class="form-group"><label>Filtrar cliente (opcional)</label><select id="rptCliente" onchange="RPT_gerar()"></select></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn btn-outline-b" style="width:auto" onclick="RPT_exportarCSV()">⬇ CSV</button>
+        <button class="btn btn-outline-b" style="width:auto" onclick="RPT_imprimir()">🖨️ Imprimir / PDF</button>
+      </div>
+    </div>
+    <div id="rptResultado"></div>
   </div>
 </div>
 
@@ -2301,6 +2348,7 @@ function showMain(id,btn){
   if(id==='cartoes')CC_render();
   if(id==='categorias')CF_render();
   if(id==='sophia')SOPHIA_abrir();
+  if(id==='relatorios')RPT_ativar();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();}
 }
 
@@ -4946,6 +4994,103 @@ async function SOPHIA_perguntar(){
     SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:resp};SOPHIA_render();
   }catch(e){SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:'⚠️ Erro: '+e.message};SOPHIA_render();}
 }
+
+// ══════════════════════════════════════════════════════
+// RELATÓRIOS (módulo RPT_, adotado do Nossa Semente) — filtros + gráficos + tabela + CSV
+// ══════════════════════════════════════════════════════
+const RPT_CORES=['#16a34a','#3b82f6','#f59e0b','#8b5cf6','#ef4444','#0891b2','#ec4899','#14b8a6','#6366f1','#b45309','#65a30d','#7c3aed'];
+let RPT_chart=null, RPT_ultimo=null;
+function RPT_todosMeses(){const set=new Set(Object.keys(P_meses||{}));(R_todosOsDados||[]).forEach(r=>{if(r.mes)set.add(r.mes);});return [...set].sort((a,b)=>{const[ma,ya]=a.split('/');const[mb,yb]=b.split('/');if(ya!==yb)return parseInt(ya)-parseInt(yb);return (MESES_IDX[ma]??0)-(MESES_IDX[mb]??0);});}
+function RPT_meses(){
+  const all=RPT_todosMeses();if(!all.length)return[];const p=document.getElementById('rptPeriodo').value;const mref=mesAtualReal();
+  if(p==='tudo')return all;
+  if(p==='mes')return all.includes(mref)?[mref]:[all[all.length-1]];
+  if(p==='ano'){const y=''+new Date().getFullYear();const f=all.filter(m=>m.endsWith('/'+y));return f.length?f:[all[all.length-1]];}
+  if(p==='custom'){const de=document.getElementById('rptDe').value,ate=document.getElementById('rptAte').value;const i=all.indexOf(de),j=all.indexOf(ate);if(i<0||j<0)return all;return all.slice(Math.min(i,j),Math.max(i,j)+1);}
+  const n=p==='3m'?3:6;const idx=all.includes(mref)?all.indexOf(mref):all.length-1;return all.slice(Math.max(0,idx-n+1),idx+1);
+}
+window.RPT_periodoChange=function(){const c=document.getElementById('rptPeriodo').value==='custom';document.querySelectorAll('.rpt-custom').forEach(e=>e.style.display=c?'flex':'none');};
+function RPT_popularFiltros(){
+  const all=RPT_todosMeses();
+  ['rptDe','rptAte'].forEach(id=>{const s=document.getElementById(id);if(s){s.innerHTML=all.map(m=>`<option value="${m}">${m}</option>`).join('');s.value=id==='rptDe'?(all[Math.max(0,all.length-3)]||''):(all[all.length-1]||'');}});
+  const cat=document.getElementById('rptCategoria');if(cat){cat.innerHTML='<option value="">Todas as categorias</option>'+Object.entries(CATS_P).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');}
+  const cli=document.getElementById('rptCliente');if(cli){const cls=[...new Set((R_todosOsDados||[]).map(r=>r.cliente).filter(Boolean))].sort();cli.innerHTML='<option value="">Todos os clientes</option>'+cls.map(c=>`<option value="${c.replace(/"/g,'')}">${c}</option>`).join('');}
+}
+window.RPT_ativar=function(){RPT_popularFiltros();RPT_periodoChange();RPT_gerar();};
+function RPT_pct(v){return (Math.round(v*10)/10)+'%';}
+function RPT_gerar(){
+  const cont=document.getElementById('rptResultado');if(!cont)return;
+  const tipo=document.getElementById('rptTipo').value;const meses=RPT_meses();
+  const catF=document.getElementById('rptCategoria').value;const cliF=document.getElementById('rptCliente').value;
+  const inMeses=m=>meses.includes(m);
+  const periodoLabel=meses.length?(meses.length===1?meses[0]:meses[0]+' a '+meses[meses.length-1]):'—';
+  let titulo='',kpis=[],chart=null,colunas=[],linhas=[];
+  const pagarMes=m=>(P_meses[m]||[]);
+  if(tipo==='cat'){
+    titulo='Despesas por categoria';const acc={};let tot=0;
+    meses.forEach(m=>pagarMes(m).forEach(r=>{if(catF&&r.categoria!==catF)return;const lab=catInfoP(r.categoria).label;const v=Number(r.valor)||0;acc[lab]=(acc[lab]||0)+v;tot+=v;}));
+    const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
+    kpis=[{l:'Total despesas',v:fmt(tot)},{l:'Categorias',v:arr.length}];
+    chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1])};
+    colunas=['Categoria','Valor','%'];linhas=arr.map(x=>[x[0],fmt(x[1]),RPT_pct(tot?x[1]/tot*100:0)]);
+  }else if(tipo==='cli'){
+    titulo='Receitas por cliente';const acc={};let tot=0;
+    (R_todosOsDados||[]).forEach(r=>{if(!inMeses(r.mes))return;if(cliF&&r.cliente!==cliF)return;const v=Number(r.valorTotal)||0;acc[r.cliente||'—']=(acc[r.cliente||'—']||0)+v;tot+=v;});
+    const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
+    kpis=[{l:'Total receitas',v:fmt(tot)},{l:'Clientes',v:arr.length}];
+    chart={type:'bar',labels:arr.slice(0,12).map(x=>x[0]),data:arr.slice(0,12).map(x=>x[1])};
+    colunas=['Cliente','Valor','%'];linhas=arr.map(x=>[x[0],fmt(x[1]),RPT_pct(tot?x[1]/tot*100:0)]);
+  }else if(tipo==='rat'){
+    titulo='Rateio por parte';const acc={};let tot=0;
+    meses.forEach(m=>pagarMes(m).forEach(r=>{if(Array.isArray(r.rateio))r.rateio.forEach(x=>{const v=Number(x.valor)||0;acc[x.parte||'(sem nome)']=(acc[x.parte||'(sem nome)']||0)+v;tot+=v;});}));
+    const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
+    kpis=[{l:'Total rateado',v:fmt(tot)},{l:'Partes',v:arr.length}];
+    chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1])};
+    colunas=['Parte','Valor','%'];linhas=arr.map(x=>[x[0],fmt(x[1]),RPT_pct(tot?x[1]/tot*100:0)]);
+  }else if(tipo==='cartao'){
+    titulo='Gastos por cartão';const acc={};let tot=0;
+    Object.values(CC_LANCS||{}).forEach(l=>{const d=(l.dataCompra||'');const mk=d.length>=7?(MESES_ABREV[parseInt(d.slice(5,7))-1]+'/'+d.slice(0,4)):null;if(!mk||!inMeses(mk))return;const nome=(CC_CARTOES[l.cartaoId]||{}).nome||'—';const v=Number(l.valor)||0;acc[nome]=(acc[nome]||0)+v;tot+=v;});
+    const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
+    kpis=[{l:'Total em cartões',v:fmt(tot)},{l:'Cartões',v:arr.length}];
+    chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1])};
+    colunas=['Cartão','Valor'];linhas=arr.map(x=>[x[0],fmt(x[1])]);
+  }else if(tipo==='fluxo'){
+    titulo='Fluxo mensal';let tr=0,td=0;
+    linhas=meses.map(m=>{const rec=(R_todosOsDados||[]).filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0);const desp=pagarMes(m).reduce((a,r)=>a+(Number(r.valor)||0),0);tr+=rec;td+=desp;return [m,fmt(rec),fmt(desp),fmt(rec-desp)];});
+    kpis=[{l:'Receitas',v:fmt(tr)},{l:'Despesas',v:fmt(td)},{l:'Resultado',v:fmt(tr-td)}];
+    chart={type:'bar',labels:meses,data:meses.map(m=>(R_todosOsDados||[]).filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0)),data2:meses.map(m=>pagarMes(m).reduce((a,r)=>a+(Number(r.valor)||0),0))};
+    colunas=['Mês','Receita','Despesa','Resultado'];
+  }else if(tipo==='fixas'){
+    titulo='Contas fixas';const ativas=Object.values(FX_FIXAS||{}).filter(f=>f.status==='ativa'&&meses.some(m=>FX_mesesAplicaveis(f).includes(m)));
+    kpis=[{l:'Fixas ativas',v:ativas.length},{l:'Total médio/mês',v:fmt(ativas.reduce((a,f)=>a+(Number(f.valorMedio)||0),0))}];
+    colunas=['Descrição','Recorrência','Dia','Valor médio'];linhas=ativas.map(f=>[f.nome,FX_RECOR_LABEL[f.recorrencia]||f.recorrencia,f.dia||'—',fmt(f.valorMedio||0)]);
+  }else if(tipo==='atraso'){
+    titulo='Contas atrasadas';const pend=(typeof VENC_coletar==='function'?VENC_coletar():[]).filter(p=>p.diff<0).sort((a,b)=>a.diff-b.diff);
+    kpis=[{l:'Atrasadas',v:pend.length},{l:'Total',v:fmt(pend.reduce((a,p)=>a+p.saldo,0))}];
+    colunas=['Conta','Mês','Dias atraso','Saldo'];linhas=pend.map(p=>[p.nome,p.mes,Math.abs(p.diff),fmt(p.saldo)]);
+  }
+  RPT_ultimo={titulo,periodo:periodoLabel,colunas,linhas,kpis};
+  // render
+  const kpisH=`<div class="cards-p" style="margin-bottom:14px">${kpis.map(k=>`<div class="card-p"><label>${k.l}</label><div class="val">${k.v}</div></div>`).join('')}</div>`;
+  const chartH=chart?'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:14px;height:280px"><canvas id="rptCanvas"></canvas></div>':'';
+  const tabH=linhas.length?`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:6px 14px 12px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem"><thead><tr style="color:#6b7280;font-size:.74rem;text-transform:uppercase">${colunas.map((c,i)=>`<th style="padding:8px;text-align:${i===0?'left':'right'}">${c}</th>`).join('')}</tr></thead><tbody>${linhas.map(row=>`<tr style="border-top:1px solid #eef2f7">${row.map((cel,i)=>`<td style="padding:7px 8px;text-align:${i===0?'left':'right'}${i===0?';font-weight:600;color:#0f172a':''}">${cel}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<div style="color:#9ca3af;font-size:.85rem">Sem dados neste filtro.</div>';
+  cont.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="font-size:1rem;font-weight:700;color:#0f172a">${titulo}</h3><span style="font-size:.8rem;color:#6b7280">${periodoLabel}</span></div>${kpisH}${chartH}${tabH}`;
+  if(RPT_chart){RPT_chart.destroy();RPT_chart=null;}
+  if(chart&&typeof Chart!=='undefined'){
+    const ctx=document.getElementById('rptCanvas');
+    const ds=chart.type==='bar'&&chart.data2?[{label:'Receita',data:chart.data,backgroundColor:'#16a34a'},{label:'Despesa',data:chart.data2,backgroundColor:'#ef4444'}]:[{data:chart.data,backgroundColor:chart.labels.map((x,i)=>RPT_CORES[i%RPT_CORES.length])}];
+    RPT_chart=new Chart(ctx,{type:chart.type,data:{labels:chart.labels,datasets:ds},options:{maintainAspectRatio:false,plugins:{legend:{display:chart.type==='doughnut'||!!chart.data2,position:chart.type==='doughnut'?'right':'top',labels:{boxWidth:12,font:{size:11}}}},...(chart.type==='doughnut'?{cutout:'55%'}:{scales:{y:{beginAtZero:true}}})}});
+  }
+}
+window.RPT_exportarCSV=function(){if(!RPT_ultimo||!RPT_ultimo.linhas.length){toast('Nada pra exportar.','#ef4444');return;}
+  const linhasCSV=[RPT_ultimo.colunas,...RPT_ultimo.linhas.map(r=>r.map(c=>String(c).replace('R$','').trim()))];
+  const csv=linhasCSV.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+  BKP_baixar('WEN_relatorio_'+RPT_ultimo.titulo.replace(/\s+/g,'_')+'.csv','﻿'+csv,'text/csv;charset=utf-8');
+};
+window.RPT_imprimir=function(){if(!RPT_ultimo){toast('Gere um relatório primeiro.','#ef4444');return;}
+  const h=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${RPT_ultimo.titulo}</title><style>body{font-family:'Segoe UI',sans-serif;padding:20px;color:#0f172a}h1{font-size:1.2rem}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{padding:7px 9px;border-bottom:1px solid #ddd;font-size:.9rem;text-align:left}</style></head><body><h1>📈 ${RPT_ultimo.titulo}</h1><div style="color:#666">${RPT_ultimo.periodo} · WEN Produtora</div><table><tr>${RPT_ultimo.colunas.map(c=>`<th>${c}</th>`).join('')}</tr>${RPT_ultimo.linhas.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table></body></html>`;
+  try{const w=window.open('','_blank');if(w){w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);}else toast('Permita pop-ups.','#f59e0b');}catch(e){toast('Erro: '+e.message,'#ef4444');}
+};
 
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
