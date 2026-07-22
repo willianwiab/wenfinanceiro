@@ -6192,5 +6192,34 @@ IA_carregarChave();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=7"></script>
+
+<!-- ═══ TEMA "NS na cara da WEN" — camada de refinamento visual (não muda lógica/estrutura) ═══ -->
+<style id="ns-theme">
+  :root{--wen-verde:#16a34a;--wen-azul:#1e40af;--wen-ink:#0f172a;--wen-suave:#64748b;}
+  body{background:#eef2f7;color:#1e293b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+  /* Cabeçalho um tico mais suave, mantendo a marca WEN */
+  .hdr{padding:16px 24px}
+  .hdr-brand h1{letter-spacing:-.02em}
+  /* Navegação principal estilo NS: barra clara, aba ativa com sublinhado verde */
+  .nav-main{background:#fff;border-bottom:1px solid #e5e7eb;padding:0 8px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .nav-main button{color:#64748b;font-weight:600;border-bottom-width:3px;padding:15px 18px}
+  .nav-main button:hover{color:var(--wen-ink);background:#f8fafc}
+  .nav-main button.active{color:var(--wen-ink);border-bottom-color:var(--wen-verde)}
+  .nav-main button.active.pagar-active{border-bottom-color:var(--wen-azul)}
+  /* Cards mais arredondados, arejados e com sombra suave (look NS) */
+  .card-p,.fc-card,.backup-box,.chart-box{border-radius:18px!important;box-shadow:0 4px 18px rgba(15,23,42,.06)!important;border:1px solid #eef0f4}
+  .card-p{padding:18px 20px}
+  .backup-box{padding:20px 22px}
+  .cards-p{gap:16px}
+  /* Botões em pílula */
+  .btn{border-radius:24px;padding:9px 18px}
+  /* Container com respiro um pouco maior no desktop */
+  .container{max-width:1180px;padding:24px 18px}
+  /* Títulos com hierarquia um tico mais forte */
+  h2,h3,h4{letter-spacing:-.01em}
+  /* Chips/filtros já-pílula ganham consistência */
+  .bc-fil,.cf-ftipo{border-radius:22px}
+  @media (max-width:640px){ .container{padding:16px 12px} .nav-main button{padding:13px 14px} }
+</style>
 </body>
 </html>
