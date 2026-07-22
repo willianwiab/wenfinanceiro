@@ -1346,6 +1346,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       </div>
     </div>
     <div id="ccListaCartoes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+    <div id="ccResumo" style="margin-top:20px"></div>
     <div id="ccFaturasWrap" style="margin-top:24px"></div>
   </div>
 </div>
@@ -4136,7 +4137,39 @@ async function CC_excluirCompra(id){
 }
 
 // ── Render ──
-function CC_render(){CC_renderCartoes();CC_renderFaturas();}
+function CC_render(){CC_renderCartoes();CC_renderResumo();CC_renderFaturas();}
+function CC_mesIdx(key){const p=(key||'').split('/');return parseInt(p[1])*12+(MESES_IDX[p[0]]??0);}
+function CC_renderResumo(){
+  const el=document.getElementById('ccResumo');if(!el)return;
+  if(!Object.keys(CC_CARTOES).length){el.innerHTML='';return;}
+  const mref=mesAtualReal();const idxRef=CC_mesIdx(mref);
+  let fatMes=0,futuras=0,pago=0,pendente=0,avista=0,parcelado=0;
+  const porMes={},porCartao={},porCat={};
+  Object.keys(CC_CARTOES).forEach(cid=>{const fats=CC_faturasDoCartao(cid);
+    Object.keys(fats).forEach(key=>{const t=fats[key].total;const paga=CC_isFaturaPaga(cid,key);
+      porMes[key]=(porMes[key]||0)+t;porCartao[CC_CARTOES[cid].nome]=(porCartao[CC_CARTOES[cid].nome]||0)+t;
+      if(paga)pago+=t;else pendente+=t;
+      if(key===mref)fatMes+=t; if(CC_mesIdx(key)>idxRef)futuras+=t;
+      fats[key].items.forEach(it=>{const ci=catInfoP(it.categoria);porCat[ci.label]=(porCat[ci.label]||0)+it.valor;});
+    });
+  });
+  Object.values(CC_LANCS).forEach(l=>{const v=Number(l.valor)||0;if((parseInt(l.parcelas)||1)>1)parcelado+=v;else avista+=v;});
+  const linha=(obj,ordChrono)=>{const ks=Object.keys(obj);(ordChrono?ks.sort((a,b)=>CC_mesIdx(a)-CC_mesIdx(b)):ks.sort((a,b)=>obj[b]-obj[a]));return ks.map(k=>`<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:4px 0;border-top:1px solid #f1f5f9"><span>${k}</span><b>${fmt(obj[k])}</b></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>';};
+  el.innerHTML=`
+    <div class="cards-p">
+      <div class="card-p" style="border-left:4px solid #ec4899"><label>💳 Fatura do mês (${mref})</label><div class="val">${fmt(fatMes)}</div></div>
+      <div class="card-p" style="border-left:4px solid #7c3aed"><label>🔮 Parcelas futuras</label><div class="val">${fmt(futuras)}</div><div class="val-sub">meses à frente</div></div>
+      <div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Pago</label><div class="val">${fmt(pago)}</div></div>
+      <div class="card-p" style="border-left:4px solid #ef4444"><label>🔴 Pendente</label><div class="val">${fmt(pendente)}</div></div>
+      <div class="card-p" style="border-left:4px solid #0891b2"><label>🛒 À vista</label><div class="val">${fmt(avista)}</div></div>
+      <div class="card-p" style="border-left:4px solid #f59e0b"><label>📅 Parceladas</label><div class="val">${fmt(parcelado)}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">🔮 Projeção por mês</h4>${linha(porMes,true)}</div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">💳 Por cartão</h4>${linha(porCartao)}</div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">🏷️ Por categoria</h4>${linha(porCat)}</div>
+    </div>`;
+}
 function CC_darken(hex,amt){try{const c=(hex||'#7c3aed').replace('#','');let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);r=Math.max(0,r-amt);g=Math.max(0,g-amt);b=Math.max(0,b-amt);return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');}catch(e){return hex||'#7c3aed';}}
 function CC_renderCartoes(){
   const el=document.getElementById('ccListaCartoes');if(!el)return;
