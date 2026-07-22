@@ -2001,6 +2001,23 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal mover conta de mês (ajuste manual) -->
+<div class="confirm-bg" id="pMoverBg">
+  <div class="confirm-box" style="max-width:440px">
+    <h3>📆 Mover para outro mês</h3>
+    <p>Conta: <b id="pMoverNome"></b> <span id="pMoverVal" style="color:#6b7280"></span></p>
+    <p style="font-size:.84rem;color:#6b7280;margin:0 0 6px">Move este lançamento do mês <b id="pMoverDe"></b> para o mês escolhido. Nada é duplicado — sai de um, entra no outro.</p>
+    <div class="form-group">
+      <label>Mês de destino</label>
+      <select id="pMoverDestino" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:.9rem;outline:none"></select>
+    </div>
+    <div class="confirm-btns">
+      <button class="btn btn-outline-b" onclick="P_cancelarMover()">Cancelar</button>
+      <button class="btn btn-blue" onclick="P_confirmarMover()">📆 Mover</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal baixa pagar -->
 <div class="modal-bg" id="pModalBaixaBg">
   <div class="modal modal-baixa-p">
@@ -2380,10 +2397,11 @@ function gerarId(){return 'w'+Date.now()+Math.floor(Math.random()*9999);}
 function mesAtualReal(){const d=new Date();return MESES_ABREV[d.getMonth()]+'/'+d.getFullYear();}
 function getDia(){return new Date().getDate();}
 
-function toast(msg,cor='#16a34a'){
+let _toastTimer=null;
+function toast(msg,cor='#16a34a',ms=2800){
   const t=document.getElementById('toast');
   t.textContent=msg;t.style.background=cor;t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2800);
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.classList.remove('show'),ms);
 }
 
 // ══════════════════════════════════════════════════════
@@ -3767,7 +3785,16 @@ function catInfoP(c){return CATS_P[c]||{label:'Sem cat.',icon:'—',color:'#94a3
 const CAT_COL='categorias_pagar';
 async function CAT_fbSalvar(id,dados){
   const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
-  await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+  // checa a resposta: sem isso, um 429/403 era engolido e a categoria "sumia" no refresh
+  try{
+    const res=await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+    if(!res||!res.ok){throw new Error(res?('nuvem recusou '+res.status):'sem rede');}
+    return true;
+  }catch(e){
+    if(typeof setSyncStatus==='function')setSyncStatus('error','categoria não salva na nuvem');
+    if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ A categoria ficou salva só neste navegador ('+(e.message||'erro')+'). Ela pode não aparecer em outro aparelho até a nuvem voltar.','#ef4444',7000);}
+    return false;
+  }
 }
 async function CAT_fbExcluir(id){
   await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});
@@ -5229,7 +5256,8 @@ function BKP_resumoMes(mref){
   const entradas=R.reduce((a,r)=>a+Number(r.valorTotal||0),0);const recebido=R.reduce((a,r)=>a+Number(r.valorReserva||0),0);const aReceber=R.reduce((a,r)=>a+Number(r.saldo||0),0);
   const saidas=P.reduce((a,r)=>a+(Number(r.valor)||0),0);const pago=P.filter(r=>String(r.status).toUpperCase()==='PAGO').reduce((a,r)=>a+(Number(r.valor)||0),0);
   const hoje=getDia();const atrasadas=P.filter(r=>String(r.status).toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).reduce((a,r)=>a+((Number(r.valor)||0)-(Number(r.valorPago)||0)),0);
-  const porCategoria={};P.forEach(r=>{if(r.categoria){const ci=catInfoP(r.categoria);porCategoria[ci.label]=(porCategoria[ci.label]||0)+(Number(r.valor)||0);}});
+  // card-aware: quebra a fatura do cartão nas categorias reais (não conta 'Cartões' como categoria)
+  const porCategoria={};const _accCat=(typeof FCX_despesasCat==='function')?FCX_despesasCat(mref):{};Object.entries(_accCat).forEach(([slug,v])=>{if(v>0){const lab=catInfoP(slug).label;porCategoria[lab]=(porCategoria[lab]||0)+v;}});
   const rateioPorParte={};P.forEach(r=>{if(Array.isArray(r.rateio))r.rateio.forEach(x=>{rateioPorParte[x.parte]=(rateioPorParte[x.parte]||0)+(Number(x.valor)||0);});});
   const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const ant=idx>0?ord[idx-1]:null;const saidasAnt=ant?(P_meses[ant]||[]).reduce((a,r)=>a+(Number(r.valor)||0),0):null;
   return {periodo:mref,entradas,recebido,aReceber,saidas,pago,aPagar:saidas-pago,atrasadas,
@@ -5578,16 +5606,23 @@ async function IMP_importar(){
     const novos=[];
     itens.forEach(mv=>{
       if(mv.parcela&&mv.parcela.total>1){
-        // PARCELAMENTO: projeta a parcela atual + as futuras (X..N). Idempotente por descrição+total (reimportar não duplica).
+        // PARCELAMENTO (Feature 4): a fatura importada (ex: JUL) mostra o valor EXATO da parcela atual (X)
+        // e as futuras (X+1..N) entram como prévia nos PRÓXIMOS meses. NÃO espalha pra meses passados.
+        // (Feature 1) Idempotente por descrição+total: reimportar a próxima fatura preserva a âncora e não duplica.
         const N=mv.parcela.total,X=Math.min(mv.parcela.atual||1,N);
         // remove o "X/N" da descrição pra chave do grupo ser estável entre os meses (senão duplica)
         const descBase=(mv.descricao||'Compra').replace(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/,'').replace(/\s+/g,' ').trim()||'Compra';
         const norm=IMP_normDesc(descBase).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50);
         const pid='pg_'+alvo+'_'+norm+'_'+N;
-        // âncora na 1ª parcela = mês da fatura − (X−1). Assim importar 5/6 em JUL ou 6/6 em AGO cai no MESMO início.
-        const ma=CC_mesAnoDaKey(IMP_faturaMesKey(mv));const ini=CC_addMonths(ma.ano,ma.mes,-(X-1));const iniKey=CC_mesKey(ini.ano,ini.mes);
-        const dados={cartaoId:alvo,descricao:descBase,valor:Math.abs(Number(mv.valor)||0)*N,dataCompra:mv.data||BC_hoje(),parcelas:N,parcelaBase:1,parcelaTotal:N,competenciaInicio:iniKey,categoria:mv.categoria||'',responsavel:'',obs:'Importado — parcelamento '+N+'x (parcelas futuras entram como prévia)',importParcelamento:true,criadoEm:(CC_LANCS[pid]&&CC_LANCS[pid].criadoEm)||new Date().toISOString()};
-        const novo=!CC_LANCS[pid];CC_LANCS[pid]=dados;CC_fbSalvar(CC_COL_LANC,pid,dados);novos.push(pid);if(novo)n++;
+        const ex=CC_LANCS[pid];const novo=!ex;
+        const fatKey=IMP_faturaMesKey(mv);
+        // 1ª vez: ancora no mês DESTA fatura (parcela X), projeta X..N pra frente. Reimport: mantém a âncora original.
+        const competenciaInicio=novo?fatKey:(ex.competenciaInicio||fatKey);
+        const parcelaBase=novo?X:(ex.parcelaBase||X);
+        const parcelasCount=novo?(N-X+1):(ex.parcelas||(N-X+1));
+        const vp=Math.abs(Number(mv.valor)||0); // valor de UMA parcela (o que aparece na fatura deste mês)
+        const dados={cartaoId:alvo,descricao:descBase,valor:Math.round(vp*parcelasCount*100)/100,dataCompra:(ex&&ex.dataCompra)||mv.data||BC_hoje(),parcelas:parcelasCount,parcelaBase,parcelaTotal:N,competenciaInicio,categoria:(ex&&ex.categoria)||mv.categoria||'',responsavel:'',obs:'Importado — parcelamento '+N+'x (parcela '+X+'/'+N+' em '+fatKey+'; futuras como prévia)',importParcelamento:true,criadoEm:(ex&&ex.criadoEm)||new Date().toISOString()};
+        CC_LANCS[pid]=dados;CC_fbSalvar(CC_COL_LANC,pid,dados);novos.push(pid);if(novo)n++;
       }else{
         const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
         if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
@@ -5731,7 +5766,8 @@ function RPT_gerar(){
   const pagarMes=m=>(P_meses[m]||[]);
   if(tipo==='cat'){
     titulo='Despesas por categoria';const acc={};let tot=0;
-    meses.forEach(m=>pagarMes(m).forEach(r=>{if(catF&&r.categoria!==catF)return;const lab=catInfoP(r.categoria).label;const v=Number(r.valor)||0;acc[lab]=(acc[lab]||0)+v;tot+=v;}));
+    // card-aware: fatura do cartão quebrada nas categorias reais (não conta 'Cartões' como categoria)
+    const _accS=DESP_catMeses(meses);Object.entries(_accS).forEach(([slug,v])=>{if(catF&&slug!==catF)return;if(v<=0)return;const lab=catInfoP(slug).label;acc[lab]=(acc[lab]||0)+v;tot+=v;});
     const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
     kpis=[{l:'Total despesas',v:fmt(tot)},{l:'Categorias',v:arr.length}];
     chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1])};
@@ -5859,6 +5895,18 @@ function FCX_despesasCat(mref){
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const c=r.categoria||'';acc[c]=(acc[c]||0)+(Number(r.valor)||0);});
   Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{const c=it.categoria||'';acc[c]=(acc[c]||0)+(Number(it.valor)||0);});});
   return acc;
+}
+// ── Regra CANÔNICA de "despesas por categoria" (card-aware) — reusada por Rateio, Categorias, Relatórios e Sophia ──
+// A fatura de cartão (categoria 'cartoes', com faturaCartao) NÃO entra como categoria: ela é quebrada
+// nos itens reais da fatura (marketing, serviços, etc.). Assim "Cartões" nunca vira um balde no rateio.
+// despesas por categoria somando vários meses (card-aware)
+function DESP_catMeses(meses){const acc={};(meses||[]).forEach(m=>{const a=FCX_despesasCat(m)||{};Object.entries(a).forEach(([slug,v])=>{acc[slug]=(acc[slug]||0)+(Number(v)||0);});});return acc;}
+// itens do mês por categoria COM status pago/pendente (card-aware) — p/ o painel Pagar → Categorias
+function DESP_itensMes(mref){
+  const out=[];
+  (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const v=Number(r.valor)||0;out.push({nome:r.nome,valor:v,categoria:r.categoria||'outros',pago:String(r.status).toUpperCase()==='PAGO'?v:(Number(r.valorPago)||0),fixa:!!r.fixa,cartao:false});});
+  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(!fat)return;const paga=(typeof CC_isFaturaPaga==='function')&&CC_isFaturaPaga(cid,mref);fat.items.forEach(it=>{const v=Number(it.valor)||0;out.push({nome:'💳 '+it.desc,valor:v,categoria:it.categoria||'outros',pago:paga?v:0,fixa:false,cartao:true});});});
+  return out;
 }
 // itens (contas a pagar + itens da fatura) de uma categoria no mês — pra expandir/recategorizar
 function FCX_itensCategoria(mref,slug){
@@ -6006,7 +6054,7 @@ function FCX_renderBlocos(){
 }
 
 // Estado Pagar
-let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
+let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false,P_syncErroAvisado=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
 if(!P_meses){P_meses={};const ma=mesAtualReal();P_meses[ma]=[];P_salvarStorage();}
 // Migração
@@ -6029,14 +6077,20 @@ async function syncToSheetsP(){
   if(P_syncEmAndamento){P_syncPendente=true;return;}
   P_syncEmAndamento=true;P_syncPendente=false;setSyncStatus('saving');
   try{
-    const promises=Object.keys(P_meses).map(async mes=>{
+    // Checa CADA resposta: fetch() NÃO lança em 429/403, então antes o app dizia "salvo" sem salvar.
+    const results=await Promise.all(Object.keys(P_meses).map(async mes=>{
       const fields={contas:toFV(P_meses[mes]),mes:{stringValue:mes}};
       const url=`${FS_URL}/meses/${encodeURIComponent(mes)}?key=${FB_API_KEY}`;
-      await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
-    });
-    await Promise.all(promises);
-    await P_atualizarCaderninho();setSyncStatus('ok');
-  }catch(e){setSyncStatus('error',e.message);}
+      const res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+      return {mes,ok:res.ok,status:res.status};
+    }));
+    const falhou=results.filter(r=>!r.ok);
+    if(falhou.length){const s=falhou[0].status;throw new Error(s===429?'Nuvem sem cota (429)':'Nuvem recusou ('+s+')');}
+    await P_atualizarCaderninho();setSyncStatus('ok');P_syncErroAvisado=false;
+  }catch(e){
+    setSyncStatus('error',(e.message||'erro')+' — salvo só neste aparelho');
+    if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Não consegui salvar na nuvem ('+(e.message||'erro')+'). Seus dados estão guardados só NESTE navegador — não troque de aparelho nem limpe o cache até a nuvem voltar. Tentarei de novo no próximo salvamento.','#ef4444',8000);}
+  }
   finally{P_syncEmAndamento=false;if(P_syncPendente){P_syncPendente=false;setTimeout(syncToSheetsP,1000);}}
 }
 async function P_atualizarCaderninho(){
@@ -6283,7 +6337,7 @@ function renderTabelaP(){
       <td class="right" style="color:${saldo>0?'#b91c1c':'#15803d'}">${fmt(saldo)}</td>
       <td class="center"><span class="badge-p ${st.cls}">${st.label}</span>${typeof BK_statusConciliacao==='function'?`<div style="margin-top:3px">${BK_statusConciliacao('pagar',r.id,mesR)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div>`:''}</td>
       <td class="center">${!isPago?`<button class="btn-parcial-p" onclick="P_abrirBaixaCtx('${r.id}','${mesR}')">💰 Baixar</button>`:`<span class="btn-pagar-p pago">✅</span>`}</td>
-      <td class="center"><button class="toggle-btn-p" onclick="P_editarContaCtx('${r.id}','${mesR}')">✏️</button><button class="toggle-btn-p" onclick="P_excluirContaCtx('${r.id}','${mesR}')">🗑️</button></td>
+      <td class="center"><button class="toggle-btn-p" onclick="P_editarContaCtx('${r.id}','${mesR}')">✏️</button><button class="toggle-btn-p" title="Mover para outro mês" onclick="P_moverMesCtx('${r.id}','${mesR}')">📆</button><button class="toggle-btn-p" onclick="P_excluirContaCtx('${r.id}','${mesR}')">🗑️</button></td>
     </tr>`;
   });
   if(!rows)rows=`<tr><td colspan="7" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
@@ -6365,6 +6419,44 @@ function confirmarExcluirP(){
 }
 function P_editarContaCtx(id,mes){const m=mes||P_mesAtual;const prev=P_mesAtual;P_mesAtual=m;P_editandoMes=m;abrirModalP(id);P_mesAtual=prev;}
 function P_abrirBaixaCtx(id,mes){const m=mes||P_mesAtual;const r=(P_meses[m]||[]).find(x=>String(x.id)===String(id));if(!r)return;P_baixaId={id:r.id,mes:m};P_abrirModalBaixa(r);}
+// ── Mover um lançamento de um mês pro outro (ajuste manual) — Feature 2 ──
+let P_moverPend=null;
+function P_mesesParaMover(exclui){
+  const set=new Set(P_getMesesOrdenados());
+  const o=CC_mesAnoDaKey(exclui); // gera 6 pra trás e 12 pra frente, pra permitir destino que ainda não existe
+  for(let k=-6;k<=12;k++){const m=CC_addMonths(o.ano,o.mes,k);set.add(CC_mesKey(m.ano,m.mes));}
+  set.delete(exclui);
+  return [...set].sort((a,b)=>{const A=CC_mesAnoDaKey(a),B=CC_mesAnoDaKey(b);return A.ano!==B.ano?A.ano-B.ano:A.mes-B.mes;});
+}
+function P_moverMesCtx(id,mes){
+  const m=mes||P_mesAtual;const r=(P_meses[m]||[]).find(x=>String(x.id)===String(id));if(!r)return;
+  if(r.faturaCartao){toast('Fatura de cartão é gerada automaticamente. Pra mudar o mês, ajuste o fechamento/compra no cartão.','#f59e0b');return;}
+  P_moverPend={id:r.id,mes:m};
+  document.getElementById('pMoverNome').textContent=r.nome;
+  document.getElementById('pMoverVal').textContent='· '+fmt(r.valor);
+  document.getElementById('pMoverDe').textContent=m;
+  const sel=document.getElementById('pMoverDestino');
+  const keys=P_mesesParaMover(m);const ord=P_getMesesOrdenados();
+  sel.innerHTML=keys.map(k=>`<option value="${k}">${k}${ord.includes(k)?'':' (novo)'}</option>`).join('');
+  document.getElementById('pMoverBg').classList.add('open');
+}
+function P_cancelarMover(){document.getElementById('pMoverBg').classList.remove('open');P_moverPend=null;}
+function P_confirmarMover(){
+  if(!P_moverPend){document.getElementById('pMoverBg').classList.remove('open');return;}
+  const destino=document.getElementById('pMoverDestino').value;const{id,mes}=P_moverPend;
+  document.getElementById('pMoverBg').classList.remove('open');P_moverPend=null;
+  if(!destino||destino===mes)return;
+  const arr=P_meses[mes]||[];const idx=arr.findIndex(r=>String(r.id)===String(id));if(idx<0)return;
+  const r=arr[idx];arr.splice(idx,1);
+  const movido={...r,mes:destino};
+  if(movido.competencia===mes)movido.competencia=destino; // competência presa no mês de origem acompanha o destino
+  if(!P_meses[destino])P_meses[destino]=[];
+  P_meses[destino].push(movido);
+  if(typeof AUD_log==='function')AUD_log('editar','meses',r.nome,'Movida de '+mes+' para '+destino,mes,destino);
+  P_salvarStorage();
+  renderTabelaP();if(typeof renderDashboardP==='function')renderDashboardP();if(subPAtivo==='p-categorias')renderCategoriasP();
+  toast('📆 "'+r.nome+'" movida para '+destino+'.');
+}
 
 // Baixa Pagar
 function P_abrirModalBaixa(r){
@@ -6462,19 +6554,23 @@ function renderCatMesFiltroP(){
 }
 function P_getCatData(){const mf=document.getElementById('pCatMesFiltro')?.value||'TODOS_MESES';return mf==='TODOS_MESES'?Object.values(P_meses).flat():(P_meses[mf]||[]);}
 function renderCategoriasP(){
-  const data=P_getCatData();const ordem=document.getElementById('pCatOrdem')?.value||'total';
-  const grupos={};data.forEach(r=>{const cat=r.categoria||'outros';if(!grupos[cat])grupos[cat]={contas:[],total:0,pago:0,pendente:0};grupos[cat].contas.push(r);grupos[cat].total+=r.valor;if(r.status.toUpperCase()==='PAGO')grupos[cat].pago+=r.valor;else grupos[cat].pendente+=(r.valor-(r.valorPago||0));});
+  // card-aware: a fatura agregada ('cartoes') sai; os itens reais do cartão entram nas categorias deles
+  const mf=document.getElementById('pCatMesFiltro')?.value||'TODOS_MESES';
+  const meses=mf==='TODOS_MESES'?P_getMesesOrdenados():[mf];
+  const data=[];meses.forEach(m=>DESP_itensMes(m).forEach(it=>data.push(it)));
+  const ordem=document.getElementById('pCatOrdem')?.value||'total';
+  const grupos={};data.forEach(r=>{const cat=r.categoria||'outros';if(!grupos[cat])grupos[cat]={contas:[],total:0,pago:0,pendente:0};grupos[cat].contas.push(r);grupos[cat].total+=r.valor;grupos[cat].pago+=(r.pago||0);grupos[cat].pendente+=(r.valor-(r.pago||0));});
   let keys=Object.keys(grupos);
   if(ordem==='total')keys.sort((a,b)=>grupos[b].total-grupos[a].total);else if(ordem==='nome')keys.sort((a,b)=>catInfoP(a).label.localeCompare(catInfoP(b).label));else if(ordem==='qtd')keys.sort((a,b)=>grupos[b].contas.length-grupos[a].contas.length);
   const totalGeral=data.reduce((a,r)=>a+r.valor,0);
   if(P_catChartObj)P_catChartObj.destroy();
   P_catChartObj=new Chart(document.getElementById('pCatChart'),{type:'doughnut',data:{labels:keys.map(k=>catInfoP(k).icon+' '+catInfoP(k).label),datasets:[{data:keys.map(k=>grupos[k].total),backgroundColor:keys.map(k=>catInfoP(k).color),borderWidth:2,borderColor:'#fff'}]},options:{plugins:{legend:{position:'right'},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${totalGeral>0?Math.round(c.raw/totalGeral*100):0}%)`}}},cutout:'55%'}});
   document.getElementById('pCatGrid').innerHTML=keys.map(cat=>{const g=grupos[cat];const ci=catInfoP(cat);const pct=g.total>0?Math.round(g.pago/g.total*100):0;const pctTotal=totalGeral>0?Math.round(g.total/totalGeral*100):0;
-    return`<div class="cat-card-p" style="border-top-color:${ci.color}"><div class="cc-header-p"><div class="cc-nome-p" style="color:${ci.color}">${ci.icon} ${ci.label} <span style="font-size:.7rem;background:${ci.bg};color:${ci.color};padding:1px 6px;border-radius:20px;font-weight:700">${g.contas.length}</span></div><div class="cc-total-p" style="color:${ci.color}">${fmt(g.total)}<div style="font-size:.7rem;color:#94a3b8;font-weight:400">${pctTotal}%</div></div></div><div class="cc-pct-bar-p"><div class="cc-pct-fill-p" style="width:${pct}%;background:${ci.color}"></div></div><div class="cc-stats-p"><span>✅ ${fmt(g.pago)}</span><span>${pct}%</span><span>🔴 ${fmt(g.pendente)}</span></div><div class="cc-lista-p">${g.contas.sort((a,b)=>b.valor-a.valor).map(r=>`<div class="cc-item-p"><span class="cc-item-nome-p">${r.nome}${r.fixa?' 📌':''}</span><span class="cc-item-val-p" style="color:${r.status.toUpperCase()==='PAGO'?'#15803d':'#b91c1c'}">${fmt(r.valor)}</span></div>`).join('')}</div></div>`;
+    return`<div class="cat-card-p" style="border-top-color:${ci.color}"><div class="cc-header-p"><div class="cc-nome-p" style="color:${ci.color}">${ci.icon} ${ci.label} <span style="font-size:.7rem;background:${ci.bg};color:${ci.color};padding:1px 6px;border-radius:20px;font-weight:700">${g.contas.length}</span></div><div class="cc-total-p" style="color:${ci.color}">${fmt(g.total)}<div style="font-size:.7rem;color:#94a3b8;font-weight:400">${pctTotal}%</div></div></div><div class="cc-pct-bar-p"><div class="cc-pct-fill-p" style="width:${pct}%;background:${ci.color}"></div></div><div class="cc-stats-p"><span>✅ ${fmt(g.pago)}</span><span>${pct}%</span><span>🔴 ${fmt(g.pendente)}</span></div><div class="cc-lista-p">${g.contas.sort((a,b)=>b.valor-a.valor).map(r=>`<div class="cc-item-p"><span class="cc-item-nome-p">${r.nome}${r.fixa?' 📌':''}</span><span class="cc-item-val-p" style="color:${(r.pago||0)>=r.valor&&r.valor>0?'#15803d':'#b91c1c'}">${fmt(r.valor)}</span></div>`).join('')}</div></div>`;
   }).join('')||'<div style="text-align:center;padding:36px;color:#6b7280">Sem dados.</div>';
   // Top 5
   const top5=data.slice().sort((a,b)=>b.valor-a.valor).slice(0,5);const cores=['#f59e0b','#94a3b8','#cd7c54','#6366f1','#22c55e'];
-  document.getElementById('pTop5List').innerHTML=top5.map((r,i)=>`<div class="top5-item-p"><span class="top5-rank-p" style="color:${cores[i]}">#${i+1}</span><span class="top5-nome-p">${r.nome} ${catBadgeP(r.categoria)}</span><span class="top5-val-p" style="color:${r.status.toUpperCase()==='PAGO'?'#15803d':'#b91c1c'}">${fmt(r.valor)}</span></div>`).join('')||'<div style="color:#9ca3af;font-size:.83rem;padding:7px">Sem contas</div>';
+  document.getElementById('pTop5List').innerHTML=top5.map((r,i)=>`<div class="top5-item-p"><span class="top5-rank-p" style="color:${cores[i]}">#${i+1}</span><span class="top5-nome-p">${r.nome} ${catBadgeP(r.categoria)}</span><span class="top5-val-p" style="color:${(r.pago||0)>=r.valor&&r.valor>0?'#15803d':'#b91c1c'}">${fmt(r.valor)}</span></div>`).join('')||'<div style="color:#9ca3af;font-size:.83rem;padding:7px">Sem contas</div>';
 }
 
 // Histórico Pagar
