@@ -1341,7 +1341,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline-b" onclick="IMP_abrir('cartao')">📥 Importar fatura</button>
-        <button class="btn btn-outline-b" onclick="CC_abrirModalEstorno()">➖ Estorno/crédito</button>
         <button class="btn btn-outline-b" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
         <button class="btn btn-purple" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
       </div>
@@ -2016,26 +2015,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="modal-actions">
       <button class="btn btn-outline-b" onclick="CC_fecharModalCompra()">Cancelar</button>
       <button class="btn btn-purple" onclick="CC_salvarCompra()">✅ Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal estorno/crédito (Fase E) -->
-<div class="modal-bg" id="ccModalEstornoBg">
-  <div class="modal" style="max-width:460px">
-    <h2>➖ Estorno / Crédito</h2>
-    <p style="font-size:.8rem;color:#6b7280;margin:-6px 0 10px">Um estorno/crédito entra na fatura como valor negativo (reduz o total do mês).</p>
-    <div class="form-group"><label>Cartão</label><select id="ccEFCartao"></select></div>
-    <div class="form-group"><label>Compra de origem (opcional)</label><select id="ccEFOrigem"><option value="">— não vincular —</option></select></div>
-    <div class="form-group"><label>Descrição</label><input type="text" id="ccEFDesc" placeholder="Ex: Estorno de compra cancelada"/></div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor do crédito (R$)</label><input type="number" id="ccEFValor" placeholder="0,00" step="0.01"/></div>
-      <div class="form-group"><label>Data</label><input type="date" id="ccEFData"/></div>
-    </div>
-    <div class="form-group"><label>Categoria</label><select id="ccEFCategoria"></select></div>
-    <div class="modal-actions">
-      <button class="btn btn-outline-b" onclick="CC_fecharModalEstorno()">Cancelar</button>
-      <button class="btn btn-purple" onclick="CC_salvarEstorno()">✅ Lançar estorno</button>
     </div>
   </div>
 </div>
@@ -3965,28 +3944,14 @@ document.addEventListener('click',e=>{if(!e.target.closest('.bc-menu'))document.
 // em P_meses (com faturaCartao{cartaoId,mes} p/ trava anti-duplicidade).
 // Limite usado/disponível e "fatura paga" derivam do estado; nada duplicado.
 // ══════════════════════════════════════════════════════
-const CC_COL_CARD='cartoes', CC_COL_LANC='cartao_lancamentos', CC_COL_PARC='cartao_parcelas', CC_COL_FAT='cartao_faturas';
+const CC_COL_CARD='cartoes', CC_COL_LANC='cartao_lancamentos', CC_COL_PARC='cartao_parcelas';
 const CC_CARTOES={}; // id -> {nome,banco,final,limite,diaFechamento,diaVencimento,cor,status,criadoEm}
 const CC_LANCS={};   // id -> {cartaoId,descricao,valor,dataCompra,parcelas,categoria,responsavel,obs,criadoEm}
-// Fase 2 (port NS): parcelas PERSISTIDAS. id = `${compraId}_${numero}` (idempotente).
+// Parcelas PERSISTIDAS. id = `${compraId}_${numero}` (idempotente).
 // competencia = mês de vencimento (chave 'MMM/YYYY', igual P_meses), congelada na geração.
-// É a fundação p/ estorno, renegociação e status por parcela (fases seguintes).
+// Alimentam as faturas PRÉVIAS (previstas pelas parcelas). Faturas são derivadas.
 const CC_PARCELAS={}; // id -> {compraId,cartaoId,numero,total,valor,competencia,descricao,categoria,status,criadoEm}
-// Fase C (port NS): camada FORMAL da fatura. Guarda só o que NÃO deriva das parcelas:
-// status manual (fechar antes/reabrir), total informado pelo banco (+diferença) e data de fechamento.
-// Valores continuam derivados das parcelas (fonte única) e o pagamento continua no Pagar.
-// chave em memória: `${cartaoId}|${competencia}`. doc id: `${cartaoId}_${competencia com / -> -}`.
-const CC_FATURAS={}; // key -> {cartaoId,competencia,statusManual,totalInformado,dataFechamento,obs,criadoEm,atualizadoEm}
 let CC_selecionado=null, CC_editandoCartaoId=null;
-function CC_fatKey(cid,comp){return cid+'|'+comp;}
-function CC_fatDocId(cid,comp){return cid+'_'+String(comp).replace(/\//g,'-');}
-function CC_fatObj(cid,comp){return CC_FATURAS[CC_fatKey(cid,comp)]||null;}
-async function CC_fatSet(cid,comp,patch){
-  const key=CC_fatKey(cid,comp);const ex=CC_FATURAS[key]||{cartaoId:cid,competencia:comp,statusManual:'',totalInformado:null,dataFechamento:null,obs:'',criadoEm:new Date().toISOString()};
-  const dados=Object.assign({},ex,patch,{cartaoId:cid,competencia:comp,atualizadoEm:new Date().toISOString()});
-  CC_FATURAS[key]=dados;await CC_fbSalvar(CC_COL_FAT,CC_fatDocId(cid,comp),dados);
-  return dados;
-}
 
 async function CC_fbSalvar(col,id,dados){
   const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
@@ -4005,11 +3970,10 @@ async function CC_fbCarregar(col){
   return out;
 }
 async function CC_inicializar(){
-  const [cards,lancs,parc,fats]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC),CC_fbCarregar(CC_COL_PARC),CC_fbCarregar(CC_COL_FAT)]);
+  const [cards,lancs,parc]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC),CC_fbCarregar(CC_COL_PARC)]);
   Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);
   Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);
   Object.keys(CC_PARCELAS).forEach(k=>delete CC_PARCELAS[k]);Object.assign(CC_PARCELAS,parc);
-  Object.keys(CC_FATURAS).forEach(k=>delete CC_FATURAS[k]);Object.values(fats).forEach(f=>{if(f&&f.cartaoId&&f.competencia)CC_FATURAS[CC_fatKey(f.cartaoId,f.competencia)]=f;});
   await CC_reconciliarParcelasTodas(); // gera/atualiza parcelas persistidas das compras (migração idempotente)
   CC_sincronizarTodas(); // projeta as faturas futuras no Pagar automaticamente
   if(mainAtivo==='cartoes')CC_render();
@@ -4018,17 +3982,14 @@ async function CC_inicializar(){
 // ── Parcelas persistidas (Fase 2) ──
 // Congela a competência (mês de vencimento) na geração. Não recomputa parcela cuja
 // fatura já está PAGA (preserva histórico). Idempotente: só grava o que mudou.
-function CC_competenciaParcela(l,c,k){
-  if(l.competenciaInicio){const ma=CC_mesAnoDaKey(l.competenciaInicio);const m=CC_addMonths(ma.ano,ma.mes,k);return CC_mesKey(m.ano,m.mes);}
-  const base=CC_baseVenc(l.dataCompra,+c.diaFechamento||1,+c.diaVencimento||10);const m=CC_addMonths(base.ano,base.mes,k);return CC_mesKey(m.ano,m.mes);
-}
+function CC_competenciaParcela(l,c,k){const base=CC_baseVenc(l.dataCompra,+c.diaFechamento||1,+c.diaVencimento||10);const m=CC_addMonths(base.ano,base.mes,k);return CC_mesKey(m.ano,m.mes);}
 async function CC_reconciliarParcelasCompra(compraId){
   const l=CC_LANCS[compraId];const c=l?CC_CARTOES[l.cartaoId]:null;
   if(!l||!c){ // compra sumiu → remove parcelas órfãs (menos as de fatura paga)
     for(const[pid,p]of Object.entries(CC_PARCELAS)){if(p.compraId===compraId&&!CC_isFaturaPaga(p.cartaoId,p.competencia)){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}}
     return;
   }
-  const P=Math.max(1,parseInt(l.parcelas)||1);const sign=l.estorno?-1:1;const vp=sign*Math.round((Math.abs(Number(l.valor))/P)*100)/100;
+  const P=Math.max(1,parseInt(l.parcelas)||1);const vp=Math.round((Number(l.valor)/P)*100)/100;
   for(let k=0;k<P;k++){
     const numero=k+1;const pid=compraId+'_'+numero;const ex=CC_PARCELAS[pid];
     const congelada=ex&&CC_isFaturaPaga(ex.cartaoId,ex.competencia); // fatura paga → não move
@@ -4067,7 +4028,6 @@ function CC_faturasDoCartao(cid){
       map[key]=map[key]||{items:[],total:0,ano:ma.ano,mes:ma.mes};
       map[key].items.push({lancId:p.compraId,parcelaId:p.compraId+'_'+p.numero,desc:p.descricao,parcela:p.numero,parcelas:p.total,valor:v,categoria:p.categoria});
       map[key].total=Math.round((map[key].total+v)*100)/100;});
-    CC_injetarRotativo(cid,map); // Fase D: saldo rolado da fatura anterior entra na próxima
     return map;
   }
   // fallback (cartão ainda sem parcelas persistidas): deriva como antes
@@ -4112,9 +4072,7 @@ function CC_sincronizarFaturasPagar(cid){
   const c=CC_CARTOES[cid];if(!c)return 0;
   const fats=CC_faturasDoCartao(cid);const venc=+c.diaVencimento||10;let mudou=0;
   Object.keys(fats).forEach(key=>{
-    const ov=CC_fatObj(cid,key);
-    const novoValor=(ov&&ov.totalInformado!=null&&ov.totalInformado>=0)?Math.round(ov.totalInformado*100)/100:Math.round(fats[key].total*100)/100;
-    const ex=CC_faturaLanc(cid,key);
+    const novoValor=Math.round(fats[key].total*100)/100;const ex=CC_faturaLanc(cid,key);
     if(ex){ if(String(ex.r.status).toUpperCase()!=='PAGO'&&ex.r.valor!==novoValor){ex.r.valor=novoValor;mudou++;} }
     else{ if(!P_meses[key])P_meses[key]=[];
       P_meses[key].push({id:gerarId(),nome:'💳 Fatura '+c.nome+' · '+key,valor:novoValor,valorPago:0,dia:venc,mes:key,categoria:'cartoes',fixa:false,status:'PENDENTE',cod:'',obs:'Fatura do cartão (agregada, automática)',faturaCartao:{cartaoId:cid,mes:key},competencia:key,dataCriacao:new Date().toISOString()});mudou++; }
@@ -4129,9 +4087,6 @@ function CC_sincronizarTodas(){let t=0;Object.keys(CC_CARTOES).forEach(cid=>t+=C
 // ── Status de fatura (relativo a hoje) ──
 function CC_statusFatura(cid,key,fatObj,aberturaKey){
   if(CC_isFaturaPaga(cid,key))return{k:'paga',label:'✅ Paga',cor:'#16a34a',bg:'#dcfce7'};
-  const ov=CC_fatObj(cid,key);
-  if(ov&&ov.statusManual==='aberta')return{k:'reaberta',label:'🔓 Reaberta',cor:'#7c3aed',bg:'#ede9fe'};
-  if(ov&&ov.statusManual==='fechada')return{k:'fechada',label:'🔒 Fechada (manual)',cor:'#b45309',bg:'#fef3c7'};
   const c=CC_CARTOES[cid];const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10;
   // mês em que ESTA fatura fecha (venc no mês seguinte ao fechamento se venc<=fech)
   let cm=(venc<=fech)?CC_addMonths(fatObj.ano,fatObj.mes,-1):{ano:fatObj.ano,mes:fatObj.mes};
@@ -4241,50 +4196,6 @@ async function CC_excluirCompra(id){
   if(cartaoId)CC_sincronizarFaturasPagar(cartaoId); // recalcula faturas (remove órfãs não pagas)
   CC_render();toast('🗑️ Compra removida.','#6b7280');
 }
-// ── Fase E: estorno/crédito (parcela negativa que reduz a fatura) ──
-function CC_abrirModalEstorno(){
-  if(!Object.keys(CC_CARTOES).length){toast('Cadastre um cartão primeiro.','#f59e0b');return;}
-  const sc=document.getElementById('ccEFCartao');
-  const ativos=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');
-  sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
-  if(CC_selecionado&&CC_CARTOES[CC_selecionado]&&CC_CARTOES[CC_selecionado].status!=='inativo')sc.value=CC_selecionado;
-  CC_popularEstornoOrigem();
-  const cat=document.getElementById('ccEFCategoria');
-  cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');
-  document.getElementById('ccEFDesc').value='';document.getElementById('ccEFValor').value='';
-  document.getElementById('ccEFData').value=new Date().toISOString().split('T')[0];
-  sc.onchange=CC_popularEstornoOrigem;
-  document.getElementById('ccModalEstornoBg').classList.add('open');
-}
-function CC_popularEstornoOrigem(){
-  const cid=document.getElementById('ccEFCartao').value;const sel=document.getElementById('ccEFOrigem');if(!sel)return;
-  const compras=Object.entries(CC_LANCS).filter(([id,l])=>l.cartaoId===cid&&!l.estorno);
-  sel.innerHTML='<option value="">— não vincular —</option>'+compras.map(([id,l])=>`<option value="${id}">${(l.descricao||'Compra')} · ${fmt(Math.abs(Number(l.valor)||0))}</option>`).join('');
-}
-function CC_fecharModalEstorno(){document.getElementById('ccModalEstornoBg').classList.remove('open');}
-async function CC_salvarEstorno(){
-  const cartaoId=document.getElementById('ccEFCartao').value;
-  const valor=Math.abs(parseFloat(document.getElementById('ccEFValor').value)||0);
-  const origem=document.getElementById('ccEFOrigem').value;
-  let desc=document.getElementById('ccEFDesc').value.trim();
-  if(!cartaoId){toast('Selecione o cartão.','#ef4444');return;}
-  if(valor<=0){toast('Informe o valor do crédito.','#ef4444');return;}
-  const orig=origem?CC_LANCS[origem]:null;
-  if(!desc)desc=orig?('Estorno: '+(orig.descricao||'')):'Estorno/crédito';
-  const dados={
-    cartaoId,descricao:'↩️ '+desc,valor,estorno:true,compraOrigemId:origem||'',
-    dataCompra:document.getElementById('ccEFData').value||new Date().toISOString().split('T')[0],
-    parcelas:1,categoria:document.getElementById('ccEFCategoria').value||(orig?orig.categoria:'')||'',
-    responsavel:'',obs:'Estorno/crédito',criadoEm:new Date().toISOString()
-  };
-  const id='e'+Date.now()+Math.floor(Math.random()*9999);
-  CC_LANCS[id]=dados;await CC_fbSalvar(CC_COL_LANC,id,dados);
-  await CC_reconciliarParcelasCompra(id);
-  CC_sincronizarFaturasPagar(cartaoId);
-  CC_selecionado=cartaoId;CC_fecharModalEstorno();CC_render();
-  if(typeof AUD_log==='function')AUD_log('criar','cartao_lancamentos',(CC_CARTOES[cartaoId]||{}).nome,'Estorno/crédito '+fmt(valor),null,-valor);
-  toast('↩️ Estorno de '+fmt(valor)+' lançado.');
-}
 
 // ── Render ──
 function CC_render(){CC_renderCartoes();CC_renderResumo();CC_renderFaturas();}
@@ -4303,7 +4214,7 @@ function CC_renderResumo(){
       fats[key].items.forEach(it=>{const ci=catInfoP(it.categoria);porCat[ci.label]=(porCat[ci.label]||0)+it.valor;});
     });
   });
-  Object.values(CC_LANCS).forEach(l=>{if(l.estorno)return;const v=Number(l.valor)||0;if((parseInt(l.parcelas)||1)>1)parcelado+=v;else avista+=v;});
+  Object.values(CC_LANCS).forEach(l=>{const v=Number(l.valor)||0;if((parseInt(l.parcelas)||1)>1)parcelado+=v;else avista+=v;});
   const linha=(obj,ordChrono)=>{const ks=Object.keys(obj);(ordChrono?ks.sort((a,b)=>CC_mesIdx(a)-CC_mesIdx(b)):ks.sort((a,b)=>obj[b]-obj[a]));return ks.map(k=>`<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:4px 0;border-top:1px solid #f1f5f9"><span>${k}</span><b>${fmt(obj[k])}</b></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>';};
   el.innerHTML=`
     <div class="cards-p">
@@ -4359,123 +4270,21 @@ function CC_renderFaturas(){
   if(!keys.length){html+='<div style="color:#9ca3af;font-size:.85rem">Nenhuma compra lançada ainda. Clique em <b>➕ Nova compra</b>.</div>';wrap.innerHTML=html;return;}
   html+=keys.map(k=>{
     const o=fat[k];const st=CC_statusFatura(cid,k,o,aberturaKey);const paga=st.k==='paga';
-    const ov=CC_fatObj(cid,k);const informado=(ov&&ov.totalInformado!=null)?ov.totalInformado:null;
-    const diff=(informado!=null)?Math.round((informado-o.total)*100)/100:null;
-    const rolado=!!(ov&&ov.rolado&&(Number(ov.roladoSaldo)||0)>0);
-    const lancF=CC_faturaLanc(cid,k);const saldoF=lancF?Math.round(((Number(lancF.r.valor)||0)-(Number(lancF.r.valorPago)||0))*100)/100:0;
-    const kEsc=k.replace(/'/g,"\\'");
-    // botões da máquina de status (não aparecem se paga)
-    let botoes='';
-    if(!paga){
-      const bBase='font-size:.72rem;border:1px solid #e5e7eb;background:#f8fafc;color:#334155;border-radius:8px;padding:4px 9px;cursor:pointer';
-      if(st.k==='aberta'||st.k==='futura')botoes+=`<button onclick="CC_fecharFaturaManual('${cid}','${kEsc}')" style="${bBase}" title="Fechar esta fatura antes da data">🔒 Fechar agora</button>`;
-      if(st.k==='fechada'||st.k==='vencida'||st.k==='gerada'||st.k==='reaberta')botoes+=`<button onclick="CC_reabrirFatura('${cid}','${kEsc}')" style="${bBase}" title="Reabrir a fatura (volta a aceitar ajustes)">🔓 Reabrir</button>`;
-      botoes+=`<button onclick="CC_informarTotalBanco('${cid}','${kEsc}')" style="${bBase}" title="Registrar o valor total que o banco cobrou nesta fatura">🏦 Total do banco</button>`;
-      if(lancF&&saldoF>0){
-        botoes+=`<button onclick="CC_rolarRotativo('${cid}','${kEsc}')" style="${bBase}" title="Pagar parte pela baixa do Contas a Pagar e rolar o restante (com juros) pra próxima fatura">↩️ Rolar saldo (rotativo)</button>`;
-        botoes+=`<button onclick="CC_renegociarFatura('${cid}','${kEsc}')" style="${bBase}" title="Parcelar o saldo desta fatura em N vezes (novo parcelamento nas próximas faturas)">🔁 Renegociar</button>`;
-      }
-    }
     return `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${st.cor};border-radius:10px;padding:12px 14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <div><span style="font-weight:700;color:#0f172a">${k}</span> <span style="font-size:.72rem;font-weight:700;background:${st.bg};color:${st.cor};padding:2px 8px;border-radius:20px;margin-left:6px">${st.label}</span>
           <div style="font-size:.73rem;color:#6b7280;margin-top:3px">Vence dia ${c.diaVencimento} · ${o.items.length} parcela(s)</div></div>
-        <div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;color:#0f172a">${fmt(informado!=null?informado:o.total)}</div>
-          ${informado!=null?`<div style="font-size:.68rem;color:#6b7280;margin-top:2px">calculado ${fmt(o.total)}${diff?` · <span style="color:${diff>0?'#b91c1c':'#16a34a'}">dif. ${diff>0?'+':''}${fmt(diff)}</span>`:' · confere ✓'}</div>`:''}
-          ${rolado?`<div style="font-size:.68rem;color:#7c3aed;margin-top:2px">↩️ ${fmt(ov.roladoSaldo)} rolado pro rotativo${ov.roladoJuros?(' +'+ov.roladoJuros+'%'):''}</div>`:''}
+        <div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;color:#0f172a">${fmt(o.total)}</div>
           ${paga?'<div style="font-size:.7rem;color:#16a34a;margin-top:3px">✅ Fatura quitada</div>':'<div style="font-size:.7rem;color:#1e40af;margin-top:3px">📄 No Contas a Pagar (automático)</div>'}</div>
       </div>
       <div style="margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px;display:flex;flex-direction:column;gap:4px">
         ${o.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')}
       </div>
-      ${botoes?`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${botoes}</div>`:''}
     </div>`;
   }).join('');
   wrap.innerHTML=html;
 }
 function CC_selecionar(id){CC_selecionado=id;CC_render();}
-// ── Fase C: ações da máquina de status da fatura ──
-async function CC_fecharFaturaManual(cid,key){
-  await CC_fatSet(cid,key,{statusManual:'fechada',dataFechamento:new Date().toISOString()});
-  CC_sincronizarFaturasPagar(cid);CC_render();
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_faturas',(CC_CARTOES[cid]||{}).nome+' '+key,'Fatura fechada manualmente',null,null);
-  toast('🔒 Fatura '+key+' fechada.');
-}
-async function CC_reabrirFatura(cid,key){
-  if(CC_isFaturaPaga(cid,key)){toast('Fatura paga — estorne o pagamento no Contas a Pagar antes de reabrir.','#f59e0b');return;}
-  await CC_fatSet(cid,key,{statusManual:'aberta'});
-  CC_sincronizarFaturasPagar(cid);CC_render();
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_faturas',(CC_CARTOES[cid]||{}).nome+' '+key,'Fatura reaberta',null,null);
-  toast('🔓 Fatura '+key+' reaberta.');
-}
-async function CC_informarTotalBanco(cid,key){
-  const calc=(CC_faturasDoCartao(cid)[key]||{}).total||0;const ov=CC_fatObj(cid,key);
-  const atual=(ov&&ov.totalInformado!=null)?ov.totalInformado:calc;
-  const resp=prompt('Total que o banco cobrou nesta fatura ('+key+').\nCalculado pelo sistema: '+fmt(calc)+'.\nDeixe em branco para voltar ao calculado.',String(atual));
-  if(resp===null)return; // cancelou
-  const t=resp.trim()===''?null:(parseFloat(resp.replace(',','.'))||0);
-  await CC_fatSet(cid,key,{totalInformado:t});
-  CC_sincronizarFaturasPagar(cid);CC_render();
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_faturas',(CC_CARTOES[cid]||{}).nome+' '+key,t==null?'Total do banco removido (volta ao calculado)':'Total do banco informado: '+fmt(t),null,null);
-  toast(t==null?'Voltou ao valor calculado.':'🏦 Total do banco registrado: '+fmt(t));
-}
-// ── Fase D: rotativo — saldo não pago da fatura rola pra próxima (juros opcional) ──
-function CC_carryRotativo(f){return Math.round((Number(f.roladoSaldo)||0)*(1+(Number(f.roladoJuros)||0)/100)*100)/100;}
-function CC_injetarRotativo(cid,map){
-  Object.values(CC_FATURAS).filter(f=>f.cartaoId===cid&&f.rolado&&(Number(f.roladoSaldo)||0)>0).forEach(f=>{
-    const carry=CC_carryRotativo(f);if(carry<=0)return;
-    const ma=CC_mesAnoDaKey(f.competencia);const nx=CC_addMonths(ma.ano,ma.mes,1);const nk=CC_mesKey(nx.ano,nx.mes);
-    map[nk]=map[nk]||{items:[],total:0,ano:nx.ano,mes:nx.mes};
-    map[nk].items.push({desc:'↩️ Saldo rotativo ('+f.competencia+')',parcela:1,parcelas:1,valor:carry,categoria:'cartoes',rotativo:true});
-    map[nk].total=Math.round((map[nk].total+carry)*100)/100;
-  });
-}
-async function CC_rolarRotativo(cid,key){
-  const lanc=CC_faturaLanc(cid,key);
-  if(!lanc){toast('Essa fatura ainda não está no Contas a Pagar.','#f59e0b');return;}
-  const r=lanc.r;const saldo=Math.round(((Number(r.valor)||0)-(Number(r.valorPago)||0))*100)/100;
-  if(saldo<=0){toast('Não há saldo em aberto pra rolar nesta fatura.','#f59e0b');return;}
-  const jresp=prompt('Rolar o saldo de '+fmt(saldo)+' da fatura '+key+' pro rotativo (entra na próxima fatura).\nJuros do rotativo em % (deixe 0 se não houver):','0');
-  if(jresp===null)return;
-  const juros=Math.max(0,parseFloat((jresp||'0').replace(',','.'))||0);
-  await CC_fatSet(cid,key,{rolado:true,roladoSaldo:saldo,roladoJuros:juros,roladoValorPago:(Number(r.valorPago)||0),roladoEm:new Date().toISOString()});
-  // liquida a fatura de origem pelo que já foi pago; o restante virou saldo rotativo na próxima
-  r.valor=Math.round((Number(r.valorPago)||0)*100)/100;r.status='PAGO';
-  r.obs=(r.obs?r.obs+' | ':'')+('Saldo '+fmt(saldo)+' rolado p/ rotativo'+(juros?(' +'+juros+'% juros'):''));
-  P_salvarStorage();
-  CC_sincronizarFaturasPagar(cid);CC_render();
-  if(mainAtivo==='pagar'&&typeof renderTabelaP==='function'){renderDashboardP();renderTabelaP();}
-  const carry=CC_carryRotativo({roladoSaldo:saldo,roladoJuros:juros});
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_faturas',(CC_CARTOES[cid]||{}).nome+' '+key,'Saldo '+fmt(saldo)+' rolado pro rotativo'+(juros?(' +'+juros+'%'):''),null,carry);
-  toast('↩️ Rolado pro rotativo: '+fmt(carry));
-}
-// ── Fase E: renegociação — parcela a fatura em N vezes (novo parcelamento) ──
-async function CC_renegociarFatura(cid,key){
-  const lanc=CC_faturaLanc(cid,key);
-  if(!lanc){toast('Essa fatura ainda não está no Contas a Pagar.','#f59e0b');return;}
-  const r=lanc.r;const saldo=Math.round(((Number(r.valor)||0)-(Number(r.valorPago)||0))*100)/100;
-  if(saldo<=0){toast('Não há saldo em aberto pra renegociar.','#f59e0b');return;}
-  const nresp=prompt('Renegociar o saldo de '+fmt(saldo)+' da fatura '+key+' em quantas parcelas?','3');
-  if(nresp===null)return;
-  const N=Math.max(1,parseInt(nresp)||1);
-  const jresp=prompt('Acréscimo/juros TOTAL em % sobre o saldo (0 se não houver):','0');
-  if(jresp===null)return;
-  const juros=Math.max(0,parseFloat((jresp||'0').replace(',','.'))||0);
-  const total=Math.round(saldo*(1+juros/100)*100)/100;
-  const ma=CC_mesAnoDaKey(key);const nx=CC_addMonths(ma.ano,ma.mes,1);const nk=CC_mesKey(nx.ano,nx.mes);
-  // liquida a fatura de origem pelo que foi pago; o saldo virou um novo parcelamento
-  r.valor=Math.round((Number(r.valorPago)||0)*100)/100;r.status='PAGO';
-  r.obs=(r.obs?r.obs+' | ':'')+('Saldo '+fmt(saldo)+' renegociado em '+N+'x'+(juros?(' +'+juros+'%'):''));
-  await CC_fatSet(cid,key,{renegociado:true,renegSaldo:saldo,renegParcelas:N,renegJuros:juros});
-  const idr='r'+Date.now()+Math.floor(Math.random()*9999);
-  CC_LANCS[idr]={cartaoId:cid,descricao:'🔁 Renegociação fatura '+key,valor:total,parcelas:N,dataCompra:new Date().toISOString().split('T')[0],competenciaInicio:nk,categoria:'cartoes',responsavel:'',obs:'Renegociação de fatura',renegociacao:true,criadoEm:new Date().toISOString()};
-  await CC_fbSalvar(CC_COL_LANC,idr,CC_LANCS[idr]);
-  await CC_reconciliarParcelasCompra(idr);
-  P_salvarStorage();CC_sincronizarFaturasPagar(cid);CC_render();
-  if(mainAtivo==='pagar'&&typeof renderTabelaP==='function'){renderDashboardP();renderTabelaP();}
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_faturas',(CC_CARTOES[cid]||{}).nome+' '+key,'Fatura renegociada: '+fmt(saldo)+' em '+N+'x = '+fmt(total),null,total);
-  toast('🔁 Renegociada em '+N+'x de '+fmt(Math.round(total/N*100)/100));
-}
 
 // ══════════════════════════════════════════════════════
 // FASE 3 — CATEGORIAS FINANCEIRAS (módulo CF_)
