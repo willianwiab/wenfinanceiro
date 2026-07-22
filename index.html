@@ -749,7 +749,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
-  <button onclick="showMain('banco',this)">🔗 Conciliação</button>
+  <button onclick="showMain('banco',this)">📥 Importar</button>
+  <button onclick="showMain('sophia',this)">✨ Sophia</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
 </div>
@@ -1393,45 +1394,42 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- ════════════════════════════════════════
+     TRAZER OS DADOS — Importar (OFX + foto/PDF via Gemini) — Fase 7
+════════════════════════════════════════ -->
 <div class="page" id="page-banco">
-  <div class="concil-header">
-    <h4>🏦 Conciliação Bancária</h4>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <label style="font-size:.78rem;color:#6b7280">Tolerância:
-        <select class="concil-mes-select" onchange="BK_setTolerancia(this.value)">
-          <option value="1">±1 dia</option>
-          <option value="3" selected>±3 dias</option>
-          <option value="5">±5 dias</option>
-          <option value="7">±7 dias</option>
-        </select>
-      </label>
-      <input type="file" id="bkFileInput" accept=".ofx" multiple style="display:none" onchange="BK_handleFiles(this)"/>
-      <button class="btn btn-blue" onclick="BK_abrirImport()">⬆ Importar .ofx</button>
-      <button class="btn btn-outline" onclick="BK_limparExtratos()">🗑️ Limpar Extratos</button>
+  <div class="container">
+    <div style="margin-bottom:14px">
+      <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">📥 Trazer os dados</h2>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Importe o extrato por <b>OFX</b> (arquivo do banco) ou, com a chave Gemini, por <b>foto/PDF</b> da fatura ou extrato. As movimentações entram na conta escolhida (livro-razão), sem duplicar.</p>
     </div>
+    <div class="form-row" style="max-width:520px">
+      <div class="form-group"><label>Conta de destino</label><select id="impConta"></select></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
+      <label class="btn btn-blue" style="cursor:pointer;width:auto">⬆ Arquivo OFX (.ofx)<input type="file" accept=".ofx,.qfx" style="display:none" onchange="IMP_ofxArquivo(this)"/></label>
+      <label class="btn btn-outline-b" id="impFotoBtn" style="cursor:pointer;width:auto">📸 Foto / PDF da fatura<input type="file" accept="image/*,.pdf" style="display:none" onchange="IMP_gemini(this)"/></label>
+    </div>
+    <div id="impAviso" style="font-size:.82rem;margin-bottom:12px"></div>
+    <div id="impPreview"></div>
   </div>
-  <div id="bkImportInfo"></div>
-  <div class="concil-resumo" id="bkResumo"></div>
-  <div id="bkFiltros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    <button class="btn btn-outline active" onclick="BK_setFiltro('SUGESTOES',this)">🔵 Sugestões</button>
-    <button class="btn btn-outline" onclick="BK_setFiltro('AMBIGUOS',this)">🟡 Ambíguos</button>
-    <button class="btn btn-outline" onclick="BK_setFiltro('SEM_MATCH',this)">🔴 Sem Correspondência</button>
-    <button class="btn btn-outline" onclick="BK_setFiltro('CONCILIADOS',this)">✅ Conciliados</button>
-    <button class="btn btn-outline" onclick="BK_setFiltro('SISTEMA_ORFAO',this)">📋 Sistema sem Transação</button>
-    <button class="btn btn-outline" onclick="BK_setFiltro('IGNORADOS',this)">🗑️ Ignorados</button>
-  </div>
-  <div id="bkCorpo"></div>
 </div><!-- /page-banco -->
 
-<!-- Modal de vínculo manual — Conciliação Bancária -->
-<div class="modal-bg" id="bkModalManualBg">
-  <div class="modal">
-    <h3 style="margin-bottom:10px">🔎 Vincular Manualmente</h3>
-    <div id="bkManualInfo" style="font-size:.84rem;color:#374151;background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:12px"></div>
-    <input type="text" id="bkManualBusca" placeholder="Buscar por nome/cliente..." oninput="BK_renderCandidatosManual()" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:7px;font-size:.85rem;margin-bottom:10px;outline:none"/>
-    <div id="bkManualLista" style="max-height:340px;overflow-y:auto"></div>
-    <div style="margin-top:14px;text-align:right">
-      <button class="btn btn-outline" onclick="BK_fecharModalManual()">Fechar</button>
+<!-- ════════════════════════════════════════
+     SOPHIA — assistente financeira (Fase 10)
+════════════════════════════════════════ -->
+<div class="page" id="page-sophia">
+  <div class="container">
+    <div style="margin-bottom:12px">
+      <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">✨ Sophia — assistente financeira</h2>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Pergunte sobre as finanças da WEN. A Sophia usa um resumo dos seus dados (sem enviar tudo) + a IA do Gemini.</p>
+    </div>
+    <div id="sophiaAviso" style="font-size:.82rem;margin-bottom:12px"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="sophiaSugestoes"></div>
+    <div id="sophiaChat" style="display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow-y:auto;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="sophiaInput" placeholder="Ex: quais contas estão atrasadas?" onkeydown="if(event.key==='Enter')SOPHIA_perguntar()" style="flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:.9rem;outline:none"/>
+      <button class="btn btn-purple" style="width:auto" onclick="SOPHIA_perguntar()">Perguntar</button>
     </div>
   </div>
 </div>
@@ -2304,7 +2302,8 @@ function showMain(id,btn){
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes')CC_render();
   if(id==='categorias')CF_render();
-  if(id==='banco')BK_executarMatching();
+  if(id==='banco')IMP_render();
+  if(id==='sophia')SOPHIA_abrir();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();}
 }
 
@@ -4813,6 +4812,123 @@ function AUD_render(){
   }).join('')||'<div style="color:#9ca3af;font-size:.85rem">Nenhum registro ainda. As alterações no Contas a Pagar aparecem aqui.</div>';
 }
 
+// ══════════════════════════════════════════════════════
+// FASE 7 — TRAZER OS DADOS (módulo IMP_): OFX (sem IA) + foto/PDF (Gemini)
+// Importa movimentações pra conta escolhida (livro-razão), anti-duplicidade por id.
+// ══════════════════════════════════════════════════════
+let IMP_previa=[];
+function IMP_setAviso(html){const el=document.getElementById('impAviso');if(el)el.innerHTML=html;}
+function IMP_render(){
+  const sel=document.getElementById('impConta');if(sel){const ativas=BC_contasAtivas();sel.innerHTML=ativas.length?ativas.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join(''):'<option value="">— cadastre uma conta em 🏦 Contas —</option>';const pr=BC_principal();if(pr)sel.value=pr;}
+  const btn=document.getElementById('impFotoBtn');if(btn)btn.style.opacity=IA_temChave()?'1':'.55';
+  IMP_setAviso(IA_temChave()?'<span style="color:#16a34a">✅ IA ligada — foto/PDF disponível.</span> OFX funciona sempre.':'<span style="color:#9ca3af">📸 Foto/PDF precisa da chave Gemini (Config → Inteligência Artificial). OFX funciona sem chave.</span>');
+  IMP_previa=[];const p=document.getElementById('impPreview');if(p)p.innerHTML='';
+}
+function IMP_fileB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
+function IMP_fileText(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=rej;r.readAsText(f);});}
+function IMP_parseOFX(text){
+  const movs=[];const norm=text.replace(/<CCSTMTTRN>/gi,'<STMTTRN>').replace(/<\/CCSTMTTRN>/gi,'</STMTTRN>');
+  const re=/<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;let m;
+  const tag=(b,t)=>{const x=b.match(new RegExp('<'+t+'>([^<\\r\\n]*)','i'));return x?x[1].trim():'';};
+  while((m=re.exec(norm))){const b=m[1];const dt=tag(b,'DTPOSTED').slice(0,8);const val=parseFloat(tag(b,'TRNAMT'))||0;
+    const fitid=tag(b,'FITID')||('ofx_'+dt+'_'+val);const memo=tag(b,'MEMO')||tag(b,'NAME')||'Movimento';
+    const data=dt.length===8?`${dt.slice(0,4)}-${dt.slice(4,6)}-${dt.slice(6,8)}`:'';
+    movs.push({fitid,data,valor:val,descricao:memo,tipo:val<0?'saida':'entrada'});}
+  return movs;
+}
+async function IMP_ofxArquivo(input){const f=input.files[0];if(!f)return;input.value='';
+  try{const txt=await IMP_fileText(f);IMP_previa=IMP_parseOFX(txt);IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
+  catch(e){IMP_setAviso('⚠️ Erro ao ler OFX: '+e.message);}
+}
+function IMP_extrairJSON(txt){try{return JSON.parse(txt);}catch(e){}const i=txt.indexOf('['),j=txt.lastIndexOf(']');if(i>=0&&j>i){try{return JSON.parse(txt.slice(i,j+1));}catch(e){}}return [];}
+async function IMP_gemini(input){
+  const f=input.files[0];if(!f)return;input.value='';
+  if(!IA_temChave()){IMP_setAviso('<span style="color:#b45309">📸 Cole a chave Gemini em Config → Inteligência Artificial pra usar foto/PDF.</span>');return;}
+  IMP_setAviso('⏳ Lendo o arquivo com a IA (Gemini)...');
+  try{
+    const b64=await IMP_fileB64(f);const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
+    const prompt='Extraia as transações financeiras deste extrato/fatura bancária. Responda APENAS um array JSON, cada item {"data":"YYYY-MM-DD","descricao":"texto curto","valor":número (negativo p/ saída/despesa, positivo p/ entrada/crédito)}. Sem nenhum texto fora do JSON.';
+    const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:f.type||'application/pdf',data:b64}}]}],generationConfig:{temperature:0}};
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){IMP_setAviso('⚠️ Gemini recusou ('+r.status+'). Confira a chave em Config.');return;}
+    const j=await r.json();const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+    const arr=IMP_extrairJSON(txt);
+    IMP_previa=(Array.isArray(arr)?arr:[]).map((x,i)=>{const v=Number(x.valor)||0;return {fitid:'ia_'+i+'_'+(x.data||'')+'_'+v,data:x.data||'',valor:v,descricao:x.descricao||'Item',tipo:v<0?'saida':'entrada'};});
+    IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} transação(ões) lida(s) pela IA. Revise e importe.`:'Não consegui extrair transações — tente outra foto/PDF mais nítido.');
+    IMP_renderPreview();
+  }catch(e){IMP_setAviso('⚠️ Erro na leitura: '+e.message);}
+}
+function IMP_renderPreview(){
+  const p=document.getElementById('impPreview');if(!p)return;
+  if(!IMP_previa.length){p.innerHTML='';return;}
+  const linhas=IMP_previa.map((mv,i)=>`<tr style="border-top:1px solid #eef2f7">
+    <td style="padding:7px 8px"><input type="checkbox" class="imp-chk" data-i="${i}" checked/></td>
+    <td style="padding:7px 8px;font-size:.82rem">${BC_dataBR(mv.data)||'—'}</td>
+    <td style="padding:7px 8px;font-size:.82rem">${(mv.descricao||'').replace(/</g,'&lt;')}</td>
+    <td style="padding:7px 8px;text-align:right;font-weight:700;color:${mv.tipo==='saida'?'#ef4444':'#16a34a'}">${mv.tipo==='saida'?'−':'+'} ${fmt(Math.abs(mv.valor))}</td>
+  </tr>`).join('');
+  p.innerHTML=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:6px 10px 14px;overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="color:#6b7280;font-size:.72rem;text-transform:uppercase"><th style="padding:8px"><input type="checkbox" checked onchange="document.querySelectorAll('.imp-chk').forEach(c=>c.checked=this.checked)"/></th><th style="padding:8px;text-align:left">Data</th><th style="padding:8px;text-align:left">Descrição</th><th style="padding:8px;text-align:right">Valor</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div style="text-align:right;margin-top:12px"><button class="btn btn-purple" style="width:auto" onclick="IMP_importar()">✅ Importar selecionadas pra conta</button></div>
+    <p style="font-size:.74rem;color:#9ca3af;margin-top:6px">Entra como movimentação na conta escolhida (livro-razão). Reimportar o mesmo arquivo não duplica.</p>
+  </div>`;
+}
+function IMP_importar(){
+  const contaId=document.getElementById('impConta').value;
+  if(!contaId||!BC_CONTAS[contaId]){toast('Escolha a conta de destino.','#ef4444');return;}
+  const sel=[...document.querySelectorAll('#impPreview .imp-chk:checked')].map(c=>parseInt(c.dataset.i));
+  if(!sel.length){toast('Selecione ao menos uma movimentação.','#ef4444');return;}
+  let n=0,dup=0;
+  sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+contaId+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
+    if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
+    const mov={id:chave,contaId,tipo:mv.tipo,valor:Math.abs(Number(mv.valor)||0),data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria:null,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
+    BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;});
+  toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
+  IMP_previa=[];IMP_render();if(mainAtivo==='contas')BC_renderPainel();
+  if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[contaId].nome,n+' movimentação(ões) importada(s)',null,null);
+}
+
+// ══════════════════════════════════════════════════════
+// FASE 10 — SOPHIA (módulo SOPHIA_): assistente financeira via Gemini
+// Manda só um RESUMO dos dados (não a base inteira) + a pergunta.
+// ══════════════════════════════════════════════════════
+let SOPHIA_MSGS=[];
+const SOPHIA_SUGESTOES=['Quais contas estão atrasadas?','Quanto gastei por categoria neste mês?','Qual meu saldo e a projeção?','Onde estou gastando acima da média?'];
+function SOPHIA_abrir(){
+  const av=document.getElementById('sophiaAviso');
+  if(av)av.innerHTML=IA_temChave()?'<span style="color:#16a34a">✅ Sophia pronta.</span>':'<span style="color:#b45309">Cole a chave Gemini em Config → Inteligência Artificial pra ativar a Sophia.</span>';
+  const sg=document.getElementById('sophiaSugestoes');
+  if(sg)sg.innerHTML=SOPHIA_SUGESTOES.map(s=>`<button class="bc-fil" onclick="document.getElementById('sophiaInput').value=this.textContent;SOPHIA_perguntar()">${s}</button>`).join('');
+  SOPHIA_render();
+}
+function SOPHIA_render(){
+  const el=document.getElementById('sophiaChat');if(!el)return;
+  el.innerHTML=SOPHIA_MSGS.map(m=>`<div style="align-self:${m.role==='user'?'flex-end':'flex-start'};max-width:82%;background:${m.role==='user'?'#7c3aed':'#fff'};color:${m.role==='user'?'#fff':'#0f172a'};border:1px solid ${m.role==='user'?'#7c3aed':'#e5e7eb'};border-radius:12px;padding:9px 13px;font-size:.88rem;white-space:pre-wrap">${(m.text||'').replace(/</g,'&lt;')}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function SOPHIA_contexto(){
+  const mref=mesAtualReal();const resumo=(typeof BKP_resumoMes==='function')?BKP_resumoMes(mref):{};
+  const contas=BC_contasAtivas().filter(id=>BC_CONTAS[id].saldoConfigurado).map(id=>({conta:BC_CONTAS[id].nome,saldo:BC_saldoConta(id),previsao:BC_calcularPrevisao(id)}));
+  const atrasadas=(typeof VENC_coletar==='function')?VENC_coletar().filter(p=>p.diff<0).map(p=>({nome:p.nome,dias:Math.abs(p.diff),saldo:p.saldo})):[];
+  return {mesReferencia:mref,resumo,contas,atrasadas};
+}
+async function SOPHIA_perguntar(){
+  const inp=document.getElementById('sophiaInput');const q=(inp.value||'').trim();if(!q)return;
+  if(!IA_temChave()){toast('Cole a chave Gemini em Config primeiro.','#f59e0b');return;}
+  inp.value='';SOPHIA_MSGS.push({role:'user',text:q});SOPHIA_MSGS.push({role:'ia',text:'⏳ pensando...'});SOPHIA_render();
+  try{
+    const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
+    const ctx=JSON.stringify(SOPHIA_contexto());
+    const prompt='Você é a Sophia, assistente financeira da WEN Produtora (produtora de audiovisual). Responda em português do Brasil, direta, prática e amigável, usando SOMENTE os dados abaixo (valores em reais). Se faltar dado, diga o que falta. Não invente números.\n\nDADOS (JSON):\n'+ctx+'\n\nPERGUNTA: '+q;
+    const body={contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.2}};
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    let resp;
+    if(!r.ok){resp='⚠️ O Gemini recusou (código '+r.status+'). Confira a chave em Config.';}
+    else{const j=await r.json();resp=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('')||'Não consegui responder agora.';}
+    SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:resp};SOPHIA_render();
+  }catch(e){SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:'⚠️ Erro: '+e.message};SOPHIA_render();}
+}
+
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
@@ -5782,6 +5898,7 @@ FX_inicializar();
 AUD_inicializar();
 IA_carregarChave();
 </script>
+<!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=7"></script>
 </body>
 </html>
