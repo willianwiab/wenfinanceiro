@@ -4103,28 +4103,29 @@ async function CC_excluirCompra(id){
 
 // ── Render ──
 function CC_render(){CC_renderCartoes();CC_renderFaturas();}
+function CC_darken(hex,amt){try{const c=(hex||'#7c3aed').replace('#','');let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);r=Math.max(0,r-amt);g=Math.max(0,g-amt);b=Math.max(0,b-amt);return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');}catch(e){return hex||'#7c3aed';}}
 function CC_renderCartoes(){
   const el=document.getElementById('ccListaCartoes');if(!el)return;
   const ids=Object.keys(CC_CARTOES);
   if(CC_selecionado&&!CC_CARTOES[CC_selecionado])CC_selecionado=null;
   if(!CC_selecionado&&ids.length)CC_selecionado=ids[0];
   el.innerHTML=ids.map(id=>{
-    const c=CC_CARTOES[id];const usado=CC_limiteUsado(id);const disp=Math.round(((+c.limite||0)-usado)*100)/100;
-    const pct=(+c.limite>0)?Math.min(100,Math.round(usado/c.limite*100)):0;const sel=id===CC_selecionado;const inativo=c.status==='inativo';
-    return `<div onclick="CC_selecionar('${id}')" style="cursor:pointer;background:#fff;border:2px solid ${sel?(c.cor||'#7c3aed'):'#e5e7eb'};border-radius:12px;padding:14px 16px;${inativo?'opacity:.55':''}">
+    const c=CC_CARTOES[id];const cor=c.cor||'#7c3aed';const usado=CC_limiteUsado(id);const disp=Math.round(((+c.limite||0)-usado)*100)/100;
+    const sel=id===CC_selecionado;const inativo=c.status==='inativo';
+    return `<div onclick="CC_selecionar('${id}')" title="Ver faturas deste cartão" style="cursor:pointer;background:linear-gradient(140deg,${cor} 0%,${CC_darken(cor,55)} 100%);color:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 6px 20px ${cor}44;position:relative;${inativo?'opacity:.55':''}${sel?';outline:3px solid rgba(255,255,255,.55);outline-offset:2px':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div><div style="font-weight:700;color:#0f172a;font-size:.95rem">💳 ${c.nome}</div>
-          <div style="font-size:.74rem;color:#6b7280;margin-top:2px">${c.banco||''}${c.final?' ····'+c.final:''}${inativo?' · inativo':''}</div></div>
-        <div style="display:flex;gap:4px">
-          <button onclick="event.stopPropagation();CC_abrirModalCartao('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Editar">✏️</button>
-          <button onclick="event.stopPropagation();CC_excluirCartao('${id}')" style="background:none;border:none;cursor:pointer;font-size:.9rem;opacity:.7" title="Excluir">🗑️</button>
+        <div><div style="font-weight:800;font-size:1.05rem">${c.nome}</div><div style="font-size:.76rem;opacity:.85;margin-top:1px">${c.banco||''}${inativo?' · inativo':''}</div></div>
+        <div style="display:flex;gap:2px">
+          <button onclick="event.stopPropagation();CC_abrirModalCartao('${id}')" style="background:rgba(255,255,255,.18);border:none;cursor:pointer;font-size:.85rem;border-radius:8px;padding:4px 7px" title="Editar">✏️</button>
+          <button onclick="event.stopPropagation();CC_excluirCartao('${id}')" style="background:rgba(255,255,255,.18);border:none;cursor:pointer;font-size:.85rem;border-radius:8px;padding:4px 7px" title="Excluir">🗑️</button>
         </div>
       </div>
-      <div style="margin-top:10px">
-        <div style="height:7px;background:#f1f5f9;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct>85?'#ef4444':(c.cor||'#7c3aed')}"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:.73rem;color:#6b7280;margin-top:5px">
-          <span>Usado ${fmt(usado)}</span><span>Disp. <b style="color:${disp>=0?'#16a34a':'#ef4444'}">${fmt(disp)}</b></span></div>
-        <div style="font-size:.7rem;color:#9ca3af;margin-top:3px">Limite ${fmt(c.limite||0)} · fecha dia ${c.diaFechamento} · vence dia ${c.diaVencimento}</div>
+      <div style="font-size:1.15rem;letter-spacing:.12em;margin:18px 0 12px;font-weight:600">•••• •••• •••• ${c.final||'----'}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.74rem;opacity:.92">
+        <span>Vence dia ${c.diaVencimento||'—'}</span><span>Fecha dia ${c.diaFechamento||'—'}</span><span>Limite ${fmt(c.limite||0)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.2);font-size:.78rem">
+        <span>Usado <b>${fmt(usado)}</b> · Disp. <b>${fmt(disp)}</b></span><span style="opacity:.85">ver faturas ›</span>
       </div>
     </div>`;
   }).join('')||'<div style="color:#9ca3af;font-size:.85rem;grid-column:1/-1">Nenhum cartão. Clique em <b>➕ Novo cartão</b>.</div>';
@@ -6219,7 +6220,18 @@ IA_carregarChave();
   h2,h3,h4{letter-spacing:-.01em}
   /* Chips/filtros já-pílula ganham consistência */
   .bc-fil,.cf-ftipo{border-radius:22px}
-  @media (max-width:640px){ .container{padding:16px 12px} .nav-main button{padding:13px 14px} }
+  @media (max-width:640px){
+    .container{padding:14px 12px}
+    .hdr{padding:12px 14px}
+    .hdr-brand h1{font-size:1.05rem}
+    .nav-main button{padding:13px 15px;font-size:.9rem}     /* toque maior */
+    .nav-sub button{padding:11px 15px;font-size:.86rem}
+    .btn{padding:11px 18px;font-size:.9rem}                  /* botões maiores no dedo */
+    .cards-p{grid-template-columns:1fr 1fr;gap:10px}         /* 2 colunas de indicadores */
+    .card-p{padding:14px 15px;border-radius:15px!important}
+    .card-p .val{font-size:1.15rem}
+  }
+  @media (max-width:400px){ .cards-p{grid-template-columns:1fr} }
 </style>
 </body>
 </html>
