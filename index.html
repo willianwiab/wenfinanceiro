@@ -1401,6 +1401,21 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ════════════════════════════════════════
      TRAZER OS DADOS — Importar (OFX + foto/PDF via Gemini) — Fase 7
 ════════════════════════════════════════ -->
+<!-- Modal escopo da recategorização (só este mês / próximos / todos) -->
+<div class="confirm-bg" id="fcxRecatBg">
+  <div class="confirm-box" style="max-width:420px">
+    <h3>🏷️ Recategorizar</h3>
+    <p id="fcxRecatInfo" style="font-size:.9rem;color:#374151;margin:8px 0 4px"></p>
+    <p style="font-size:.82rem;color:#6b7280;margin:10px 0 8px">Esta despesa pode repetir em vários meses. Aplicar a mudança em:</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-outline-b" onclick="FCX_recatAplicar('somente')">📅 Só este mês</button>
+      <button class="btn btn-outline-b" onclick="FCX_recatAplicar('futuros')">⏩ Este + próximos meses</button>
+      <button class="btn btn-purple" onclick="FCX_recatAplicar('todos')">🗂 Todos os meses</button>
+    </div>
+    <div style="text-align:right;margin-top:12px"><button class="btn btn-outline-b" onclick="FCX_recatCancel()">Cancelar</button></div>
+  </div>
+</div>
+
 <!-- Modal "Ver todos os rateios / recategorizar" -->
 <div class="modal-bg" id="fcxTodosBg">
   <div class="modal" style="max-width:560px">
@@ -5236,15 +5251,38 @@ function FCX_itensCategoria(mref,slug){
 }
 function FCX_optsCat(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
 window.FCX_toggleCat=function(slug){FCX_catAberta=(FCX_catAberta===slug?null:slug);FCX_renderBlocos();};
+let FCX_recatPend=null;
 window.FCX_recategorizar=function(tipo,id,mes,novo){
-  if(tipo==='pagar'){const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(r){const antiga=r.categoria;r.categoria=novo;P_salvarStorage();if(typeof AUD_log==='function')AUD_log('editar','meses',r.nome,'Recategorizado no rateio',antiga||'—',novo||'—');}}
-  else{const l=CC_LANCS[id];if(l){l.categoria=novo;CC_fbSalvar(CC_COL_LANC,id,l);}}
+  if(tipo==='cartao'){ // compra de cartão = 1 categoria (todas as parcelas); aplica direto
+    const l=CC_LANCS[id];if(l){l.categoria=novo;CC_fbSalvar(CC_COL_LANC,id,l);}
+    FCX_recatFinalizar('a compra inteira do cartão');return;
+  }
+  // conta a pagar pode repetir em vários meses → pergunta o escopo
+  const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(!r)return;
+  FCX_recatPend={id,mes,novo,nome:r.nome,antiga:r.categoria};
+  const ci=catInfoP(novo);
+  document.getElementById('fcxRecatInfo').innerHTML=`<b>${r.nome}</b> → ${ci.icon} ${ci.label}`;
+  document.getElementById('fcxRecatBg').classList.add('open');
+};
+window.FCX_recatCancel=function(){document.getElementById('fcxRecatBg').classList.remove('open');FCX_recatPend=null;FCX_recatFinalizar(null);};
+window.FCX_recatAplicar=function(escopo){
+  if(!FCX_recatPend){document.getElementById('fcxRecatBg').classList.remove('open');return;}
+  const{id,mes,novo,nome,antiga}=FCX_recatPend;let n=0;
+  if(escopo==='somente'){const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(r){r.categoria=novo;n++;}}
+  else{const ord=P_getMesesOrdenados();const idx=ord.indexOf(mes);
+    ord.forEach((m,i)=>{if(escopo==='futuros'&&i<idx)return;(P_meses[m]||[]).forEach(r=>{if(r.nome===nome){r.categoria=novo;n++;}});});}
+  P_salvarStorage();
+  if(typeof AUD_log==='function')AUD_log('editar','meses',nome,'Recategorizado ('+({somente:'só este mês',futuros:'este + próximos',todos:'todos os meses'}[escopo])+')',antiga||'—',novo||'—');
+  document.getElementById('fcxRecatBg').classList.remove('open');FCX_recatPend=null;
+  FCX_recatFinalizar(n+' lançamento(s)');
+};
+function FCX_recatFinalizar(oQue){
   FCX_renderBlocos();
   if(document.getElementById('fcxTodosBg')&&document.getElementById('fcxTodosBg').classList.contains('open'))FCX_renderTodos();
   if(mainAtivo==='cartoes'&&typeof CC_render==='function')CC_render();
   if(mainAtivo==='pagar'&&subPAtivo==='p-rateio'&&typeof RT_render==='function')RT_render();
-  toast('✅ Recategorizado!');
-};
+  if(oQue)toast('✅ Recategorizado '+oQue+'!');
+}
 function FCX_todosItens(mref){
   const out=[];
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;out.push({tipo:'pagar',id:r.id,mes:mref,nome:r.nome,valor:Number(r.valor)||0,cat:r.categoria||''});});
