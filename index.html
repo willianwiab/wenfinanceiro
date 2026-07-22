@@ -1453,9 +1453,9 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <div style="font-weight:800;color:#0f172a">Como deseja trazer sua fatura?</div>
         <p style="font-size:.84rem;color:#6b7280;margin:2px 0 0">A IA identifica compras, valores, datas, categorias e parcelas.</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px">
-          <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
-          <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens da fatura</span><input type="file" accept="image/*" multiple style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
-          <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
+          <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CC_impArquivo(this,'pdf')"/></label>
+          <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens da fatura</span><input type="file" accept="image/*" multiple style="display:none" onchange="CC_impArquivo(this,'galeria')"/></label>
+          <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CC_impArquivo(this,'foto')"/></label>
           <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CC_impArquivo(this,'ofx')"/></label>
         </div>
         <div id="ccImpAviso" style="font-size:.82rem;margin-top:12px"></div>
@@ -4423,7 +4423,7 @@ function CC_impArquivo(input,modo){
   if(!input.files||!input.files.length)return;
   // revisão INLINE na própria aba (sem modal)
   IMP_iniciarInline('cartao',()=>document.getElementById('ccImpCartao').value,'ccImpAviso','ccImpReview',function(){const r=document.getElementById('ccImpReview');if(r)r.innerHTML='';CC_render();CC_aba('faturas');});
-  if(modo==='ofx')IMP_ofxArquivo(input);else IMP_gemini(input);
+  if(modo==='ofx')IMP_ofxArquivo(input);else if(modo==='galeria'||modo==='foto')IMP_stagePaginas(input);else IMP_gemini(input);
 }
 function CC_mesIdx(key){const p=(key||'').split('/');return parseInt(p[1])*12+(MESES_IDX[p[0]]??0);}
 function CC_renderResumo(){
@@ -5291,9 +5291,33 @@ let IMP_ctx={aviso:'impAviso',preview:'impPreview',getAlvo:()=>document.getEleme
 function IMP_setAviso(html){const el=document.getElementById(IMP_ctx.aviso);if(el)el.innerHTML=html;}
 // prepara uma importação INLINE (sem modal): renderiza a revisão dentro dos containers dados
 function IMP_iniciarInline(tipo,getAlvo,avisoEl,previewEl,onDone){
-  IMP_tipo=tipo;IMP_previa=[];
+  IMP_tipo=tipo;IMP_previa=[];IMP_paginas=[];
   IMP_ctx={aviso:avisoEl,preview:previewEl,getAlvo,onDone};
   const pv=document.getElementById(previewEl);if(pv)pv.innerHTML='';
+}
+// ── Telinha de páginas (galeria/fotos): empilha imagens, reordena e processa todas de uma vez ──
+let IMP_paginas=[];
+function IMP_stagePaginas(input){const fs=input&&input.files?[...input.files]:[];if(input)input.value='';fs.forEach(f=>IMP_paginas.push(f));IMP_renderPaginas();}
+window.IMP_addMais=function(input){IMP_stagePaginas(input);};
+window.IMP_moverPagina=function(i,dir){const j=i+dir;if(j<0||j>=IMP_paginas.length)return;const t=IMP_paginas[i];IMP_paginas[i]=IMP_paginas[j];IMP_paginas[j]=t;IMP_renderPaginas();};
+window.IMP_removerPagina=function(i){IMP_paginas.splice(i,1);if(!IMP_paginas.length){const p=document.getElementById(IMP_ctx.preview);if(p)p.innerHTML='';IMP_setAviso('');return;}IMP_renderPaginas();};
+window.IMP_processarPaginas=function(){if(!IMP_paginas.length)return;IMP_gemini({files:IMP_paginas.slice(),value:''});};
+function IMP_renderPaginas(){
+  const p=document.getElementById(IMP_ctx.preview);if(!p)return;
+  const thumbs=IMP_paginas.map((f,i)=>{let url='';try{url=URL.createObjectURL(f);}catch(e){}
+    return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:6px;background:#fff;width:120px">
+      <div style="height:120px;border-radius:8px;overflow:hidden;background:#f1f5f9;display:flex;align-items:center;justify-content:center">${url?`<img src="${url}" style="max-width:100%;max-height:100%;object-fit:cover">`:'🖼️'}</div>
+      <div style="text-align:center;font-size:.72rem;color:#6b7280;margin-top:4px">pág. ${i+1}</div>
+      <div style="display:flex;justify-content:center;gap:4px;margin-top:4px">
+        <button onclick="IMP_moverPagina(${i},-1)" title="Subir" style="border:1px solid #e5e7eb;background:#f8fafc;border-radius:6px;cursor:pointer;padding:2px 7px">↑</button>
+        <button onclick="IMP_moverPagina(${i},1)" title="Descer" style="border:1px solid #e5e7eb;background:#f8fafc;border-radius:6px;cursor:pointer;padding:2px 7px">↓</button>
+        <button onclick="IMP_removerPagina(${i})" title="Remover" style="border:1px solid #e5e7eb;background:#f8fafc;border-radius:6px;cursor:pointer;padding:2px 7px">✕</button>
+      </div></div>`;}).join('');
+  p.innerHTML=`
+    <p style="font-size:.82rem;color:#6b7280;margin:0 0 8px">Selecione as <b>páginas</b> na ordem em que aparecem. Você pode reordenar antes de processar.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${thumbs}</div>
+    <label class="btn btn-outline-b" style="width:auto;cursor:pointer;margin-right:8px">➕ Adicionar mais imagens<input type="file" accept="image/*" multiple style="display:none" onchange="IMP_addMais(this)"></label>
+    <button class="btn" style="width:auto;background:#16a34a;color:#fff;border:none" onclick="IMP_processarPaginas()">✨ Processar ${IMP_paginas.length} página${IMP_paginas.length===1?'':'s'} com a SophIA</button>`;
 }
 // Abre o modal de importação. tipo='conta' (extrato→movimentação) ou 'cartao' (fatura→compras).
 function IMP_abrir(tipo,alvoId){
@@ -5337,7 +5361,7 @@ async function IMP_gemini(input){
   try{
     const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
     const sinal=isCartao
-      ? 'É uma FATURA DE CARTÃO DE CRÉDITO. valor: número POSITIVO para compras/débitos; NEGATIVO apenas para estornos, créditos ou pagamentos recebidos.'
+      ? 'É uma FATURA DE CARTÃO DE CRÉDITO. Classifique cada lançamento como débito ou crédito: valor POSITIVO para compras/débitos; valor NEGATIVO para estornos, créditos, devoluções, "pagamento recebido", "crédito" ou "pagto fatura". IMPORTANTE: a soma de todos os valores (débitos menos créditos) DEVE bater com o VALOR TOTAL DA FATURA impresso no documento — confira essa soma.'
       : 'É um EXTRATO BANCÁRIO. valor: número NEGATIVO para saídas/débitos; POSITIVO para entradas/créditos.';
     const prompt='Você é a SophIA lendo um documento financeiro brasileiro que pode ter VÁRIAS páginas/imagens — leia TODAS as páginas. '+sinal+'\n'
       +'Extraia TODAS as transações/lançamentos, linha por linha, SEM PULAR NENHUMA e SEM INVENTAR. NÃO inclua linhas de total, subtotal, saldo anterior, limite, pagamento mínimo, encargos informativos ou cabeçalhos.\n'
@@ -5449,7 +5473,7 @@ function IMP_renderPreviewRico(p){
   const isCartao=(IMP_tipo==='cartao');const alvo=IMP_ctx.getAlvo();
   const nome=isCartao?((CC_CARTOES[alvo]||{}).nome||'cartão'):((BC_CONTAS[alvo]||{}).nome||'conta');
   const incl=IMP_previa.filter(m=>m.incluir);
-  const total=incl.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0);
+  const total=isCartao?incl.reduce((a,m)=>a+(Number(m.valor)||0),0):incl.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0);
   const prontos=incl.filter(m=>m.categoria&&!m.dup).length;
   const pend=incl.filter(m=>!m.categoria).length;
   const dupN=IMP_previa.filter(m=>m.dup).length;
@@ -5459,14 +5483,15 @@ function IMP_renderPreviewRico(p){
   const f=IMP_filtro||'todos';
   const chip=(id,lbl,n)=>`<button class="imp-filtro ${f===id?'ativo':''}" onclick="IMP_setFiltro('${id}')">${lbl}${n!=null?' ('+n+')':''}</button>`;
   const visiveis=IMP_previa.map((m,i)=>({m,i})).filter(({m})=> f==='pendencias'?(m.incluir&&!m.categoria): f==='duplicidades'?!!m.dup : f==='excluidos'?!m.incluir : true);
-  const linha=({m,i})=>{const saida=isCartao||m.tipo==='saida';
+  const linha=({m,i})=>{const credito=isCartao&&(Number(m.valor)<0);const ent=!isCartao&&m.tipo!=='saida';
     const parc=m.parcela?` <span class="imp-parc">parc ${m.parcela.atual}/${m.parcela.total} <span onclick="IMP_limparParcela(${i})" title="Não é parcela" style="cursor:pointer;opacity:.6">✕</span></span>`:'';
     const dupb=m.dup?' <span class="imp-dupb">possível duplicidade</span>':'';
+    const credB=credito?' <span style="font-size:.64rem;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:20px">crédito</span>':'';
     return `<tr class="${m.incluir?'':'excl'}">
       <td style="text-align:center"><input type="checkbox" ${m.incluir?'checked':''} onchange="IMP_toggleIncluir(${i})" style="width:17px;height:17px;accent-color:#16a34a"></td>
-      <td>${(m.descricao||'').replace(/</g,'&lt;')}${parc}${dupb}</td>
+      <td>${(m.descricao||'').replace(/</g,'&lt;')}${parc}${dupb}${credB}</td>
       <td style="white-space:nowrap">${BC_dataBR(m.data)||'—'}</td>
-      <td style="font-weight:700;white-space:nowrap;color:${saida?'#0f172a':'#16a34a'}">${saida?'':'+'}${fmt(Math.abs(Number(m.valor)||0))}</td>
+      <td style="font-weight:700;white-space:nowrap;color:${(credito||ent)?'#16a34a':'#0f172a'}">${credito?fmt(Number(m.valor)):((ent?'+ ':'')+fmt(Math.abs(Number(m.valor)||0)))}</td>
       <td><select onchange="IMP_setCat(${i},this.value)" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:.82rem;background:#fff;max-width:190px">${IMP_catOptions(m.categoria||'')}</select></td>
       <td>${IMP_confPill(m.conf)}</td></tr>`;};
   p.innerHTML=`
@@ -5521,7 +5546,7 @@ async function IMP_importar(){
         const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
         if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
         const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
-        const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.abs(Number(mv.valor)||0),dataCompra:mv.data||BC_hoje(),parcelas:1,categoria:mv.categoria||'',responsavel:'',obs:'Importado da fatura',importId:impId,criadoEm:new Date().toISOString()};
+        const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.round((Number(mv.valor)||0)*100)/100,dataCompra:mv.data||BC_hoje(),parcelas:1,competenciaInicio:IMP_faturaMesKey(mv),categoria:mv.categoria||'',responsavel:'',obs:(Number(mv.valor)<0?'Crédito/estorno importado':'Importado da fatura'),importId:impId,criadoEm:new Date().toISOString()};
         CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;
       }
     });
@@ -6979,9 +7004,9 @@ function CONC_render(){
     <p style="font-size:.82rem;color:#6b7280;margin:4px 0 10px">Importe o extrato (OFX, PDF ou foto). O sistema compara com os lançamentos e sugere as conciliações — você confirma com um clique.</p>
     <div class="form-group" style="max-width:340px"><label>Conta do extrato</label><select id="concImpConta">${CONC_optContas()}</select></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px">
-      <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
-      <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens do extrato</span><input type="file" accept="image/*" multiple style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
-      <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
+      <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CONC_impArquivo(this,'pdf')"/></label>
+      <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens do extrato</span><input type="file" accept="image/*" multiple style="display:none" onchange="CONC_impArquivo(this,'galeria')"/></label>
+      <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CONC_impArquivo(this,'foto')"/></label>
       <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CONC_impArquivo(this,'ofx')"/></label>
     </div>
     <div id="concImpAviso" style="font-size:.82rem;margin-top:12px"></div>
@@ -7107,7 +7132,7 @@ function CONC_impArquivo(input,modo){
   if(!cid||!BC_CONTAS[cid]){toast('Escolha a conta do extrato.','#f59e0b');input.value='';return;}
   if(!input.files||!input.files.length)return;
   IMP_iniciarInline('conta',()=>document.getElementById('concImpConta').value,'concImpAviso','concImpReview',function(){CONC_render();if(subPAtivo==='p-contas')renderTabelaP();});
-  if(modo==='ofx')IMP_ofxArquivo(input);else IMP_gemini(input);
+  if(modo==='ofx')IMP_ofxArquivo(input);else if(modo==='galeria'||modo==='foto')IMP_stagePaginas(input);else IMP_gemini(input);
 }
 async function CONC_desfazer(chave){
   const x=CONC_LINKS[chave];if(!x)return;
