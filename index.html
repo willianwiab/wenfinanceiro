@@ -1452,6 +1452,10 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <option value="fluxo">💰 Fluxo mensal (receita × despesa)</option>
           <option value="fixas">📌 Contas fixas</option>
           <option value="atraso">⚫ Contas atrasadas</option>
+          <option value="dre">📊 Resultado / DRE (competência)</option>
+          <option value="estudio">🎬 Receita por estúdio (A×B)</option>
+          <option value="aging">⏳ Aging do a receber</option>
+          <option value="proj">🔮 Projeção de fluxo de caixa</option>
         </select></div>
         <div class="form-group"><label>Período</label><select id="rptPeriodo" onchange="RPT_periodoChange();RPT_gerar()">
           <option value="mes">Mês atual</option>
@@ -5068,6 +5072,42 @@ function RPT_gerar(){
     titulo='Contas atrasadas';const pend=(typeof VENC_coletar==='function'?VENC_coletar():[]).filter(p=>p.diff<0).sort((a,b)=>a.diff-b.diff);
     kpis=[{l:'Atrasadas',v:pend.length},{l:'Total',v:fmt(pend.reduce((a,p)=>a+p.saldo,0))}];
     colunas=['Conta','Mês','Dias atraso','Saldo'];linhas=pend.map(p=>[p.nome,p.mes,Math.abs(p.diff),fmt(p.saldo)]);
+  }else if(tipo==='dre'){
+    titulo='Resultado / DRE (competência)';let tr=0,td=0;
+    const despCompMes=m=>{let d=0;Object.keys(P_meses||{}).forEach(bk=>pagarMes(bk).forEach(r=>{if((r.competencia||bk)===m)d+=Number(r.valor)||0;}));return d;};
+    linhas=meses.map(m=>{const rec=(R_todosOsDados||[]).filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0);const desp=despCompMes(m);tr+=rec;td+=desp;const res=rec-desp;return [m,fmt(rec),fmt(desp),fmt(res),RPT_pct(rec>0?res/rec*100:0)];});
+    const resTot=tr-td;
+    kpis=[{l:'Receita',v:fmt(tr)},{l:'Despesa',v:fmt(td)},{l:'Resultado',v:fmt(resTot)},{l:'Margem',v:RPT_pct(tr>0?resTot/tr*100:0)}];
+    chart={type:'bar',labels:meses,data:meses.map(m=>(R_todosOsDados||[]).filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0)),data2:meses.map(despCompMes)};
+    colunas=['Mês','Receita','Despesa','Resultado','Margem'];
+  }else if(tipo==='estudio'){
+    titulo='Receita por estúdio';const acc={};let tot=0;
+    (R_todosOsDados||[]).forEach(r=>{if(!inMeses(r.mes))return;const s=r.studio||'—';const v=Number(r.valorTotal)||0;const h=Number(r.horas)||0;if(!acc[s])acc[s]={fat:0,diarias:0,horas:0};acc[s].fat+=v;acc[s].diarias+=1;acc[s].horas+=h;tot+=v;});
+    const arr=Object.entries(acc).sort((a,b)=>b[1].fat-a[1].fat);
+    kpis=[{l:'Faturamento',v:fmt(tot)},{l:'Estúdios',v:arr.length},{l:'Líder',v:arr[0]?arr[0][0]:'—'}];
+    chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1].fat)};
+    colunas=['Estúdio','Faturamento','Diárias','Horas','R$/hora'];
+    linhas=arr.map(x=>[x[0],fmt(x[1].fat),x[1].diarias,x[1].horas,fmt(x[1].horas>0?x[1].fat/x[1].horas:0)]);
+  }else if(tipo==='aging'){
+    titulo='Aging do a receber';const hoje=new Date();hoje.setHours(0,0,0,0);
+    const ordem=['0-15 dias','16-30 dias','31-60 dias','+60 dias','sem data'];
+    const val={},qtd={};ordem.forEach(k=>{val[k]=0;qtd[k]=0;});let tot=0;
+    (R_todosOsDados||[]).forEach(r=>{const saldo=Number(r.saldo)||0;if(saldo<=0)return;const p=(r.data||'').split('/');let faixa='sem data';
+      if(p.length===3){const d=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));const dias=Math.round((hoje-d)/86400000);faixa=dias<=15?'0-15 dias':(dias<=30?'16-30 dias':(dias<=60?'31-60 dias':'+60 dias'));}
+      val[faixa]+=saldo;qtd[faixa]+=1;tot+=saldo;});
+    kpis=[{l:'Total a receber',v:fmt(tot)},{l:'+30 dias',v:fmt(val['31-60 dias']+val['+60 dias'])}];
+    chart={type:'bar',labels:ordem,data:ordem.map(k=>val[k])};
+    colunas=['Faixa','Qtd','Valor'];linhas=ordem.filter(k=>qtd[k]>0).map(k=>[k,qtd[k],fmt(val[k])]);
+  }else if(tipo==='proj'){
+    titulo='Projeção de fluxo de caixa';
+    const contas=BC_contasAtivas().filter(id=>BC_CONTAS[id].saldoConfigurado);
+    let acc=contas.reduce((a,id)=>a+(BC_saldoConta(id)||0),0);const saldoHoje=acc;
+    const all=RPT_todosMeses();const mref=mesAtualReal();let idx=all.indexOf(mref);if(idx<0){all.push(mref);idx=all.length-1;}
+    const horizonte=all.slice(idx);const labels=[],dataSaldo=[];let menor=acc;
+    colunas=['Mês','Entradas previstas','Saídas previstas','Saldo projetado'];
+    linhas=horizonte.map(m=>{const ent=(R_todosOsDados||[]).filter(r=>r.mes===m&&Number(r.saldo)>0).reduce((a,r)=>a+Number(r.saldo||0),0);const sai=(P_meses[m]||[]).filter(r=>String(r.status).toUpperCase()!=='PAGO').reduce((a,r)=>a+((Number(r.valor)||0)-(Number(r.valorPago)||0)),0);acc=acc+ent-sai;if(acc<menor)menor=acc;labels.push(m);dataSaldo.push(Math.round(acc*100)/100);return [m,fmt(ent),fmt(sai),fmt(acc)];});
+    kpis=[{l:'Saldo hoje',v:fmt(saldoHoje)},{l:'Projetado (fim)',v:fmt(acc)},{l:'Menor saldo',v:fmt(menor)}];
+    chart={type:'line',labels,data:dataSaldo};
   }
   RPT_ultimo={titulo,periodo:periodoLabel,colunas,linhas,kpis};
   // render
@@ -5078,7 +5118,9 @@ function RPT_gerar(){
   if(RPT_chart){RPT_chart.destroy();RPT_chart=null;}
   if(chart&&typeof Chart!=='undefined'){
     const ctx=document.getElementById('rptCanvas');
-    const ds=chart.type==='bar'&&chart.data2?[{label:'Receita',data:chart.data,backgroundColor:'#16a34a'},{label:'Despesa',data:chart.data2,backgroundColor:'#ef4444'}]:[{data:chart.data,backgroundColor:chart.labels.map((x,i)=>RPT_CORES[i%RPT_CORES.length])}];
+    const ds=(chart.type==='bar'&&chart.data2)?[{label:'Receita',data:chart.data,backgroundColor:'#16a34a'},{label:'Despesa',data:chart.data2,backgroundColor:'#ef4444'}]
+      :chart.type==='line'?[{label:'Saldo projetado',data:chart.data,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.3}]
+      :[{data:chart.data,backgroundColor:chart.labels.map((x,i)=>RPT_CORES[i%RPT_CORES.length])}];
     RPT_chart=new Chart(ctx,{type:chart.type,data:{labels:chart.labels,datasets:ds},options:{maintainAspectRatio:false,plugins:{legend:{display:chart.type==='doughnut'||!!chart.data2,position:chart.type==='doughnut'?'right':'top',labels:{boxWidth:12,font:{size:11}}}},...(chart.type==='doughnut'?{cutout:'55%'}:{scales:{y:{beginAtZero:true}}})}});
   }
 }
