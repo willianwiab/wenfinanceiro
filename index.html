@@ -778,6 +778,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
+    <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
 </div>
@@ -1184,6 +1185,22 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Competência = a que mês a despesa se refere. Caixa = mês em que o dinheiro realmente saiu (data do pagamento). Ex.: energia de junho paga em julho aparece na competência JUN e no caixa JUL.</p>
     </div>
     <div id="compTabela" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- p-fixas (Fase 5) -->
+  <div class="page" id="page-p-fixas">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div>
+        <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📌 Contas fixas do mês</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Despesas recorrentes. Gere os lançamentos do período com um clique — sem duplicar.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline-b" onclick="FX_gerarTodas()">⚙️ Gerar lançamentos</button>
+        <button class="btn btn-purple" onclick="FX_abrirModal()">➕ Nova fixa</button>
+      </div>
+    </div>
+    <div class="cards-p" id="fxCards"></div>
+    <div id="fxLista" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
   <!-- p-vencimentos (Fase 6) -->
@@ -1868,6 +1885,39 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </div>
 </div>
 
+<!-- Modal conta fixa (Fase 5) -->
+<div class="modal-bg" id="fxModalBg">
+  <div class="modal" style="max-width:460px">
+    <h2 id="fxModalTitle">➕ Nova Conta Fixa</h2>
+    <div class="form-group"><label>Descrição</label><input type="text" id="fxFNome" placeholder="Ex: Aluguel do estúdio"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Valor médio (R$)</label><input type="number" id="fxFValor" placeholder="0,00" step="0.01"/></div>
+      <div class="form-group"><label>Dia de vencimento</label><input type="number" id="fxFDia" placeholder="1-31" min="1" max="31"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Recorrência</label><select id="fxFRecorrencia" onchange="FX_togglePersonalizada()">
+        <option value="mensal">Mensal</option>
+        <option value="trimestral">Trimestral</option>
+        <option value="semestral">Semestral</option>
+        <option value="anual">Anual</option>
+        <option value="personalizada">Personalizada (a cada N meses)</option>
+      </select></div>
+      <div class="form-group" id="fxFPersonalizadaWrap" style="display:none"><label>A cada (meses)</label><input type="number" id="fxFIntervalo" placeholder="Ex: 2" min="1" max="60"/></div>
+    </div>
+    <div class="form-group"><label>Categoria</label><select id="fxFCategoria"></select></div>
+    <div class="form-group"><label>Conta bancária (opcional)</label><select id="fxFConta"></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Início</label><input type="date" id="fxFInicio"/></div>
+      <div class="form-group"><label>Fim (opcional)</label><input type="date" id="fxFFim"/></div>
+    </div>
+    <div class="form-group"><label>Status</label><select id="fxFStatus"><option value="ativa">🟢 Ativa</option><option value="pausada">⏸️ Pausada</option><option value="encerrada">⏹️ Encerrada</option></select></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="FX_fecharModal()">Cancelar</button>
+      <button class="btn btn-purple" onclick="FX_salvar()">✅ Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal categoria financeira RICA (Fase 3) -->
 <div class="modal-bg" id="cfModalBg">
   <div class="modal" style="max-width:460px">
@@ -2028,7 +2078,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{}, config_ia:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{}, config_ia:{}, contas_fixas:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -2082,6 +2132,10 @@ if (SIMULACAO_LOCAL){
   seedFV('cartao_lancamentos','lm1',{cartaoId:'cmock1',descricao:'Tráfego Meta',valor:800,dataCompra:'2026-07-02',parcelas:1,categoria:'marketing',responsavel:'William',obs:'',criadoEm:new Date(2026,6,2).toISOString()});
   seedFV('cartao_lancamentos','lm2',{cartaoId:'cmock1',descricao:'Assinatura Adobe',valor:300,dataCompra:'2026-07-10',parcelas:1,categoria:'servicos',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
   seedFV('cartao_lancamentos','lm3',{cartaoId:'cmock1',descricao:'Equipamento',valor:3000,dataCompra:'2026-07-10',parcelas:3,categoria:'outros',responsavel:'William',obs:'',criadoEm:new Date(2026,6,10).toISOString()});
+
+  // Contas fixas fictícias (coleção nova — Fase 5)
+  seedFV('contas_fixas','fxmock1',{nome:'Aluguel do estúdio',valorMedio:3800,dia:5,recorrencia:'mensal',intervaloMeses:null,categoria:'aluguel',contaBancariaId:'bmock1',dataInicio:'2026-01-05',dataFim:null,status:'ativa',criadoEm:new Date(2026,0,1).toISOString()});
+  seedFV('contas_fixas','fxmock2',{nome:'Contador',valorMedio:600,dia:10,recorrencia:'mensal',intervaloMeses:null,categoria:'contabilidade',contaBancariaId:null,dataInicio:'2026-01-10',dataFim:null,status:'ativa',criadoEm:new Date(2026,0,1).toISOString()});
 
   // Centro de custo + projeto fictícios (coleções novas — Fase 3)
   seedFV('centros_custo','ccmock1',{nome:'Produção',cor:'#0891b2',ativo:true,criadoEm:new Date(2026,6,1).toISOString()});
@@ -2213,6 +2267,7 @@ function renderSubPageP(id){
   if(id==='p-categorias'){CAT_renderGerenciar();renderCatMesFiltroP();renderCategoriasP();}
   if(id==='p-competencia')COMP_render();
   if(id==='p-vencimentos')VENC_render();
+  if(id==='p-fixas')FX_render();
 }
 
 function atualizarHeaderContexto(){
@@ -4202,6 +4257,132 @@ function COMP_render(){
 }
 
 // ══════════════════════════════════════════════════════
+// FASE 5 — CONTAS FIXAS DO MÊS (módulo FX_)
+// Coleção nova `contas_fixas` (definições de recorrência). "Gerar lançamentos"
+// cria em P_meses com fixaId + trava anti-duplicidade. NÃO auto-gera no load.
+// ══════════════════════════════════════════════════════
+const FX_COL='contas_fixas'; const FX_FIXAS={}; let FX_editandoId=null;
+const FX_RECOR_LABEL={mensal:'Mensal',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual',personalizada:'Personalizada'};
+async function FX_fbSalvar(id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});await fetch(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
+async function FX_fbExcluir(id){await fetch(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
+async function FX_inicializar(){const l=await BC_fbCarregar(FX_COL);Object.keys(FX_FIXAS).forEach(k=>delete FX_FIXAS[k]);l.forEach(f=>FX_FIXAS[f.id]=f);if(mainAtivo==='pagar'&&subPAtivo==='p-fixas')FX_render();}
+function FX_intervalo(f){const m={mensal:1,trimestral:3,semestral:6,anual:12};return f.recorrencia==='personalizada'?(parseInt(f.intervaloMeses)||1):(m[f.recorrencia]||1);}
+function FX_idx(ano,mes){return ano*12+mes;}
+function FX_mesesAplicaveis(f){
+  const start=new Date((f.dataInicio||BC_hoje())+'T12:00:00');if(isNaN(start.getTime()))return[];
+  const sIdx=FX_idx(start.getFullYear(),start.getMonth());
+  const hoje=new Date();let endIdx=FX_idx(hoje.getFullYear(),hoje.getMonth())+1; // até o próximo mês
+  if(f.dataFim){const fim=new Date(f.dataFim+'T12:00:00');if(!isNaN(fim.getTime()))endIdx=Math.min(endIdx,FX_idx(fim.getFullYear(),fim.getMonth()));}
+  const N=Math.max(1,FX_intervalo(f));const out=[];
+  for(let idx=sIdx;idx<=endIdx;idx+=N)out.push(MESES_ABREV[idx%12]+'/'+Math.floor(idx/12));
+  return out;
+}
+function FX_gerarUma(f){
+  let n=0;
+  FX_mesesAplicaveis(f).forEach(mk=>{
+    if(!P_meses[mk])P_meses[mk]=[];
+    if(P_meses[mk].some(r=>r.fixaId===f.id))return; // anti-duplicidade
+    const o={id:gerarId(),nome:f.nome,valor:Number(f.valorMedio)||0,valorPago:0,dia:f.dia||null,mes:mk,categoria:f.categoria||'',fixa:true,fixaId:f.id,status:'PENDENTE',cod:'',obs:'Gerada de conta fixa',competencia:mk,dataCriacao:new Date().toISOString()};
+    if(f.contaBancariaId)o.contaBancariaId=f.contaBancariaId;
+    P_meses[mk].push(o);n++;
+  });
+  return n;
+}
+function FX_gerarTodas(){
+  const ativas=Object.values(FX_FIXAS).filter(f=>f.status==='ativa');
+  if(!ativas.length){toast('Nenhuma conta fixa ativa.','#f59e0b');return;}
+  let total=0;ativas.forEach(f=>total+=FX_gerarUma(f));
+  if(total>0){P_salvarStorage();FX_render();if(mainAtivo==='pagar')renderSubPageP(subPAtivo);toast(`✅ ${total} lançamento(s) gerado(s)!`);}
+  else toast('Tudo já estava lançado — nada novo.','#6b7280');
+}
+function FX_gerarUmaBtn(id){const f=FX_FIXAS[id];if(!f)return;const n=FX_gerarUma(f);if(n>0){P_salvarStorage();FX_render();if(mainAtivo==='pagar')renderSubPageP(subPAtivo);toast(`✅ ${n} lançamento(s) de "${f.nome}" gerado(s)!`);}else toast('Já estava tudo lançado.','#6b7280');}
+// ── Modal ──
+function FX_popularSelects(catSel,contaSel){
+  const cat=document.getElementById('fxFCategoria');
+  cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===catSel).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');
+  if(catSel)cat.value=catSel;
+  const conta=document.getElementById('fxFConta');
+  conta.innerHTML='<option value="">— Não vincular —</option>'+BC_contasAtivas().map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join('');
+  if(contaSel)conta.value=contaSel;
+}
+function FX_togglePersonalizada(){document.getElementById('fxFPersonalizadaWrap').style.display=document.getElementById('fxFRecorrencia').value==='personalizada'?'block':'none';}
+function FX_abrirModal(id=null){
+  FX_editandoId=id;const f=id?FX_FIXAS[id]:null;
+  document.getElementById('fxModalTitle').textContent=id?'✏️ Editar Conta Fixa':'➕ Nova Conta Fixa';
+  document.getElementById('fxFNome').value=f?.nome||'';
+  document.getElementById('fxFValor').value=(f&&f.valorMedio!=null)?f.valorMedio:'';
+  document.getElementById('fxFDia').value=f?.dia||'';
+  document.getElementById('fxFRecorrencia').value=f?.recorrencia||'mensal';
+  document.getElementById('fxFIntervalo').value=f?.intervaloMeses||'';
+  document.getElementById('fxFInicio').value=f?.dataInicio||BC_hoje();
+  document.getElementById('fxFFim').value=f?.dataFim||'';
+  document.getElementById('fxFStatus').value=f?.status||'ativa';
+  FX_popularSelects(f?.categoria||'',f?.contaBancariaId||'');
+  FX_togglePersonalizada();
+  document.getElementById('fxModalBg').classList.add('open');
+}
+function FX_fecharModal(){document.getElementById('fxModalBg').classList.remove('open');FX_editandoId=null;}
+async function FX_salvar(){
+  const nome=document.getElementById('fxFNome').value.trim();if(!nome){toast('Informe a descrição.','#ef4444');return;}
+  const dados={
+    nome,valorMedio:parseFloat(document.getElementById('fxFValor').value)||0,
+    dia:parseInt(document.getElementById('fxFDia').value)||null,
+    recorrencia:document.getElementById('fxFRecorrencia').value,
+    intervaloMeses:parseInt(document.getElementById('fxFIntervalo').value)||null,
+    categoria:document.getElementById('fxFCategoria').value,
+    contaBancariaId:document.getElementById('fxFConta').value||null,
+    dataInicio:document.getElementById('fxFInicio').value||BC_hoje(),
+    dataFim:document.getElementById('fxFFim').value||null,
+    status:document.getElementById('fxFStatus').value,
+    criadoEm:FX_editandoId?(FX_FIXAS[FX_editandoId].criadoEm||new Date().toISOString()):new Date().toISOString()
+  };
+  const id=FX_editandoId||('fx'+Date.now()+Math.floor(Math.random()*9999));
+  FX_FIXAS[id]=dados;await FX_fbSalvar(id,dados);
+  FX_fecharModal();FX_render();toast('✅ Conta fixa salva!');
+}
+async function FX_excluir(id){if(!confirm('Excluir esta conta fixa? Os lançamentos já gerados continuam no Pagar.'))return;delete FX_FIXAS[id];await FX_fbExcluir(id);FX_render();toast('🗑️ Conta fixa removida.','#6b7280');}
+async function FX_toggleStatus(id){const f=FX_FIXAS[id];if(!f)return;f.status=f.status==='ativa'?'pausada':'ativa';await FX_fbSalvar(id,f);FX_render();toast(f.status==='ativa'?'▶️ Reativada.':'⏸️ Pausada.','#6b7280');}
+// ── Painel ──
+function FX_render(){
+  const mref=mesAtualReal();
+  const ativas=Object.values(FX_FIXAS).filter(f=>f.status==='ativa');
+  const noMes=ativas.filter(f=>FX_mesesAplicaveis(f).includes(mref));
+  const totalFixo=noMes.reduce((a,f)=>a+(Number(f.valorMedio)||0),0);
+  const gerados=(P_meses[mref]||[]).filter(r=>r.fixaId);
+  const pagas=gerados.filter(r=>String(r.status).toUpperCase()==='PAGO');
+  const pend=gerados.filter(r=>String(r.status).toUpperCase()!=='PAGO');
+  const hoje=getDia();const atras=pend.filter(r=>r.dia&&r.dia<hoje);
+  const receita=(R_todosOsDados||[]).filter(r=>r.mes===mref).reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  const pct=receita>0?Math.round(totalFixo/receita*100):0;
+  const cards=document.getElementById('fxCards');
+  if(cards)cards.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #7c3aed"><label>📌 Total fixo do mês</label><div class="val">${fmt(totalFixo)}</div><div class="val-sub">${noMes.length} conta(s) no mês</div></div>
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Pagas</label><div class="val">${pagas.length}</div><div class="val-sub">${fmt(pagas.reduce((a,r)=>a+(r.valorPago||0),0))}</div></div>
+    <div class="card-p" style="border-left:4px solid #f59e0b"><label>🟡 Pendentes${atras.length?' ('+atras.length+' em atraso)':''}</label><div class="val">${pend.length}</div><div class="val-sub">${fmt(pend.reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0))}</div></div>
+    <div class="card-p" style="border-left:4px solid #ef4444"><label>📊 % do faturamento</label><div class="val">${pct}%</div><div class="val-sub">fixas ÷ a receber do mês</div></div>`;
+  const lista=document.getElementById('fxLista');if(!lista)return;
+  const ids=Object.keys(FX_FIXAS).sort((a,b)=>(FX_FIXAS[a].nome||'').localeCompare(FX_FIXAS[b].nome||''));
+  lista.innerHTML=ids.map(id=>{
+    const f=FX_FIXAS[id];const ci=catInfoP(f.categoria);const cor=f.status==='ativa'?'#16a34a':(f.status==='pausada'?'#f59e0b':'#94a3b8');
+    const recLbl=FX_RECOR_LABEL[f.recorrencia]+(f.recorrencia==='personalizada'?` (${f.intervaloMeses||1}m)`:'');
+    return `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${cor};border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;color:#0f172a">${f.nome} <span style="font-size:.7rem;font-weight:600;color:${cor}">${f.status==='ativa'?'🟢 ativa':(f.status==='pausada'?'⏸️ pausada':'⏹️ encerrada')}</span></div>
+        <div style="font-size:.75rem;color:#6b7280;margin-top:2px">${catBadgeP(f.categoria)||''} ${recLbl} · dia ${f.dia||'—'}${f.contaBancariaId&&BC_CONTAS[f.contaBancariaId]?' · '+BC_CONTAS[f.contaBancariaId].nome:''}</div>
+      </div>
+      <div style="text-align:right"><div style="font-weight:800;color:#0f172a">${fmt(f.valorMedio||0)}</div>
+        <div style="display:flex;gap:2px;justify-content:flex-end;margin-top:2px">
+          <button onclick="FX_gerarUmaBtn('${id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Gerar lançamentos">⚙️</button>
+          <button onclick="FX_toggleStatus('${id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Pausar/ativar">${f.status==='ativa'?'⏸️':'▶️'}</button>
+          <button onclick="FX_abrirModal('${id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Editar">✏️</button>
+          <button onclick="FX_excluir('${id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.7" title="Excluir">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('')||'<div style="color:#9ca3af;font-size:.85rem">Nenhuma conta fixa. Clique em <b>➕ Nova fixa</b>.</div>';
+}
+
+// ══════════════════════════════════════════════════════
 // FASE 6 — VENCIMENTOS E ATRASOS (módulo VENC_)
 // Leitura operacional: vence hoje / próximos 7 dias / atrasadas / faturas de cartão.
 // 100% derivado de P_meses + faturas do cartão. Só leitura.
@@ -5262,6 +5443,7 @@ CAT_inicializar();
 BC_inicializar();
 CC_inicializar();
 CF_inicializar();
+FX_inicializar();
 IA_carregarChave();
 </script>
 <script src="js/banco.js?v=7"></script>
