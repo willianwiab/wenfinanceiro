@@ -49,7 +49,7 @@ body{background:#f0f4f8;color:#1e293b}
 .cc-imp-modo .sub{font-size:.76rem;color:#6b7280}
 .cc-faturas-grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
 @media(max-width:760px){.cc-faturas-grid{grid-template-columns:1fr}}
-.fcx-rateio-grid{display:grid;grid-template-columns:minmax(260px,1fr) 1fr;gap:22px;align-items:center}
+.fcx-rateio-grid{display:grid;grid-template-columns:minmax(320px,1.15fr) 1fr;gap:26px;align-items:center}
 @media(max-width:760px){.fcx-rateio-grid{grid-template-columns:1fr}}
 .cc-fat-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .12s;background:#fff}
 .cc-fat-item:hover{border-color:#16a34a;background:#f0fdf4}
@@ -806,6 +806,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
+    <button class="sub-pagar" onclick="showSubP('p-conciliacao',this)">🔗 Conciliação</button>
     <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
     <button class="sub-pagar" onclick="showSubP('p-rateio',this)">🧮 Rateio</button>
     <button class="sub-pagar" onclick="showSubP('p-auditoria',this)">🕵️ Auditoria</button>
@@ -1170,6 +1171,13 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <select id="pCatFiltroTabela" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none">
           <option value="">🏷️ Todas categorias</option>
         </select>
+        <select id="pOrigemFiltro" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none" title="Filtrar por origem do lançamento">
+          <option value="">📂 Todas as origens</option>
+          <option value="manual">✍️ Manuais</option>
+          <option value="fixa">📌 Fixas</option>
+          <option value="fatura">💳 Faturas de cartão</option>
+          <option value="conciliada">🔗 Conciliadas c/ extrato</option>
+        </select>
       </div>
       <div style="padding:7px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap;border-bottom:1px solid #f1f5f9;background:#fafafa;font-size:.8rem;color:#6b7280">
         <span>💰 Faixa:</span>
@@ -1278,6 +1286,16 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     </div>
     <div class="cards-p" id="vencCards"></div>
     <div id="vencListas" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px"></div>
+  </div>
+
+  <!-- p-conciliacao -->
+  <div class="page" id="page-p-conciliacao">
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">🔗 Conciliação — extrato × contas a pagar</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Casa os débitos do extrato importado com as contas a pagar lançadas manualmente. Ao conciliar, a conta é marcada como paga (data do extrato) e vinculada — sem lançar de novo no banco.</p>
+    </div>
+    <div id="concResumo" style="margin-bottom:14px"></div>
+    <div id="concLista"></div>
   </div>
 
   <!-- p-historico -->
@@ -2513,6 +2531,7 @@ function renderSubPageP(id){
   if(id==='p-categorias'){CAT_renderGerenciar();renderCatMesFiltroP();renderCategoriasP();}
   if(id==='p-competencia')COMP_render();
   if(id==='p-vencimentos')VENC_render();
+  if(id==='p-conciliacao')CONC_render();
   if(id==='p-fixas')FX_render();
   if(id==='p-rateio')RT_render();
   if(id==='p-painel')PN_render();
@@ -5728,9 +5747,9 @@ function FCX_renderBlocos(){
       return bloco;
     }).join('');
     html+=`<div class="fcx-rateio-grid">
-      <div style="position:relative;min-height:260px;display:flex;align-items:center;justify-content:center">
-        <div style="width:100%;max-width:340px;height:300px"><canvas id="fcxPieCanvas"></canvas></div>
-        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><span style="font-size:.7rem;color:#6b7280;letter-spacing:.06em">TOTAL</span><span style="font-size:1.25rem;font-weight:800;color:#0f172a">${fmt(tot)}</span></div>
+      <div style="position:relative;min-height:320px;display:flex;align-items:center;justify-content:center">
+        <div style="width:100%;max-width:420px;height:360px"><canvas id="fcxPieCanvas"></canvas></div>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><span style="font-size:.74rem;color:#6b7280;letter-spacing:.06em">TOTAL</span><span style="font-size:1.5rem;font-weight:800;color:#0f172a">${fmt(tot)}</span></div>
       </div>
       <div>${listaCat}
         <button onclick="FCX_abrirTodos()" style="width:100%;margin-top:12px;border:1px dashed #d8b4fe;background:#faf5ff;color:#7c3aed;border-radius:12px;padding:10px;font-weight:700;font-size:.85rem;cursor:pointer">🔎 Ver todos os rateios / recategorizar</button>
@@ -5986,6 +6005,15 @@ function renderTabelaP(){
     data.sort((a,b)=>(a.dia||99)-(b.dia||99));
   }
   if(catFiltro)data=data.filter(r=>(r.categoria||'outros')===catFiltro||(catFiltro==='outros'&&!r.categoria));
+  const origemFiltro=document.getElementById('pOrigemFiltro')?.value||'';
+  if(origemFiltro)data=data.filter(r=>{
+    const fixa=!!(r.fixaId||r.fixa);
+    if(origemFiltro==='fatura')return !!r.faturaCartao;
+    if(origemFiltro==='fixa')return fixa&&!r.faturaCartao;
+    if(origemFiltro==='conciliada')return !!r.conciliadoMov;
+    if(origemFiltro==='manual')return !r.faturaCartao&&!fixa;
+    return true;
+  });
   if(filtroMin>0)data=data.filter(r=>r.valor>=filtroMin);if(filtroMax<Infinity)data=data.filter(r=>r.valor<=filtroMax);
   if(P_sortCol){data.sort((a,b)=>{let va,vb;if(P_sortCol==='nome'){va=a.nome||'';vb=b.nome||'';}else if(P_sortCol==='valor'){va=a.valor;vb=b.valor;}else if(P_sortCol==='dia'){va=a.dia||99;vb=b.dia||99;}else if(P_sortCol==='saldo'){va=a.valor-(a.valorPago||0);vb=b.valor-(b.valorPago||0);}if(typeof va==='string')return P_sortDir*va.localeCompare(vb);return P_sortDir*(va-vb);});}
   const thSort=(col,lbl)=>{const isActive=P_sortCol===col;const dir=isActive?(P_sortDir===1?'sort-asc-p':'sort-desc-p'):'';return`<th class="sortable-p ${dir}" onclick="P_setSort('${col}')" style="text-align:${col==='valor'||col==='saldo'?'right':'left'}">${lbl}</th>`;};
@@ -6703,6 +6731,97 @@ function dispensarLembreteBackup(){
   if(bar)bar.style.display='none';
 }
 
+// ══════════════════════════════════════════════════════
+// CONCILIAÇÃO — extrato importado × contas a pagar (módulo CONC_)
+// Casa um débito do extrato (movimentação import, saída) com uma conta a pagar
+// manual. Ao conciliar: marca a conta como PAGA (data do extrato) + vincula à
+// conta bancária, SEM postar nova movimentação (o débito do extrato já é o caixa).
+// Guarda o vínculo em banco_conciliados (mesma coleção do selo 🔗).
+// ══════════════════════════════════════════════════════
+const CONC_COL='banco_conciliados';
+const CONC_LINKS={}; // chave -> {chave,status,tipo,id,mes,movId,label,motivo,statusAntes,valorPagoAntes,ts}
+async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);}catch(e){}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();}
+function CONC_movLinkado(movId){return Object.values(CONC_LINKS).some(x=>x&&x.movId===movId);}
+function CONC_pagarLinkado(id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.tipo==='pagar'&&x.id===id&&x.mes===mes);}
+function CONC_extratoAberto(){return (BC_MOVS||[]).filter(m=>m.origemTipo==='import'&&m.tipo==='saida'&&!m.estornada&&!CONC_movLinkado(m.id));}
+function CONC_pagarCandidatos(){
+  const out=[];Object.keys(P_meses||{}).forEach(mes=>(P_meses[mes]||[]).forEach(r=>{
+    if(String(r.status).toUpperCase()==='PAGO')return;if(r.conciliadoMov)return;
+    const saldo=(Number(r.valor)||0)-(Number(r.valorPago)||0);if(saldo<=0)return;
+    out.push({r,mes,saldo});
+  }));return out;
+}
+function CONC_diasEntre(a,b){const da=new Date((a||'')+'T12:00:00'),db=new Date((b||'')+'T12:00:00');if(isNaN(da)||isNaN(db))return 999;return Math.abs(Math.round((da-db)/86400000));}
+function CONC_ranked(mov,cands){const v=Math.abs(Number(mov.valor)||0);
+  return cands.map(c=>{const exato=Math.abs(c.saldo-v)<0.01;
+    // proximidade por data de vencimento (mês+dia) da conta a pagar
+    let dd=999;try{const d=VENC_dataVenc(c.mes,c.r.dia);if(d)dd=CONC_diasEntre(mov.data,d.toISOString().slice(0,10));}catch(e){}
+    return {...c,exato,score:(exato?0:1000)+Math.min(dd,60)};}).sort((a,b)=>a.score-b.score);
+}
+function CONC_render(){
+  const resumo=document.getElementById('concResumo');const lista=document.getElementById('concLista');if(!lista)return;
+  const abertos=CONC_extratoAberto();
+  const links=Object.values(CONC_LINKS).filter(x=>x&&x.tipo==='pagar'&&x.movId);
+  if(resumo)resumo.innerHTML=`<div class="cards-p">
+    <div class="card-p" style="border-left:4px solid #ef4444"><label>🧾 Débitos do extrato a conciliar</label><div class="val">${abertos.length}</div><div class="val-sub">${fmt(abertos.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0))}</div></div>
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>🔗 Conciliados</label><div class="val">${links.length}</div></div>
+  </div>`;
+  const cands=CONC_pagarCandidatos();
+  let html='';
+  if(!abertos.length)html+='<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;color:#16a34a;font-size:.9rem">✅ Nenhum débito do extrato pendente de conciliação. (Importe um extrato pela aba Contas → Trazer extrato.)</div>';
+  else html+=abertos.map(m=>{
+    const rk=CONC_ranked(m,cands);const best=rk[0];
+    const opts='<option value="">— escolher conta a pagar —</option>'+rk.map(c=>`<option value="${c.mes}|${c.r.id}" ${best&&c===best&&best.exato?'selected':''}>${(c.r.nome||'').replace(/</g,'&lt;')} · ${fmt(c.saldo)} · ${c.mes}${c.exato?' ✓ valor bate':''}</option>`).join('');
+    return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div><div style="font-weight:700;color:#0f172a">${(m.descricao||'Débito').replace(/</g,'&lt;')}</div>
+          <div style="font-size:.75rem;color:#6b7280;margin-top:2px">📅 ${BC_dataBR(m.data)||'—'} · ${(BC_CONTAS[m.contaId]||{}).nome||'conta'}</div></div>
+        <div style="font-size:1.05rem;font-weight:800;color:#ef4444">− ${fmt(Math.abs(Number(m.valor)||0))}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <select id="conc-sel-${m.id}" style="flex:1;min-width:200px;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:.83rem;background:#fff">${opts}</select>
+        <button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}')">🔗 Conciliar</button>
+      </div>
+    </div>`;
+  }).join('');
+  if(links.length){
+    html+=`<h4 style="font-size:.85rem;font-weight:700;color:#334155;margin:18px 0 8px">🔗 Já conciliados (${links.length})</h4>`;
+    html+=links.map(x=>{const mov=(BC_MOVS||[]).find(m=>m.id===x.movId);const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));
+      return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:.85rem;color:#166534"><b>${r?(r.nome||'conta'):(x.label||'conta')}</b> ${x.mes} ↔ 🧾 ${mov?((mov.descricao||'').replace(/</g,'&lt;')):'débito'} · ${fmt(mov?Math.abs(Number(mov.valor)||0):0)}</div>
+        <button onclick="CONC_desfazer('${x.chave}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:5px 10px;font-size:.78rem;color:#6b7280">↩️ Desfazer</button>
+      </div>`;}).join('');
+  }
+  lista.innerHTML=html;
+}
+async function CONC_conciliar(movId){
+  const sel=document.getElementById('conc-sel-'+movId);const val=sel?sel.value:'';
+  if(!val){toast('Escolha a conta a pagar correspondente.','#f59e0b');return;}
+  const [mes,pid]=val.split('|');
+  const mov=(BC_MOVS||[]).find(m=>m.id===movId);const r=(P_meses[mes]||[]).find(y=>String(y.id)===String(pid));
+  if(!mov||!r){toast('Item não encontrado.','#ef4444');return;}
+  const chave='conc_'+movId;
+  const link={chave,status:'match',tipo:'pagar',id:r.id,mes,movId,label:r.nome||'',motivo:'conciliacao_manual',statusAntes:r.status,valorPagoAntes:(Number(r.valorPago)||0),ts:new Date().toISOString()};
+  CONC_LINKS[chave]=link;await CC_fbSalvar(CONC_COL,chave,link);
+  // marca a conta como paga (data do extrato) + vincula, SEM postar nova movimentação
+  r.status='PAGO';r.valorPago=Number(r.valor)||0;r.dataPagamento=mov.data||r.dataPagamento;r.contaBancariaId=mov.contaId;r.conciliadoMov=movId;
+  P_salvarStorage();
+  mov.conciliadoPagar=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
+  if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato ('+(BC_dataBR(mov.data)||'')+')',null,r.valorPago);
+  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
+  toast('🔗 Conciliado: '+r.nome+' ↔ extrato.');
+}
+async function CONC_desfazer(chave){
+  const x=CONC_LINKS[chave];if(!x)return;
+  const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));
+  if(r){r.status=x.statusAntes||'PENDENTE';r.valorPago=(x.valorPagoAntes!=null?x.valorPagoAntes:0);delete r.conciliadoMov;if(x.statusAntes!=='PAGO')delete r.dataPagamento;P_salvarStorage();}
+  const mov=(BC_MOVS||[]).find(m=>m.id===x.movId);if(mov){delete mov.conciliadoPagar;BC_fbUpsert(BC_COL_MOV,mov.id,mov);}
+  delete CONC_LINKS[chave];await CC_fbExcluir(CONC_COL,chave);
+  if(typeof AUD_log==='function')AUD_log('editar','meses',r?r.nome:(x.label||''),'Conciliação desfeita',null,null);
+  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
+  toast('↩️ Conciliação desfeita.','#6b7280');
+}
+
 init();
 CAT_inicializar();
 BC_inicializar();
@@ -6710,6 +6829,7 @@ CC_inicializar();
 CF_inicializar();
 FX_inicializar();
 AUD_inicializar();
+CONC_inicializar();
 IA_carregarChave();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
