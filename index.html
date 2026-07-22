@@ -6800,22 +6800,43 @@ function CONC_render(){
   </div>`;
   const cands=CONC_pagarCandidatos();
   let html='';
-  if(!abertos.length)html+='<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;color:#16a34a;font-size:.9rem">✅ Nenhum débito do extrato pendente de conciliação. (Importe um extrato pela aba Contas → Trazer extrato.)</div>';
-  else html+=abertos.map(m=>{
-    const rk=CONC_ranked(m,cands);const best=rk[0];
-    const opts='<option value="">— escolher conta a pagar —</option>'+rk.map(c=>`<option value="${c.mes}|${c.r.id}" ${best&&c===best&&best.exato?'selected':''}>${(c.r.nome||'').replace(/</g,'&lt;')} · ${fmt(c.saldo)} · ${c.mes}${c.exato?' ✓ valor bate':''}</option>`).join('');
-    return `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div><div style="font-weight:700;color:#0f172a">${(m.descricao||'Débito').replace(/</g,'&lt;')}</div>
-          <div style="font-size:.75rem;color:#6b7280;margin-top:2px">📅 ${BC_dataBR(m.data)||'—'} · ${(BC_CONTAS[m.contaId]||{}).nome||'conta'}</div></div>
-        <div style="font-size:1.05rem;font-weight:800;color:#ef4444">− ${fmt(Math.abs(Number(m.valor)||0))}</div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-        <select id="conc-sel-${m.id}" style="flex:1;min-width:200px;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:.83rem;background:#fff">${opts}</select>
-        <button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}')">🔗 Conciliar</button>
-      </div>
-    </div>`;
-  }).join('');
+  if(!abertos.length)html+='<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;color:#16a34a;font-size:.9rem">✅ Nenhum débito do extrato pendente de conciliação. Traga um extrato acima pra começar.</div>';
+  else{
+    const nBatem=abertos.filter(m=>{const b=CONC_ranked(m,cands)[0];return b&&b.exato;}).length;
+    if(nBatem)html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-bottom:12px">
+      <span style="font-size:.88rem;color:#166534">✅ <b>${nBatem}</b> débito(s) com <b>valor idêntico</b> a uma conta a pagar — dá pra conciliar de uma vez.</span>
+      <button class="btn" style="width:auto;background:#16a34a;color:#fff;border:none" onclick="CONC_conciliarTodos()">🔗 Conciliar todos que batem</button></div>`;
+    html+=abertos.map(m=>{
+      const rk=CONC_ranked(m,cands);const best=rk[0];const mval=Math.abs(Number(m.valor)||0);
+      const bate=best&&best.exato;const dif=best?Math.round((mval-best.saldo)*100)/100:null;
+      const opts='<option value="">— escolher outra conta —</option>'+rk.map(c=>`<option value="${c.mes}|${c.r.id}" ${best&&c===best?'selected':''}>${(c.r.nome||'').replace(/</g,'&lt;')} · ${fmt(c.saldo)} · ${c.mes}${c.exato?' ✓':''}</option>`).join('');
+      const ladoConta=best
+        ? `<div style="font-size:.68rem;color:#94a3b8;font-weight:800;letter-spacing:.03em">📄 CONTA A PAGAR</div>
+           <div style="font-weight:700;color:#0f172a;font-size:.9rem">${(best.r.nome||'').replace(/</g,'&lt;')}</div>
+           <div style="font-size:.72rem;color:#6b7280">vence dia ${best.r.dia||'—'} · ${best.mes}</div>
+           <div style="font-size:1.05rem;font-weight:800;color:#0f172a;margin-top:2px">${fmt(best.saldo)}</div>`
+        : `<div style="color:#9ca3af;font-size:.84rem">Sem conta a pagar parecida.<br>Escolha manualmente abaixo.</div>`;
+      return `<div style="background:#fff;border:1px solid ${bate?'#bbf7d0':'#e5e7eb'};border-radius:12px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center">
+          <div>
+            <div style="font-size:.68rem;color:#94a3b8;font-weight:800;letter-spacing:.03em">🧾 EXTRATO</div>
+            <div style="font-weight:700;color:#0f172a;font-size:.9rem">${(m.descricao||'Débito').replace(/</g,'&lt;')}</div>
+            <div style="font-size:.72rem;color:#6b7280">${BC_dataBR(m.data)||'—'} · ${(BC_CONTAS[m.contaId]||{}).nome||''}</div>
+            <div style="font-size:1.05rem;font-weight:800;color:#ef4444;margin-top:2px">− ${fmt(mval)}</div>
+          </div>
+          <div style="text-align:center"><div style="font-size:1.4rem">${bate?'✅':(best?'≈':'❓')}</div>
+            <div style="font-size:.64rem;font-weight:800;color:${bate?'#16a34a':(best?'#b45309':'#94a3b8')}">${bate?'valores batem':(best?('dif. '+fmt(Math.abs(dif))):'—')}</div></div>
+          <div style="text-align:right">${ladoConta}</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <details style="flex:1;min-width:180px"><summary style="font-size:.76rem;color:#6b7280;cursor:pointer">trocar conta a pagar</summary>
+            <select id="conc-sel-${m.id}" onchange="if(this.value)CONC_conciliar('${m.id}',this.value)" style="margin-top:6px;width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 9px;font-size:.82rem;background:#fff">${opts}</select>
+          </details>
+          ${best?`<button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}','${best.mes}|${best.r.id}')">🔗 Conciliar</button>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  }
   if(links.length){
     html+=`<h4 style="font-size:.85rem;font-weight:700;color:#334155;margin:18px 0 8px">🔗 Já conciliados (${links.length})</h4>`;
     html+=links.map(x=>{const mov=(BC_MOVS||[]).find(m=>m.id===x.movId);const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));
@@ -6826,8 +6847,8 @@ function CONC_render(){
   }
   lista.innerHTML=html;
 }
-async function CONC_conciliar(movId){
-  const sel=document.getElementById('conc-sel-'+movId);const val=sel?sel.value:'';
+async function CONC_conciliar(movId,val){
+  if(!val){const sel=document.getElementById('conc-sel-'+movId);val=sel?sel.value:'';}
   if(!val){toast('Escolha a conta a pagar correspondente.','#f59e0b');return;}
   const [mes,pid]=val.split('|');
   const mov=(BC_MOVS||[]).find(m=>m.id===movId);const r=(P_meses[mes]||[]).find(y=>String(y.id)===String(pid));
@@ -6842,6 +6863,14 @@ async function CONC_conciliar(movId){
   if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato ('+(BC_dataBR(mov.data)||'')+')',null,r.valorPago);
   CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
   toast('🔗 Conciliado: '+r.nome+' ↔ extrato.');
+}
+async function CONC_conciliarTodos(){
+  const cands=CONC_pagarCandidatos();const abertos=CONC_extratoAberto();
+  const pares=[];const usados=new Set();
+  abertos.forEach(m=>{const best=CONC_ranked(m,cands)[0];if(best&&best.exato){const key=best.mes+'|'+best.r.id;if(usados.has(key))return;usados.add(key);pares.push({movId:m.id,val:key});}});
+  if(!pares.length){toast('Nenhum par com valor idêntico pra conciliar.','#f59e0b');return;}
+  let n=0;for(const p of pares){await CONC_conciliar(p.movId,p.val);n++;}
+  toast('🔗 '+n+' conciliação(ões) feitas de uma vez.');
 }
 function CONC_irImportar(){const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);}
 function CONC_impArquivo(input,modo){
