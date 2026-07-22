@@ -4794,7 +4794,8 @@ function C_lancarFaturaEmPagar(fatura,cartao){
 
 // Projeta parcelas FUTURAS como faturas "prévia"; mesmo faturaId da real → importar o mês substitui a prévia
 function C_sincronizarFaturasPrevias(cartaoId){
-  const cartao=C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
+  const c0=(typeof C_card==='function')?C_card(cartaoId):null; // usa o store VIVO (CC_CARTOES), não C_cartoes (vazio com 429)
+  const cartao=(c0&&c0.nome)?c0:C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
   const porMes={};
   C_parcelamentos.filter(p=>p.ativo&&p.cartaoId===cartaoId).forEach(p=>{
     const pr=String(p.mesInicio||'').split('-').map(Number); const ay=pr[0],am=pr[1]; if(!ay)return;
@@ -4824,7 +4825,8 @@ function C_sincronizarTodasPrevias(){C_cartoes.forEach(c=>C_sincronizarFaturasPr
 
 // Orquestrador de dados: grava fatura imutável + projeta parcelas + lança no Pagar (mês atual + prévias)
 async function C_confirmarImportacaoDados(fatura){
-  const cartao=C_cartoes.find(c=>c.id===fatura.cartaoId)||{nome:'Cartão',diaVencimento:null};
+  const c0=(typeof C_card==='function')?C_card(fatura.cartaoId):null; // store VIVO (CC_CARTOES), robusto ao 429
+  const cartao=(c0&&c0.nome)?c0:(C_cartoes.find(c=>c.id===fatura.cartaoId)||{nome:'Cartão',diaVencimento:null});
   await C_salvarFatura(fatura);
   C_projetarParcelamentos(fatura);
   C_lancarFaturaEmPagar(fatura,cartao);
