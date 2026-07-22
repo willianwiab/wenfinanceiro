@@ -1468,6 +1468,16 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="bkpStatus" style="margin-top:10px;font-size:.84rem;color:#6b7280"></div>
   </div>
 
+  <div class="backup-box" style="border:1px solid #bfdbfe;background:#eff6ff">
+    <h3>📄 Relatórios</h3>
+    <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Relatório completo do mês em HTML (abrir, imprimir ou enviar): fluxo, categorias, faturas de cartão, contas fixas, rateio e atrasos.</p>
+    <div class="backup-actions">
+      <button class="btn btn-blue" onclick="REL_baixarMes()">📄 Relatório completo do mês (HTML)</button>
+      <button class="btn btn-outline-b" onclick="REL_abrirMes()">👁 Ver na tela</button>
+    </div>
+    <div id="relStatus" style="margin-top:10px;font-size:.84rem;color:#6b7280"></div>
+  </div>
+
   <div class="backup-box">
     <h3>☁️ Banco de Dados — Contas a Receber</h3>
     <p style="font-size:.86rem;color:#6b7280;margin-bottom:14px">Dados salvos automaticamente no Firebase (coleção: lancamentos). Ficam em cache local no navegador — cada carregamento de página só busca o que mudou desde a última vez, pra não estourar a cota do Firebase.</p>
@@ -4717,6 +4727,52 @@ function BKP_executivoHTML(mref){
   </body></html>`;
 }
 function BKP_baixarExecutivoHTML(){const mref=mesAtualReal();BKP_baixar('WEN_resumo_'+mref.replace('/','-')+'.html',BKP_executivoHTML(mref),'text/html;charset=utf-8');const el=document.getElementById('bkpStatus');if(el)el.textContent='✅ Resumo executivo gerado ('+mref+').';}
+
+// ══════════════════════════════════════════════════════
+// FASE 12 — RELATÓRIOS (módulo REL_): relatório completo do mês em HTML
+// Reaproveita BKP_resumoMes + VENC_ + FX_. Só leitura.
+// ══════════════════════════════════════════════════════
+function REL_gerarHTML(mref){
+  const r=BKP_resumoMes(mref);
+  const pend=(typeof VENC_coletar==='function'?VENC_coletar():[]).filter(p=>p.diff<0).sort((a,b)=>a.diff-b.diff);
+  const fatCartao=(typeof VENC_faturasCartao==='function'?VENC_faturasCartao():[]);
+  const fixasMes=Object.values(FX_FIXAS||{}).filter(f=>f.status==='ativa'&&FX_mesesAplicaveis(f).includes(mref));
+  const catRows=Object.entries(r.porCategoria).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="r">${fmt(v)}</td><td class="r">${r.saidas>0?Math.round(v/r.saidas*100):0}%</td></tr>`).join('')||'<tr><td colspan=3 class="muted">—</td></tr>';
+  const ratRows=Object.entries(r.rateioPorParte).map(([k,v])=>`<tr><td>${k}</td><td class="r">${fmt(v)}</td></tr>`).join('')||'<tr><td colspan=2 class="muted">sem rateio</td></tr>';
+  const atrRows=pend.map(p=>`<tr><td>${p.nome}</td><td>${p.mes} · dia ${p.dia}</td><td class="r" style="color:#b91c1c">${Math.abs(p.diff)}d</td><td class="r">${fmt(p.saldo)}</td></tr>`).join('')||'<tr><td colspan=4 class="muted">nenhuma ✅</td></tr>';
+  const fatRows=fatCartao.map(f=>`<tr><td>${f.cartao}</td><td>${f.mes}</td><td class="r">${fmt(f.total)}</td></tr>`).join('')||'<tr><td colspan=3 class="muted">nenhuma</td></tr>';
+  const fixRows=fixasMes.map(f=>`<tr><td>${f.nome}</td><td>dia ${f.dia||'—'}</td><td class="r">${fmt(f.valorMedio||0)}</td></tr>`).join('')||'<tr><td colspan=3 class="muted">nenhuma</td></tr>';
+  const cmp=r.comparacaoMesAnterior;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WEN — Relatório ${mref}</title>
+  <style>body{font-family:'Segoe UI',sans-serif;max-width:820px;margin:22px auto;color:#0f172a;padding:0 16px;line-height:1.5}
+  h1{background:linear-gradient(135deg,#14532d,#1e3a8a);color:#fff;padding:18px 22px;border-radius:12px;font-size:1.35rem}
+  h2{font-size:1rem;margin:24px 0 8px;color:#334155;border-bottom:2px solid #e5e7eb;padding-bottom:5px}
+  .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+  .c{border:1px solid #e5e7eb;border-radius:10px;padding:12px;font-size:.8rem;color:#6b7280}.c b{font-size:1.2rem;display:block;color:#0f172a;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:6px 0}td,th{padding:6px 9px;border-bottom:1px solid #eee;font-size:.88rem;text-align:left}th{color:#6b7280;font-weight:600;font-size:.78rem;text-transform:uppercase}
+  .r{text-align:right}.muted{color:#9ca3af}</style></head><body>
+  <h1>📊 WEN Produtora — Relatório financeiro · ${mref}</h1>
+  <div class="g">
+    <div class="c">💰 Entradas<b>${fmt(r.entradas)}</b></div>
+    <div class="c">📤 Saídas<b>${fmt(r.saidas)}</b></div>
+    <div class="c">📊 Resultado<b style="color:${r.resultado>=0?'#16a34a':'#ef4444'}">${fmt(r.resultado)}</b></div>
+    <div class="c">📥 A receber<b>${fmt(r.aReceber)}</b></div>
+    <div class="c">🔴 A pagar<b>${fmt(r.aPagar)}</b></div>
+    <div class="c">⚫ Atrasadas<b style="color:#b91c1c">${fmt(r.atrasadas)}</b></div>
+    <div class="c">📌 Custos fixos<b>${fmt(r.custosFixos)}</b></div>
+    <div class="c">💳 Faturas cartão<b>${fmt(r.faturasCartaoAberto)}</b></div>
+  </div>
+  <p style="font-size:.85rem;color:#6b7280">Saídas ${cmp.variacaoPct!=null?`<b style="color:${cmp.variacaoPct>=0?'#b91c1c':'#16a34a'}">${cmp.variacaoPct>=0?'+':''}${cmp.variacaoPct}%</b> vs ${cmp.mes}`:'(sem mês anterior pra comparar)'}.</p>
+  <h2>Despesas por categoria</h2><table><tr><th>Categoria</th><th class="r">Valor</th><th class="r">%</th></tr>${catRows}</table>
+  <h2>Contas atrasadas</h2><table><tr><th>Conta</th><th>Venc.</th><th class="r">Atraso</th><th class="r">Saldo</th></tr>${atrRows}</table>
+  <h2>Faturas de cartão (em aberto / até 15 dias)</h2><table><tr><th>Cartão</th><th>Fatura</th><th class="r">Total</th></tr>${fatRows}</table>
+  <h2>Contas fixas do mês</h2><table><tr><th>Descrição</th><th>Venc.</th><th class="r">Valor médio</th></tr>${fixRows}</table>
+  <h2>Rateio por parte</h2><table><tr><th>Parte</th><th class="r">Valor</th></tr>${ratRows}</table>
+  <p class="muted" style="font-size:.8rem;margin-top:22px">Gerado pela WEN Financeiro em ${new Date().toLocaleString('pt-BR')} · Contas a Receber incluído somente como leitura.</p>
+  </body></html>`;
+}
+function REL_baixarMes(){const mref=mesAtualReal();BKP_baixar('WEN_relatorio_'+mref.replace('/','-')+'.html',REL_gerarHTML(mref),'text/html;charset=utf-8');const el=document.getElementById('relStatus');if(el)el.textContent='✅ Relatório de '+mref+' gerado.';}
+function REL_abrirMes(){const mref=mesAtualReal();try{const w=window.open('','_blank');if(w){w.document.write(REL_gerarHTML(mref));w.document.close();}else toast('Permita pop-ups pra ver na tela.','#f59e0b');}catch(e){toast('Erro: '+e.message,'#ef4444');}}
 
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
