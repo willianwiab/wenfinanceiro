@@ -1677,14 +1677,30 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 ════════════════════════════════════════ -->
 <div class="page" id="page-config">
   <div class="backup-box" style="border:1px solid #ddd6fe;background:#faf5ff">
-    <h3>🤖 Inteligência Artificial (Google Gemini)</h3>
-    <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Cole a chave do Gemini pra ligar a <b>leitura de fatura/extrato por foto e PDF</b> e a <b>Sophia</b>. A chave fica salva no banco da WEN; a imagem vai do navegador direto pro Google (não passa por servidor nosso). Gere de graça em <b>aistudio.google.com/apikey</b>. O OFX funciona sem chave.</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input type="password" id="iaKeyInput" placeholder="AIza..." style="flex:1;min-width:220px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:.9rem;outline:none"/>
-      <button class="btn btn-purple" style="width:auto" onclick="IA_salvarChaveUI()">Salvar</button>
-      <button class="btn btn-outline-b" style="width:auto" onclick="IA_testarUI()">Testar</button>
-      <button class="btn btn-outline-b" style="width:auto" onclick="IA_apagarChaveUI()">Remover</button>
+    <h3>🤖 Inteligência Artificial</h3>
+    <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Liga a <b>leitura de fatura/extrato por foto e PDF</b> e a <b>Sophia</b>. Escolha o provedor e cole a chave. A chave fica salva no banco da WEN; o documento vai do navegador direto pro provedor (não passa por servidor nosso). Use uma chave sua com limite de gasto. O OFX funciona sem chave.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <label style="font-size:.85rem;font-weight:700;color:#334155">Usar:</label>
+      <select id="iaProvSel" onchange="IA_setProvedor(this.value)" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 11px;font-size:.88rem;background:#fff;font-weight:600">
+        <option value="gemini">🟦 Google Gemini</option>
+        <option value="claude">🟧 Anthropic Claude</option>
+      </select>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span style="font-size:.78rem;color:#6b7280;min-width:64px">Gemini</span>
+      <input type="password" id="iaGemInput" placeholder="AIza..." style="flex:1;min-width:200px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:.9rem;outline:none"/>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_salvarChaveUI('gemini')">Salvar</button>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_apagarChaveUI('gemini')">Remover</button>
+      <a href="https://aistudio.google.com/apikey" target="_blank" style="font-size:.78rem;color:#1d4ed8">gerar chave</a>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:.78rem;color:#6b7280;min-width:64px">Claude</span>
+      <input type="password" id="iaClaudeInput" placeholder="sk-ant-..." style="flex:1;min-width:200px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:.9rem;outline:none"/>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_salvarChaveUI('claude')">Salvar</button>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_apagarChaveUI('claude')">Remover</button>
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size:.78rem;color:#1d4ed8">gerar chave</a>
+    </div>
+    <div style="margin-top:10px"><button class="btn btn-purple" style="width:auto" onclick="IA_testarUI()">Testar provedor atual</button></div>
     <div id="iaKeyStatus" style="margin-top:10px;font-size:.85rem"></div>
   </div>
 
@@ -5110,30 +5126,58 @@ function VENC_render(){
 // A chave mora em config_ia/geral.geminiKey. A imagem/PDF da fatura vai do
 // navegador direto pra API do Google. Sem chave: só OFX funciona.
 // ══════════════════════════════════════════════════════
-const IA_COL='config_ia', IA_DOC='geral', IA_MODEL_FALLBACK='gemini-flash-latest';
-let IA_chaveMem='', IA_candidatosCache=null;
-function IA_getKey(){return IA_chaveMem||'';}
+const IA_COL='config_ia', IA_DOC='geral', IA_MODEL_FALLBACK='gemini-flash-latest', IA_CLAUDE_MODEL='claude-sonnet-5';
+let IA_gemKey='', IA_claudeKey='', IA_prov='gemini', IA_candidatosCache=null;
+function IA_getKey(){return (IA_prov==='claude'?IA_claudeKey:IA_gemKey)||'';}
 function IA_temChave(){return !!IA_getKey();}
+function IA_provNome(){return IA_prov==='claude'?'Claude':'Gemini';}
 async function IA_carregarChave(){
   try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);const j=await res.json();
-    if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields&&d.fields.geminiKey)IA_chaveMem=(fromFV(d.fields.geminiKey)||'').trim();}
+    if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields){IA_gemKey=(fromFV(d.fields.geminiKey)||'').trim();IA_claudeKey=(fromFV(d.fields.claudeKey)||'').trim();IA_prov=(fromFV(d.fields.provedor)||'gemini')==='claude'?'claude':'gemini';}}
   }catch(e){}
+  if(IA_prov==='claude'&&!IA_claudeKey&&IA_gemKey)IA_prov='gemini';
   IA_refreshStatus();
 }
-async function IA_persistirChave(k){
-  IA_chaveMem=(k||'').trim();IA_candidatosCache=null;
-  await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_chaveMem)}})});
+async function IA_persistir(){
+  await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_gemKey),claudeKey:toFV(IA_claudeKey),provedor:toFV(IA_prov)}})});
 }
 function IA_refreshStatus(){
+  const provSel=document.getElementById('iaProvSel');if(provSel)provSel.value=IA_prov;
+  const gi=document.getElementById('iaGemInput'),ci=document.getElementById('iaClaudeInput');
+  if(gi)gi.placeholder=IA_gemKey?('chave salva ••••'+IA_gemKey.slice(-4)):'AIza...';
+  if(ci)ci.placeholder=IA_claudeKey?('chave salva ••••'+IA_claudeKey.slice(-4)):'sk-ant-...';
   const el=document.getElementById('iaKeyStatus');if(!el)return;const k=IA_getKey();
   el.innerHTML=k
-    ?`<span style="color:#16a34a;font-weight:600">✅ Chave salva (••••${k.slice(-4)}). Leitura por foto/PDF e Sophia liberadas.</span>`
-    :`<span style="color:#9ca3af">Nenhuma chave ainda — importação por foto/PDF e Sophia desligadas (OFX funciona sem chave).</span>`;
-  const inp=document.getElementById('iaKeyInput');if(inp&&k)inp.placeholder='chave salva ••••'+k.slice(-4);
+    ?`<span style="color:#16a34a;font-weight:600">✅ Usando <b>${IA_provNome()}</b> (chave ••••${k.slice(-4)}). Leitura por foto/PDF e Sophia liberadas.</span>`
+    :`<span style="color:#9ca3af">Sem chave do <b>${IA_provNome()}</b> — leitura por foto/PDF e Sophia desligadas (OFX funciona sem chave).</span>`;
 }
-async function IA_salvarChaveUI(){const v=document.getElementById('iaKeyInput').value.trim();if(!v){toast('Cole a chave do Gemini.','#ef4444');return;}await IA_persistirChave(v);document.getElementById('iaKeyInput').value='';IA_refreshStatus();toast('✅ Chave salva!');}
-async function IA_apagarChaveUI(){if(!confirm('Remover a chave da IA? A leitura por foto/PDF e a Sophia ficam desligadas.'))return;await IA_persistirChave('');IA_refreshStatus();toast('Chave removida.','#6b7280');}
-// Lista modelos válidos na conta (prefere flash); não quebra quando o Google muda os nomes.
+async function IA_setProvedor(v){IA_prov=(v==='claude'?'claude':'gemini');IA_candidatosCache=null;await IA_persistir();IA_refreshStatus();if(mainAtivo==='sophia'&&typeof SOPHIA_abrir==='function')SOPHIA_abrir();toast('IA: usando '+IA_provNome()+'.');}
+async function IA_salvarChaveUI(qual){
+  if(qual==='claude'){const el=document.getElementById('iaClaudeInput');const v=el.value.trim();if(!v){toast('Cole a chave do Claude.','#ef4444');return;}IA_claudeKey=v;el.value='';}
+  else{const el=document.getElementById('iaGemInput');const v=el.value.trim();if(!v){toast('Cole a chave do Gemini.','#ef4444');return;}IA_gemKey=v;IA_candidatosCache=null;el.value='';}
+  await IA_persistir();IA_refreshStatus();toast('✅ Chave salva!');
+}
+async function IA_apagarChaveUI(qual){if(!confirm('Remover esta chave?'))return;if(qual==='claude')IA_claudeKey='';else IA_gemKey='';await IA_persistir();IA_refreshStatus();toast('Chave removida.','#6b7280');}
+// dispatcher unificado: Gemini OU Claude, conforme o provedor escolhido
+async function IA_gerarConteudo(prompt,imagens,opts){
+  opts=opts||{};imagens=imagens||[];const key=IA_getKey();if(!key)throw new Error('Sem chave de IA. Configure em Config → Inteligência Artificial.');
+  if(IA_prov==='claude'){
+    const content=[{type:'text',text:prompt}];
+    imagens.forEach(im=>{const mime=im.mime||'image/jpeg';if(mime.indexOf('pdf')>=0)content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:im.b64}});else content.push({type:'image',source:{type:'base64',media_type:mime,data:im.b64}});});
+    const body={model:IA_CLAUDE_MODEL,max_tokens:8000,messages:[{role:'user',content}]};
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify(body)});
+    if(!r.ok){let t='';try{t=((await r.json()).error||{}).message||'';}catch(e){}throw new Error('Claude recusou ('+r.status+'). '+t);}
+    const j=await r.json();return (j.content||[]).map(p=>p.text||'').join('');
+  }
+  const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
+  const parts=[{text:prompt}];imagens.forEach(im=>parts.push({inline_data:{mime_type:im.mime||'image/jpeg',data:im.b64}}));
+  const gen={temperature:0};if(opts.json)gen.responseMimeType='application/json';
+  const body={contents:[{parts}],generationConfig:gen};
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('Gemini recusou ('+r.status+'). Confira a chave.');
+  const j=await r.json();return ((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+}
+// Lista modelos válidos na conta Gemini (prefere flash); não quebra quando o Google muda os nomes.
 async function IA_candidatos(key){
   if(IA_candidatosCache)return IA_candidatosCache;let ordem=[];
   try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+encodeURIComponent(key));
@@ -5147,13 +5191,11 @@ async function IA_candidatos(key){
   IA_candidatosCache=ordem;return ordem;
 }
 async function IA_testarUI(){
-  const k=IA_getKey()||document.getElementById('iaKeyInput').value.trim();
-  if(!k){toast('Cole ou salve a chave primeiro.','#ef4444');return;}
-  const el=document.getElementById('iaKeyStatus');el.innerHTML='⏳ Testando com o Google...';IA_candidatosCache=null;
-  try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+encodeURIComponent(k));
-    if(r.ok){const mods=await IA_candidatos(k);el.innerHTML=`<span style="color:#16a34a;font-weight:600">✅ Chave válida! Modelos: ${mods.slice(0,3).join(', ')}…</span>`;}
-    else{const t=await r.text();el.innerHTML=`<span style="color:#ef4444">⚠️ Chave recusada pelo Google (${r.status}). Confira se copiou certo.</span>`;}
-  }catch(e){el.innerHTML='<span style="color:#ef4444">⚠️ Erro de rede: '+e.message+'</span>';}
+  const el=document.getElementById('iaKeyStatus');
+  if(!IA_temChave()){toast('Salve a chave do '+IA_provNome()+' primeiro.','#ef4444');return;}
+  if(el)el.innerHTML='⏳ Testando '+IA_provNome()+'…';IA_candidatosCache=null;
+  try{const t=await IA_gerarConteudo('Responda apenas: ok',[],{});if(el)el.innerHTML=`<span style="color:#16a34a;font-weight:600">✅ ${IA_provNome()} respondeu — chave válida.</span>`;}
+  catch(e){if(el)el.innerHTML='<span style="color:#ef4444">⚠️ '+e.message+'</span>';}
 }
 
 // ══════════════════════════════════════════════════════
@@ -5330,7 +5372,7 @@ function IMP_abrir(tipo,alvoId){
   else{const ids=BC_contasAtivas();sel.innerHTML=ids.length?ids.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join(''):'<option value="">— cadastre uma conta —</option>';}
   if(alvoId)sel.value=alvoId;else if(tipo==='conta'){const pr=BC_principal();if(pr)sel.value=pr;}
   const btn=document.getElementById('impFotoBtn');if(btn)btn.style.opacity=IA_temChave()?'1':'.55';
-  IMP_setAviso(IA_temChave()?'<span style="color:#16a34a">✅ IA ligada — foto/PDF disponível.</span> OFX funciona sempre.':'<span style="color:#9ca3af">📸 Foto/PDF precisa da chave Gemini (Config → Inteligência Artificial). OFX funciona sem chave.</span>');
+  IMP_setAviso(IA_temChave()?'<span style="color:#16a34a">✅ IA ligada ('+IA_provNome()+') — foto/PDF disponível.</span> OFX funciona sempre.':'<span style="color:#9ca3af">📸 Foto/PDF precisa da chave da IA (Config → Inteligência Artificial). OFX funciona sem chave.</span>');
   document.getElementById('impPreview').innerHTML='';
   document.getElementById('impModalBg').classList.add('open');
 }
@@ -5355,24 +5397,19 @@ function IMP_extrairJSON(txt){try{return JSON.parse(txt);}catch(e){}const i=txt.
 async function IMP_gemini(input){
   const files=input&&input.files?[...input.files]:[];if(input)input.value='';
   if(!files.length)return;
-  if(!IA_temChave()){IMP_setAviso('<span style="color:#b45309">📸 Cole a chave Gemini em Config → Inteligência Artificial pra usar foto/PDF.</span>');return;}
+  if(!IA_temChave()){IMP_setAviso('<span style="color:#b45309">📸 Configure a chave da IA ('+IA_provNome()+') em Config → Inteligência Artificial pra usar foto/PDF.</span>');return;}
   const isCartao=(IMP_tipo==='cartao');
-  IMP_setAviso('⏳ A SophIA está lendo '+files.length+' '+(files.length===1?'arquivo':'páginas')+'…');
+  IMP_setAviso('⏳ A SophIA ('+IA_provNome()+') está lendo '+files.length+' '+(files.length===1?'arquivo':'páginas')+'…');
   try{
-    const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
     const sinal=isCartao
       ? 'É uma FATURA DE CARTÃO DE CRÉDITO. Classifique cada lançamento como débito ou crédito: valor POSITIVO para compras/débitos; valor NEGATIVO para estornos, créditos, devoluções, "pagamento recebido", "crédito" ou "pagto fatura". IMPORTANTE: a soma de todos os valores (débitos menos créditos) DEVE bater com o VALOR TOTAL DA FATURA impresso no documento — confira essa soma.'
       : 'É um EXTRATO BANCÁRIO. valor: número NEGATIVO para saídas/débitos; POSITIVO para entradas/créditos.';
     const prompt='Você é a SophIA lendo um documento financeiro brasileiro que pode ter VÁRIAS páginas/imagens — leia TODAS as páginas. '+sinal+'\n'
       +'Extraia TODAS as transações/lançamentos, linha por linha, SEM PULAR NENHUMA e SEM INVENTAR. NÃO inclua linhas de total, subtotal, saldo anterior, limite, pagamento mínimo, encargos informativos ou cabeçalhos.\n'
       +'Para cada transação devolva: data ("YYYY-MM-DD"; se só houver dia/mês, use o ano da fatura), descricao (nome do estabelecimento como aparece, mantendo o "X/Y" da parcela se houver), valor (número), parcela ("X/Y" se for parcelada; senão "").\n'
-      +'Responda SOMENTE JSON: {"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
-    const parts=[{text:prompt}];
-    for(const f of files){const b64=await IMP_fileB64(f);parts.push({inline_data:{mime_type:f.type||'image/jpeg',data:b64}});}
-    const body={contents:[{parts}],generationConfig:{temperature:0,responseMimeType:'application/json'}};
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){IMP_setAviso('⚠️ A SophIA recusou ('+r.status+'). Confira a chave em Config.');return;}
-    const j=await r.json();const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+      +'Responda SOMENTE JSON, sem texto fora do JSON: {"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
+    const imagens=[];for(const f of files){const b64=await IMP_fileB64(f);imagens.push({mime:f.type||'image/jpeg',b64});}
+    let txt;try{txt=await IA_gerarConteudo(prompt,imagens,{json:true});}catch(err){IMP_setAviso('⚠️ '+err.message);return;}
     let dados;try{dados=JSON.parse(txt);}catch(e){dados=null;}
     let arr=dados&&Array.isArray(dados.itens)?dados.itens:(Array.isArray(dados)?dados:IMP_extrairJSON(txt));
     IMP_previa=(Array.isArray(arr)?arr:[]).map((x,i)=>{
@@ -5443,16 +5480,12 @@ window.IMP_retomarRascunho=function(tipo,alvo){
     IMP_iniciarInline('conta',()=>document.getElementById('concImpConta').value,'concImpAviso','concImpReview',function(){IMP_descartarRascunho('conta',alvo);CONC_render();});}
   IMP_previa=r.itens;IMP_filtro='todos';IMP_renderPreview();toast('↩️ Rascunho retomado.');
 };
-async function IMP_categorizarIA(descricoes,key){
+async function IMP_categorizarIA(descricoes){
   const cats=Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false).map(([k,c])=>({k,label:c.label}));
   const lista=descricoes.map((d,i)=>i+': '+String(d||'').slice(0,120)).join('\n');
-  const prompt='Você categoriza despesas de uma produtora de audiovisual (empresa brasileira). Para cada item escolha a MELHOR categoria da lista abaixo (use o texto EXATO de uma delas). Se não tiver confiança, devolva "". NUNCA invente categoria fora da lista.\nCategorias válidas: '+cats.map(c=>c.label).join(' | ')+'\nItens (índice: descrição):\n'+lista+'\nResponda só JSON: {"itens":[{"i":0,"categoria":"..."}]}';
-  const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
-  const body={contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json'}};
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error('A IA recusou ('+r.status+'). Confira a chave.');
-  const j=await r.json();const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
-  let dados;try{dados=JSON.parse(txt||'{}');}catch(e){throw new Error('Não consegui interpretar a resposta da IA.');}
+  const prompt='Você categoriza despesas de uma produtora de audiovisual (empresa brasileira). Para cada item escolha a MELHOR categoria da lista abaixo (use o texto EXATO de uma delas). Se não tiver confiança, devolva "". NUNCA invente categoria fora da lista.\nCategorias válidas: '+cats.map(c=>c.label).join(' | ')+'\nItens (índice: descrição):\n'+lista+'\nResponda SOMENTE JSON: {"itens":[{"i":0,"categoria":"..."}]}';
+  const txt=await IA_gerarConteudo(prompt,[],{json:true});
+  let dados;try{dados=JSON.parse(txt||'{}');}catch(e){try{dados=JSON.parse(txt.slice(txt.indexOf('{'),txt.lastIndexOf('}')+1));}catch(e2){throw new Error('Não consegui interpretar a resposta da IA.');}}
   const out=new Array(descricoes.length).fill('');
   (dados.itens||[]).forEach(it=>{const i=Number(it&&it.i);const label=it&&it.categoria;if(i>=0&&label){const f=cats.find(c=>c.label===label);if(f)out[i]=f.k;}});
   return out;
@@ -5584,7 +5617,7 @@ let SOPHIA_MSGS=[];
 const SOPHIA_SUGESTOES=['Quais contas estão atrasadas?','Qual cartão teve mais gastos?','Quanto gastei por categoria neste mês?','Qual meu saldo e a projeção?','Qual conta vence primeiro?','Onde estou gastando acima da média?'];
 function SOPHIA_abrir(){
   const av=document.getElementById('sophiaAviso');
-  if(av)av.innerHTML=IA_temChave()?'<span style="color:#16a34a">✅ Sophia pronta.</span>':'<span style="color:#b45309">Cole a chave Gemini em Config → Inteligência Artificial pra ativar a Sophia.</span>';
+  if(av)av.innerHTML=IA_temChave()?'<span style="color:#16a34a">✅ Sophia pronta ('+IA_provNome()+').</span>':'<span style="color:#b45309">Configure a chave da IA em Config → Inteligência Artificial pra ativar a Sophia.</span>';
   const sg=document.getElementById('sophiaSugestoes');
   if(sg)sg.innerHTML=SOPHIA_SUGESTOES.map(s=>`<button class="sophia-chip" onclick="document.getElementById('sophiaInput').value=this.textContent;SOPHIA_perguntar()">${s}</button>`).join('');
   SOPHIA_renderInsights();
@@ -5642,17 +5675,12 @@ function SOPHIA_contexto(){
 }
 async function SOPHIA_perguntar(){
   const inp=document.getElementById('sophiaInput');const q=(inp.value||'').trim();if(!q)return;
-  if(!IA_temChave()){toast('Cole a chave Gemini em Config primeiro.','#f59e0b');return;}
+  if(!IA_temChave()){toast('Configure a chave da IA em Config primeiro.','#f59e0b');return;}
   inp.value='';SOPHIA_MSGS.push({role:'user',text:q});SOPHIA_MSGS.push({role:'ia',text:'⏳ pensando...'});SOPHIA_render();
   try{
-    const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
     const ctx=JSON.stringify(SOPHIA_contexto());
     const prompt='Você é a Sophia, assistente financeira da WEN Produtora (produtora de audiovisual). Responda em português do Brasil, direta, prática e amigável, usando SOMENTE os dados abaixo (valores em reais). Se faltar dado, diga o que falta. Não invente números.\n\nDADOS (JSON):\n'+ctx+'\n\nPERGUNTA: '+q;
-    const body={contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.2}};
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    let resp;
-    if(!r.ok){resp='⚠️ O Gemini recusou (código '+r.status+'). Confira a chave em Config.';}
-    else{const j=await r.json();resp=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('')||'Não consegui responder agora.';}
+    const resp=(await IA_gerarConteudo(prompt,[],{}))||'Não consegui responder agora.';
     SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:resp};SOPHIA_render();
   }catch(e){SOPHIA_MSGS[SOPHIA_MSGS.length-1]={role:'ia',text:'⚠️ Erro: '+e.message};SOPHIA_render();}
 }
