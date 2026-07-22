@@ -1412,87 +1412,148 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- ════════════════════════════════════════
      CARTÕES DE CRÉDITO (Fase 2 — roadmap)
 ════════════════════════════════════════ -->
+<style id="ns-cartao-css">
+/* ===== VISUAL DO NOSSA SEMENTE — escopo só na página de cartões ===== */
+#page-cartoes{--bg:#f6f3ea;--card:#ffffff;--card2:#f2eee2;--texto:#233b2a;--suave:#6f7a68;--tenue:#a7b09c;--accent:#4f9a5b;--accent-forte:#24603f;--accent-suave:#e7f1e1;--pos:#4c9a6a;--pos-bg:#e7f4ec;--neg:#cf6b5a;--neg-bg:#fbe9e5;--alerta:#c79a4d;--alerta-bg:#f7efdd;--info:#5f8f7a;--info-bg:#e6f0ea;--borda:#e7e0cf;--sombra:0 2px 14px rgba(36,96,63,.08);color:var(--texto)}
+#page-cartoes .card{background:var(--card);border-radius:18px;padding:22px 24px;box-shadow:var(--sombra);margin-bottom:18px;border:1px solid var(--borda)}
+#page-cartoes .card-sub{font-size:.82rem;color:var(--suave);margin-bottom:16px;line-height:1.45}
+#page-cartoes h2{color:var(--texto)}
+#page-cartoes .btn{padding:11px 20px;border-radius:12px;border:none;cursor:pointer;font-size:.9rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .2s;font-family:inherit}
+#page-cartoes .btn-primario{background:var(--accent);color:#fff}
+#page-cartoes .btn-primario:hover{background:var(--accent-forte)}
+#page-cartoes .btn-outline{background:var(--card);color:var(--suave);border:1.5px solid var(--borda)}
+#page-cartoes .btn-outline:hover{background:var(--card2)}
+#page-cartoes .sub-nav{display:flex;gap:6px;background:var(--card2);border-radius:14px;padding:5px;margin-bottom:20px;overflow-x:auto}
+#page-cartoes .sub-nav button{border:none;background:none;padding:10px 16px;border-radius:10px;font-size:.85rem;font-weight:700;color:var(--suave);cursor:pointer;white-space:nowrap;transition:all .2s;font-family:inherit}
+#page-cartoes .sub-nav button.active{background:var(--card);color:var(--accent-forte);box-shadow:var(--sombra)}
+#page-cartoes .sub-page{display:none}
+#page-cartoes .sub-page.active{display:block}
+#page-cartoes .r-tab{width:100%;border-collapse:collapse;font-size:.86rem}
+#page-cartoes .r-tab th{text-align:left;padding:11px 12px;color:var(--suave);font-weight:800;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid var(--borda)}
+#page-cartoes .r-tab td{padding:11px 12px;border-bottom:1px solid var(--borda);vertical-align:middle}
+#page-cartoes .r-vazio{text-align:center;color:var(--tenue);padding:34px 0;font-size:.9rem}
+#page-cartoes .r-pequeno{font-size:.72rem;color:var(--tenue)}
+#page-cartoes .badge-imut{display:inline-block;font-size:.64rem;font-weight:800;background:var(--info-bg);color:var(--info);padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.03em}
+#page-cartoes .form-group{margin-bottom:13px}
+#page-cartoes .form-group label{display:block;font-size:.8rem;font-weight:700;color:var(--suave);margin-bottom:5px}
+#page-cartoes .form-group select,#page-cartoes .form-group input{width:100%;border:1.5px solid var(--borda);border-radius:11px;padding:11px 13px;font-size:.92rem;outline:none;background:var(--card2);color:var(--texto);font-family:inherit}
+#page-cartoes .form-linha{display:flex;gap:12px;flex-wrap:wrap}
+#page-cartoes .form-linha .form-group{flex:1;min-width:180px}
+#page-cartoes .cartoes-grid{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px}
+#page-cartoes .cartao-card{width:330px;max-width:100%;aspect-ratio:1.586/1;color:#fff;border-radius:16px;padding:16px 18px;position:relative;box-shadow:var(--sombra);cursor:pointer;display:flex;flex-direction:column;transition:transform .12s,box-shadow .12s}
+#page-cartoes .cartao-card:hover{transform:translateY(-3px);box-shadow:0 10px 26px rgba(36,96,63,.28)}
+#page-cartoes .cartao-card .cc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+#page-cartoes .cartao-card .cc-nome{font-size:1.02rem;font-weight:800;line-height:1.15}
+#page-cartoes .cartao-card .cc-band{font-size:.74rem;opacity:.85}
+#page-cartoes .cartao-card .cc-final{font-family:monospace;letter-spacing:2px;font-size:1.05rem;margin-top:auto}
+#page-cartoes .cartao-card .cc-meta{display:flex;gap:14px;margin-top:8px;font-size:.72rem;opacity:.92;flex-wrap:wrap}
+#page-cartoes .cartao-card .cc-acoes{display:flex;gap:6px;flex:none}
+#page-cartoes .cartao-card .cc-acoes button{background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:.85rem}
+#page-cartoes .cartao-card .cc-acoes button:hover{background:rgba(255,255,255,.32)}
+#page-cartoes .cartao-card .cc-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px}
+#page-cartoes .cartao-card .cc-parc{font-size:.74rem;font-weight:700;background:rgba(255,255,255,.2);padding:5px 10px;border-radius:9px}
+#page-cartoes .cartao-card .cc-hint{font-size:.72rem;opacity:.82;white-space:nowrap;margin-left:auto}
+#page-cartoes .fat-layout{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px;align-items:start}
+@media(max-width:860px){#page-cartoes .fat-layout{grid-template-columns:1fr}}
+#page-cartoes .fat-detalhe-card{min-height:140px}
+#page-cartoes .fat-vazio{color:var(--suave);text-align:center;padding:46px 12px;font-size:.9rem}
+#page-cartoes .fatura-linha{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--borda);border-radius:12px;margin-bottom:8px;cursor:pointer;background:var(--card2)}
+#page-cartoes .fatura-linha:hover,#page-cartoes .fatura-linha.aberta{border-color:var(--accent)}
+#page-cartoes .fatura-linha.previa{border-style:dashed;background:var(--card)}
+#page-cartoes .fatura-linha.previa.aberta{border-color:var(--accent);border-style:solid}
+#page-cartoes .fat-sub{font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);margin:16px 0 9px}
+#page-cartoes .fat-det-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+#page-cartoes .fat-det-head h2{font-size:1.05rem;margin:0}
+#page-cartoes .fat-det-tot{font-weight:800;font-size:1.15rem;white-space:nowrap}
+#page-cartoes .fat-pizza-wrap{position:relative;height:210px;max-width:290px;margin:8px auto 2px}
+#page-cartoes .fat-pizza-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;text-align:center}
+#page-cartoes .fat-pizza-center .fp-lab{font-size:.66rem;color:var(--suave);text-transform:uppercase;letter-spacing:.05em}
+#page-cartoes .fat-pizza-center .fp-val{font-weight:800;font-size:1.02rem}
+#page-cartoes .fat-chips{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 4px}
+#page-cartoes .fat-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--borda);border-radius:999px;background:var(--card2);cursor:pointer;font-size:.8rem;transition:.12s;user-select:none}
+#page-cartoes .fat-chip:hover,#page-cartoes .fat-chip.ativo{border-color:var(--accent)}
+#page-cartoes .fat-chip.ativo{background:var(--accent-suave);font-weight:700}
+#page-cartoes .fat-chip .fc-bol{width:9px;height:9px;border-radius:50%;flex:none}
+#page-cartoes .fat-chip .fc-val{color:var(--suave)}
+#page-cartoes .fat-subtotal{display:flex;justify-content:space-between;gap:10px;padding:9px 12px;background:var(--accent-suave);border-radius:10px;font-weight:700;margin:8px 0 4px}
+#page-cartoes .fat-aprender{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--suave);cursor:pointer;margin:10px 0 2px}
+#page-cartoes .previa-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--borda);font-size:.86rem}
+#page-cartoes .previa-item:last-child{border-bottom:none}
+#page-cartoes .previa-item .pi-desc{flex:1;min-width:120px}
+#page-cartoes .previa-item .pi-cat{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;color:var(--suave);white-space:nowrap}
+#page-cartoes .previa-item .pi-val{font-weight:700;white-space:nowrap}
+#page-cartoes .pi-cat-sel{border:1px solid var(--borda);border-radius:8px;padding:4px 6px;background:var(--card2);color:var(--texto);font-size:.78rem;max-width:160px;cursor:pointer}
+#page-cartoes .r-cat-bolinha{width:9px;height:9px;border-radius:50%;display:inline-block}
+</style>
 <div class="page" id="page-cartoes">
   <div class="container">
-    <!-- sub-abas do cartão (estilo Nossa Semente) -->
-    <div class="cc-subtabs">
-      <button class="cc-subtab active" id="ccTabCartoes" onclick="CC_aba('cartoes',this)">💳 Meus cartões</button>
-      <button class="cc-subtab" id="ccTabImportar" onclick="CC_aba('importar',this)">📥 Importar fatura</button>
-      <button class="cc-subtab" id="ccTabFaturas" onclick="CC_aba('faturas',this)">📄 Faturas</button>
-      <button class="cc-subtab" id="ccTabRegras" onclick="CC_aba('regras',this)">🏷️ Regras</button>
+    <div class="sub-nav">
+      <button class="active" onclick="C_aba('Cartoes', this)">💳 Meus cartões</button>
+      <button onclick="C_aba('Importar', this)">📥 Importar fatura</button>
+      <button onclick="C_aba('Faturas', this)">📄 Faturas</button>
+      <button onclick="C_aba('Regras', this)">🏷️ Regras</button>
     </div>
 
-    <!-- ── Meus cartões ── -->
-    <div class="cc-panel" id="ccPanelCartoes">
-      <div class="card-cc">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-          <h2 style="font-size:1.1rem;font-weight:700;color:#0f172a;margin:0">💳 Meus cartões</h2>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-outline-b" style="width:auto" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
-            <button class="btn btn-purple" style="width:auto" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
+    <div class="sub-page active" id="cCartoes">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <h2 style="margin:0">💳 Meus cartões</h2>
+          <button class="btn btn-primario" style="width:auto" onclick="C_abrirCartao()">＋ Novo cartão</button>
+        </div>
+        <div id="cCartoesLista"></div>
+      </div>
+    </div>
+
+    <div class="sub-page" id="cImportar">
+      <div class="card">
+        <h2 style="margin:0">🧾 Trazer minha fatura</h2>
+        <p class="card-sub" style="margin-top:6px">A SophIA lê, organiza e prepara tudo para você revisar. <span style="opacity:.75">Nada é lançado antes da sua confirmação.</span></p>
+        <div class="form-linha">
+          <div class="form-group"><label>Cartão</label><select id="cImpCartao"></select></div>
+          <div class="form-group"><label>Mês da fatura (vencimento)</label><input type="month" id="cImpMes"/></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <label class="btn btn-outline" style="cursor:pointer;width:auto">📸 Foto / PDF<input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="C_impUpload(this,'foto')"></label>
+          <label class="btn btn-outline" style="cursor:pointer;width:auto">⬆ Arquivo OFX (.ofx)<input type="file" accept=".ofx,.qfx" style="display:none" onchange="C_impUpload(this,'ofx')"></label>
+        </div>
+        <p class="card-sub" style="margin:8px 0 0">Todos os itens caem no <b>mês escolhido</b>; a fatura fica <b>imutável</b> (valor exato). As parcelas futuras entram como <b>prévia</b> nos próximos meses.</p>
+        <div id="cImpAviso2" style="margin-top:10px"></div>
+      </div>
+      <div id="cImportResultado"></div>
+    </div>
+
+    <div class="sub-page" id="cFaturas">
+      <div class="fat-layout">
+        <div class="card fat-lista-col">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <h2 style="margin:0">📄 Faturas</h2>
+            <select id="cFatCartao" onchange="C_selReset();C_renderFaturas()"></select>
           </div>
+          <div id="cFaturasLista"></div>
         </div>
-        <div id="ccListaCartoes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:14px"></div>
+        <div class="fat-detalhe-col">
+          <div class="card fat-detalhe-card" id="cFatDetalhe"></div>
+        </div>
       </div>
     </div>
 
-    <!-- ── Importar fatura (Trazer minha fatura) ── -->
-    <div class="cc-panel" id="ccPanelImportar" style="display:none">
-      <div class="card-cc">
-        <h2 style="font-size:1.1rem;font-weight:700;color:#0f172a;margin:0">🧾 Trazer minha fatura</h2>
-        <p style="font-size:.84rem;color:#6b7280;margin:4px 0 0">A IA lê, organiza e prepara tudo para você revisar. <span style="opacity:.7">Nada é lançado antes da sua confirmação.</span></p>
-        <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-top:12px">
-          <div style="font-weight:800;color:#334155;margin-bottom:10px">Para qual fatura vamos trazer os lançamentos?</div>
-          <div class="form-row">
-            <div class="form-group"><label>Cartão</label><select id="ccImpCartao"></select></div>
-            <div class="form-group"><label>Mês da fatura (vencimento)</label><input type="month" id="ccImpMes"/></div>
-          </div>
+    <div class="sub-page" id="cRegras">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <h2 style="margin:0">🏷️ Regras de categorização</h2>
         </div>
-      </div>
-      <div class="card-cc" style="margin-top:14px">
-        <div style="font-weight:800;color:#0f172a">Como deseja trazer sua fatura?</div>
-        <p style="font-size:.84rem;color:#6b7280;margin:2px 0 0">A IA identifica compras, valores, datas, categorias e parcelas.</p>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px">
-          <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CC_impArquivo(this,'pdf')"/></label>
-          <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens da fatura</span><input type="file" accept="image/*" multiple style="display:none" onchange="CC_impArquivo(this,'galeria')"/></label>
-          <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CC_impArquivo(this,'foto')"/></label>
-          <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CC_impArquivo(this,'ofx')"/></label>
+        <p class="card-sub">O motor aprende sozinho ao categorizar itens da fatura.</p>
+        <div style="overflow-x:auto"><table class="r-tab">
+          <thead><tr><th>Descrição normalizada</th><th>Categoria</th><th>Usos</th></tr></thead>
+          <tbody id="cRegrasTbody"></tbody>
+        </table>
+        <div class="r-vazio" id="cRegrasVazio" style="display:none">Nenhuma regra ainda. Elas surgem sozinhas conforme você categoriza.</div>
         </div>
-        <div id="ccImpAviso" style="font-size:.82rem;margin-top:12px"></div>
-        <div id="ccImpReview" style="margin-top:12px"></div>
-      </div>
-    </div>
-
-    <!-- ── Faturas ── -->
-    <div class="cc-panel" id="ccPanelFaturas" style="display:none">
-      <div id="ccFaturasWrap"></div>
-    </div>
-
-    <!-- ── Regras de categorização ── -->
-    <div class="cc-panel" id="ccPanelRegras" style="display:none">
-      <div class="card-cc">
-        <h2 style="font-size:1.1rem;font-weight:700;color:#0f172a;margin:0">🏷️ Regras de categorização</h2>
-        <p style="font-size:.84rem;color:#6b7280;margin:6px 0 0">Quando a descrição de uma compra importada <b>contém</b> um termo, a categoria é sugerida sozinha na revisão. Ex.: "uber" → Transporte.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
-          <div style="flex:1;min-width:160px"><label style="font-size:.78rem;font-weight:700;color:#334155;display:block;margin-bottom:4px">Se a descrição contém</label><input type="text" id="ccRegraTermo" placeholder="Ex.: uber, ifood, adobe" style="width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:9px 11px;font-size:.88rem"/></div>
-          <div style="flex:1;min-width:160px"><label style="font-size:.78rem;font-weight:700;color:#334155;display:block;margin-bottom:4px">Categoria</label><select id="ccRegraCat" style="width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:9px 11px;font-size:.88rem;background:#fff"></select></div>
-          <button class="btn btn-purple" style="width:auto" onclick="CC_addRegra()">➕ Adicionar</button>
-        </div>
-        <div id="ccRegrasLista" style="margin-top:16px"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ════════════════════════════════════════
-     CATEGORIAS FINANCEIRAS (Fase 3 — roadmap)
-════════════════════════════════════════ -->
-<style>
-.cf-ftipo{padding:5px 12px;border:1px solid #e5e7eb;background:#fff;border-radius:20px;font-size:.8rem;font-weight:600;color:#6b7280;cursor:pointer}
-.cf-ftipo.active{background:#1e293b;color:#fff;border-color:#1e293b}
-.cf-cat-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:7px}
-.cf-aux-row{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 11px}
-</style>
 <div class="page" id="page-categorias">
   <div class="container">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px">
@@ -2557,7 +2618,7 @@ function showMain(id,btn){
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
-  if(id==='cartoes')CC_render();
+  if(id==='cartoes')C_ativar();
   if(id==='categorias')CF_render();
   if(id==='sophia')SOPHIA_abrir();
   if(id==='relatorios')RPT_ativar();
@@ -4281,6 +4342,7 @@ function CC_gerarContaPagar(cid,key){
 // Cria as faltantes, recalcula o valor das NÃO pagas, remove órfãs não pagas (compra excluída/editada).
 // Não mexe em fatura já PAGA. Anti-duplicidade por faturaCartao{cartaoId,mes}.
 function CC_sincronizarFaturasPagar(cid){
+  return 0; // DESLIGADO (Fase 4): o modelo NOVO (C_) posta a fatura imutável no Pagar. Evita duplicar.
   const c=CC_CARTOES[cid];if(!c)return 0;
   const fats=CC_faturasDoCartao(cid);const venc=+c.diaVencimento||10;let mudou=0;
   Object.keys(fats).forEach(key=>{
@@ -4631,6 +4693,320 @@ async function CC_recatItemFatura(compraId,novaCat){
 function CC_selecionar(id){CC_selecionado=id;CC_faturaFiltro=id;CC_faturaSelCid=null;CC_faturaSelKey=null;CC_renderCartoes();CC_aba('faturas');}
 
 // ══════════════════════════════════════════════════════
+// CARTÃO — PORT DO NOSSA SEMENTE (módulo C_) · FASE 1: camada de dados IMUTÁVEL
+// Fatura = SNAPSHOT congelado (cartao_faturas): totalItens exato + itens[] embutido.
+// Posta no Pagar (P_meses / meses.contas[]) de 2 formas que NUNCA duplicam:
+//   • C_lancarFaturaEmPagar → 1 conta agregada IMUTÁVEL por fatura (valor = totalItens)
+//   • C_sincronizarFaturasPrevias → prévias das parcelas FUTURAS (mesmo faturaId da real)
+// Convive com o CC_ antigo (removido na Fase 2). Single-tenant, REST (BC_fb*).
+// Chave de mês: interno "YYYY-MM" (igual NS); converte p/ "JUL/2026" só na fronteira do Pagar.
+// ══════════════════════════════════════════════════════
+const C_COL_FAT='cartao_faturas', C_COL_PARC='cartao_parcelamentos', C_COL_REGRA='cartao_regras', C_COL_CARD='cartoes';
+let C_cartoes=[], C_faturas=[], C_parcelamentos=[], C_regras=[], C_carregado=false;
+
+function C_norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function C_ymAdd(ym,n){const p=String(ym||'').split('-').map(Number);const d=new Date(p[0],(p[1]||1)-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function C_ymToWen(ym){return CC_ymToKey(ym);} // "2026-07" -> "JUL/2026"
+function C_ymFromWen(wenKey){const ma=CC_mesAnoDaKey(wenKey);return ma.ano+'-'+String(ma.mes+1).padStart(2,'0');} // "JUL/2026" -> "2026-07"
+// Itens de cartão de um mês WEN, por categoria (modelo NOVO): usa a fatura IMUTÁVEL se importada,
+// senão as parcelas projetadas (prévia). Substitui o antigo CC_faturasDoCartao no rateio/relatórios.
+function C_itensCartaoMesWen(wenKey){
+  const ym=C_ymFromWen(wenKey);const out=[];
+  const reais=(C_faturas||[]).filter(f=>f.mesFatura===ym);
+  reais.forEach(f=>(f.itens||[]).forEach(it=>out.push({desc:it.descricao,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:it.fitid})));
+  (typeof C_liveCartoes==='function'?C_liveCartoes():[]).forEach(c=>{
+    if(reais.some(f=>f.cartaoId===c.id))return; // já tem fatura real nesse mês
+    (typeof C_parcelasDaPrevia==='function'?C_parcelasDaPrevia(c.id,ym):[]).forEach(it=>out.push({desc:it.desc,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:c.id+'_prev'}));
+  });
+  return out;
+}
+// Migração leve (uma vez): remove faturas agregadas ANTIGAS (sem faturaId) não pagas do Pagar,
+// pra não duplicar com as imutáveis novas. Preserva pagas (histórico) e as novas (com faturaId).
+function C_migrarFaturasAntigas(){
+  try{ if(localStorage.getItem('wen_c_migr_faturas')==='1')return;
+    let mudou=false;
+    Object.keys(P_meses||{}).forEach(mes=>{const antes=(P_meses[mes]||[]).length;
+      P_meses[mes]=(P_meses[mes]||[]).filter(r=>!(r.faturaCartao&&!r.faturaId&&String(r.status).toUpperCase()!=='PAGO'));
+      if((P_meses[mes]||[]).length!==antes)mudou=true;});
+    localStorage.setItem('wen_c_migr_faturas','1');
+    if(mudou&&typeof P_salvarStorage==='function')P_salvarStorage();
+  }catch(e){}
+}
+
+async function C_carregarTudo(){
+  const [cs,fs,ps,rs]=await Promise.all([BC_fbCarregar(C_COL_CARD),BC_fbCarregar(C_COL_FAT),BC_fbCarregar(C_COL_PARC),BC_fbCarregar(C_COL_REGRA)]);
+  C_cartoes=cs; C_faturas=fs; C_parcelamentos=ps; C_regras=rs; C_carregado=true;
+}
+function C_fbSet(col,id,obj){try{return BC_fbUpsert(col,id,obj);}catch(e){}}
+
+// Fatura imutável (snapshot congelado)
+async function C_salvarFatura(fatura){
+  const i=C_faturas.findIndex(f=>f.id===fatura.id);
+  if(i>=0)C_faturas[i]=fatura; else C_faturas.push(fatura);
+  await C_fbSet(C_COL_FAT,fatura.id,fatura);
+}
+
+// Projeta grupos de parcelamento (idempotente por grupoId; avança parcelaAtual no reimport)
+function C_projetarParcelamentos(fatura){
+  (fatura.itens||[]).forEach(it=>{
+    if(!it.parcela||!(Number(it.parcela.total)>1))return;
+    const N=Number(it.parcela.total),X=Number(it.parcela.atual)||1;
+    const descNorm=C_norm(it.descricao);
+    const gid=('p_'+fatura.cartaoId+'_'+descNorm.replace(/[^a-z0-9]+/g,'_')+'_'+N).slice(0,140);
+    const mesInicio=C_ymAdd(fatura.mesFatura,-(X-1)), mesFim=C_ymAdd(mesInicio,N-1);
+    const ex=C_parcelamentos.find(p=>p.id===gid);
+    const parcelaAtual=Math.max(ex?Number(ex.parcelaAtual)||0:0, X);
+    const dados={id:gid,descricao:it.descricao,descricaoNormalizada:descNorm,categoria:it.categoria||(ex&&ex.categoria)||'',cartaoId:fatura.cartaoId,valorParcela:Math.abs(Number(it.valor))||0,parcelaAtual,totalParcelas:N,mesInicio,mesFim,ativo:parcelaAtual<N};
+    if(ex)Object.assign(ex,dados); else C_parcelamentos.push(dados);
+    C_fbSet(C_COL_PARC,gid,dados);
+  });
+}
+
+// Posta 1 conta agregada IMUTÁVEL da fatura no Pagar (dedup por faturaId; preserva pagamento no reimport)
+function C_lancarFaturaEmPagar(fatura,cartao){
+  const wk=C_ymToWen(fatura.mesFatura); if(!wk)return;
+  if(!P_meses[wk])P_meses[wk]=[];
+  const contas=P_meses[wk];
+  const anterior=contas.find(c=>c.faturaId===fatura.id&&!c.previa)||null;
+  const semEsta=contas.filter(c=>c.faturaId!==fatura.id);
+  const nova={id:'fat_'+fatura.id,faturaId:fatura.id,imutavel:true,faturaCartao:{cartaoId:fatura.cartaoId,mes:wk},
+    nome:'💳 Fatura '+cartao.nome+' · '+wk,categoria:'cartoes',dia:cartao.diaVencimento||null,mes:wk,
+    valor:Math.round(Math.max(0,Number(fatura.totalItens)||0)*100)/100,
+    valorPago:anterior?(Number(anterior.valorPago)||0):0,status:anterior?(anterior.status||'PENDENTE'):'PENDENTE',
+    fixa:false,obs:'Gerada pela importação da fatura — valor imutável.',competencia:wk};
+  if(anterior&&anterior.dataPagamento)nova.dataPagamento=anterior.dataPagamento;
+  if(anterior&&anterior.contaBancariaId)nova.contaBancariaId=anterior.contaBancariaId;
+  semEsta.push(nova); P_meses[wk]=semEsta; P_salvarStorage();
+}
+
+// Projeta parcelas FUTURAS como faturas "prévia"; mesmo faturaId da real → importar o mês substitui a prévia
+function C_sincronizarFaturasPrevias(cartaoId){
+  const cartao=C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
+  const porMes={};
+  C_parcelamentos.filter(p=>p.ativo&&p.cartaoId===cartaoId).forEach(p=>{
+    const pr=String(p.mesInicio||'').split('-').map(Number); const ay=pr[0],am=pr[1]; if(!ay)return;
+    for(let nn=(Number(p.parcelaAtual)||0)+1; nn<=(Number(p.totalParcelas)||0); nn++){
+      const d=new Date(ay,am-1+(nn-1),1); const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+      porMes[k]=Math.round(((porMes[k]||0)+(Number(p.valorParcela)||0))*100)/100;
+    }
+  });
+  let mudou=false;
+  Object.keys(porMes).forEach(m=>{
+    const total=porMes[m], fid=cartaoId+'_'+m, wk=C_ymToWen(m); if(!wk)return;
+    if(!P_meses[wk])P_meses[wk]=[];
+    const contas=P_meses[wk];
+    const idx=contas.findIndex(c=>c.faturaId===fid);
+    if(idx>=0&&!contas[idx].previa)return;                       // fatura real já existe → não toca
+    if(idx>=0&&Math.abs((Number(contas[idx].valor)||0)-total)<0.005)return; // já igual → sem escrita
+    const base={id:'fat_'+fid,faturaId:fid,previa:true,faturaCartao:{cartaoId,mes:wk},
+      nome:'💳 Fatura '+cartao.nome+' (prévia) · '+wk,categoria:'cartoes',dia:cartao.diaVencimento||null,mes:wk,
+      valor:total,valorPago:0,status:'PENDENTE',fixa:false,obs:'Fatura prévia (parcelas projetadas).',competencia:wk};
+    if(idx>=0){const prev=contas[idx];base.valorPago=Number(prev.valorPago)||0;base.status=prev.status||'PENDENTE';contas[idx]=base;}
+    else contas.push(base);
+    mudou=true;
+  });
+  if(mudou)P_salvarStorage();
+}
+function C_sincronizarTodasPrevias(){C_cartoes.forEach(c=>C_sincronizarFaturasPrevias(c.id));}
+
+// Orquestrador de dados: grava fatura imutável + projeta parcelas + lança no Pagar (mês atual + prévias)
+async function C_confirmarImportacaoDados(fatura){
+  const cartao=C_cartoes.find(c=>c.id===fatura.cartaoId)||{nome:'Cartão',diaVencimento:null};
+  await C_salvarFatura(fatura);
+  C_projetarParcelamentos(fatura);
+  C_lancarFaturaEmPagar(fatura,cartao);
+  C_sincronizarFaturasPrevias(fatura.cartaoId);
+  return {mesLancado:C_ymToWen(fatura.mesFatura), total:fatura.totalItens};
+}
+
+// ── FASE 2: TELAS (visual do Nossa Semente) ──────────────────────────
+// Helpers de compatibilidade (WEN não tinha)
+function C_esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function C_jsAttr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+const C_MESES_CURTOS=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+function C_mesCurto(anoMes){const p=String(anoMes||'').split('-');if(!p[1])return anoMes||'';return C_MESES_CURTOS[parseInt(p[1],10)-1]+(p[0]||'').slice(-2);}
+function C_dataBR(iso){if(!iso)return'—';const p=String(iso).split('-');if(p.length<3)return iso;return p[2].slice(0,2)+'/'+p[1]+'/'+p[0].slice(2);}
+function C_catInfo(slug){const ci=(typeof catInfoP==='function')?catInfoP(slug):null;if(ci)return{nome:ci.label,emoji:ci.icon,cor:ci.color};return{nome:slug||'Sem cat.',emoji:'—',cor:'#94a3b8'};}
+function C_categoriasNomes(){return Object.keys((typeof CATS_P!=='undefined'&&CATS_P)||{});}
+function C_optsCategorias(sel){return '<option value="">— sem categoria —</option>'+C_categoriasNomes().map(n=>{const ci=C_catInfo(n);return `<option value="${C_esc(n)}" ${sel===n?'selected':''}>${ci.emoji} ${C_esc(ci.nome)}</option>`;}).join('');}
+function C_darken(hex,amt){try{const c=(hex||'').replace('#','');let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);r=Math.max(0,r-amt);g=Math.max(0,g-amt);b=Math.max(0,b-amt);return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');}catch(e){return hex||'#4f9a5b';}}
+function C_cardBg(cor){const c=cor||'#4f9a5b';return `linear-gradient(140deg, ${c} 0%, ${C_darken(c,45)} 100%)`;}
+// cartões vivem no store do WEN (CC_CARTOES, coleção `cartoes`) — fonte única
+function C_liveCartoes(){const o=(typeof CC_CARTOES!=='undefined'&&CC_CARTOES)||{};return Object.keys(o).filter(id=>o[id].status!=='inativo').map(id=>({id,...o[id],bandeira:o[id].banco||''}));}
+function C_card(id){const o=(typeof CC_CARTOES!=='undefined'&&CC_CARTOES)||{};return o[id]||C_cartoes.find(c=>c.id===id)||{};}
+let C_faturaAberta=null, C_previaAberta=null, C_catFiltro=null, C_pizza=null, C_aprenderCat=true;
+
+async function C_ativar(){
+  if(!C_carregado){try{await C_carregarTudo();C_migrarFaturasAntigas();C_sincronizarTodasPrevias();C_carregado=true;}catch(e){console.warn('C_ativar',e.message);}}
+  C_popularSelects(); C_renderTudo();
+}
+window.C_aba=function(aba,btn){
+  document.querySelectorAll('#page-cartoes .sub-page').forEach(p=>p.classList.remove('active'));
+  const el=document.getElementById('c'+aba); if(el)el.classList.add('active');
+  document.querySelectorAll('#page-cartoes .sub-nav button').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  C_renderTudo();
+};
+function C_popularSelects(){
+  const cs=C_liveCartoes();
+  const fc=document.getElementById('cFatCartao');
+  if(fc){const v=fc.value;fc.innerHTML='<option value="">Todos os cartões</option>'+cs.map(c=>`<option value="${c.id}">${C_esc(c.nome)}</option>`).join('');fc.value=v;}
+  const ic=document.getElementById('cImpCartao');
+  if(ic){const v=ic.value;ic.innerHTML=cs.length?cs.map(c=>`<option value="${c.id}">${C_esc(c.nome)}${c.final?' ··'+C_esc(c.final):''}</option>`).join(''):'<option value="">— cadastre um cartão —</option>';if(v)ic.value=v;}
+  const im=document.getElementById('cImpMes');
+  if(im&&!im.value){const d=new Date();im.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+}
+function C_renderTudo(){C_renderCartoes();C_renderFaturas();C_renderRegras();}
+
+function C_renderCartoes(){
+  const el=document.getElementById('cCartoesLista'); if(!el)return;
+  const cs=C_liveCartoes();
+  if(!cs.length){el.innerHTML='<p class="r-vazio">Nenhum cartão ainda. Cadastre o primeiro 💳</p>';return;}
+  el.innerHTML='<div class="cartoes-grid">'+cs.map(c=>{
+    const parcVir=C_parcelamentos.filter(p=>p.cartaoId===c.id&&p.ativo).reduce((a,p)=>a+(Number(p.valorParcela)||0)*Math.max(0,(Number(p.totalParcelas)||0)-(Number(p.parcelaAtual)||0)),0);
+    return `<div class="cartao-card" style="background:${C_cardBg(c.cor)}" onclick="C_verFaturasDo('${c.id}')" title="Ver faturas">
+      <div class="cc-top"><div><div class="cc-nome">${C_esc(c.nome)}</div><div class="cc-band">${C_esc(c.bandeira||'')}</div></div>
+      <div class="cc-acoes"><button onclick="event.stopPropagation();C_abrirCartao('${c.id}')" title="Editar">✏️</button><button onclick="event.stopPropagation();C_excluirCartao('${c.id}')" title="Excluir">🗑️</button></div></div>
+      <div class="cc-final">•••• •••• •••• ${C_esc(c.final||'----')}</div>
+      <div class="cc-meta"><span>Vence dia ${c.diaVencimento||'—'}</span>${c.diaFechamento?`<span>Fecha dia ${c.diaFechamento}</span>`:''}<span>Limite ${c.limite?fmt(c.limite):'—'}</span></div>
+      <div class="cc-bottom">${parcVir>0?`<span class="cc-parc">🔮 Parcelas a vir: ${fmt(parcVir)}</span>`:''}<span class="cc-hint">ver faturas ›</span></div></div>`;
+  }).join('')+'</div>';
+}
+window.C_verFaturasDo=function(cid){
+  const fc=document.getElementById('cFatCartao'); if(fc)fc.value=cid;
+  const btn=[...document.querySelectorAll('#page-cartoes .sub-nav button')].find(b=>(b.getAttribute('onclick')||'').includes("'Faturas'"));
+  C_selReset(); if(btn)C_aba('Faturas',btn); else C_renderFaturas();
+};
+window.C_selReset=function(){C_faturaAberta=null;C_previaAberta=null;C_catFiltro=null;};
+window.C_selFatura=function(id){C_faturaAberta=id;C_previaAberta=null;C_catFiltro=null;C_renderFaturas();};
+window.C_selPrevia=function(cid,mes){C_previaAberta=cid+'|'+mes;C_faturaAberta=null;C_catFiltro=null;C_renderFaturas();};
+window.C_filtrarCat=function(cat){C_catFiltro=(C_catFiltro===cat?null:cat);C_renderDetalhe();};
+function C_parcelasDaPrevia(cid,mes){
+  const itens=[];
+  C_parcelamentos.filter(p=>p.ativo&&p.cartaoId===cid).forEach(p=>{
+    const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
+    for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');if(k===mes)itens.push({desc:p.descricao||'Parcela',categoria:p.categoria||'',valor:Number(p.valorParcela)||0,n,total:p.totalParcelas});}
+  });
+  return itens.sort((a,b)=>b.valor-a.valor);
+}
+window.C_renderFaturas=function(){
+  const filtro=document.getElementById('cFatCartao')?.value||'';
+  const lista=C_faturas.filter(f=>!filtro||f.cartaoId===filtro).sort((a,b)=>(b.mesFatura||'').localeCompare(a.mesFatura||''));
+  const el=document.getElementById('cFaturasLista'); if(!el)return;
+  const nomeCartao=id=>C_card(id).nome||'Cartão';
+  const prev={};
+  C_parcelamentos.filter(p=>p.ativo&&(!filtro||p.cartaoId===filtro)).forEach(p=>{
+    const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
+    for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');const key=p.cartaoId+'|'+k;prev[key]=prev[key]||{total:0,itens:0};prev[key].total+=Number(p.valorParcela)||0;prev[key].itens+=1;}
+  });
+  const prevArr=Object.entries(prev).map(([key,v])=>{const parts=key.split('|');return {cid:parts[0],mes:parts[1],total:v.total,itens:v.itens};}).sort((a,b)=>a.mes.localeCompare(b.mes));
+  if(!lista.length&&!prevArr.length){el.innerHTML='<p class="r-vazio">Nenhuma fatura importada ainda.</p>';C_renderDetalhe();return;}
+  const impValida=C_faturaAberta&&lista.some(f=>f.id===C_faturaAberta);
+  const prevValida=C_previaAberta&&prevArr.some(p=>(p.cid+'|'+p.mes)===C_previaAberta);
+  if(!impValida&&!prevValida){if(lista.length){C_faturaAberta=lista[0].id;C_previaAberta=null;}else{C_faturaAberta=null;C_previaAberta=prevArr[0].cid+'|'+prevArr[0].mes;}}
+  const impHtml=lista.map(f=>`<div class="fatura-linha ${C_faturaAberta===f.id?'aberta':''}" onclick="C_selFatura('${f.id}')">
+      <div><b>${C_esc(nomeCartao(f.cartaoId))}</b> · ${C_mesCurto(f.mesFatura)} <span class="badge-imut">imutável</span><div class="r-pequeno">${(f.itens||[]).length} itens</div></div>
+      <div style="font-weight:800;color:var(--neg)">${fmt(f.totalItens)}</div></div>`).join('');
+  const prevHtml=prevArr.map(p=>{const key=p.cid+'|'+p.mes;return `<div class="fatura-linha previa ${C_previaAberta===key?'aberta':''}" onclick="C_selPrevia('${p.cid}','${p.mes}')">
+      <div><b>${C_esc(nomeCartao(p.cid))}</b> · ${C_mesCurto(p.mes)} <span class="badge-imut" style="background:var(--alerta-bg);color:#a86b1e">prévia</span><div class="r-pequeno">${p.itens} parcela(s) projetada(s)</div></div>
+      <div style="font-weight:800;color:var(--accent-forte)">${fmt(p.total)}</div></div>`;}).join('');
+  el.innerHTML=(impHtml||'<p class="r-pequeno" style="padding:6px 0">Nenhuma fatura importada.</p>')+(prevHtml?`<div class="fat-sub">🔮 Próximas (previstas pelas parcelas)</div>${prevHtml}`:'');
+  C_renderDetalhe();
+};
+function C_renderDetalhe(){
+  const box=document.getElementById('cFatDetalhe'); if(!box)return;
+  if(C_pizza){C_pizza.destroy();C_pizza=null;}
+  const nomeCartao=id=>C_card(id).nome||'Cartão';
+  let titulo='',badge='',itens=[],total=0,parcInfo=null,previa=false;
+  if(C_faturaAberta){const f=C_faturas.find(x=>x.id===C_faturaAberta);
+    if(f){titulo=`${nomeCartao(f.cartaoId)} · ${C_mesCurto(f.mesFatura)}`;badge='<span class="badge-imut">imutável</span>';
+      itens=(f.itens||[]).map(it=>({desc:it.descricao,sub:(it.parcela?`parc ${it.parcela.atual}/${it.parcela.total} · `:'')+C_dataBR(it.dataCompra),categoria:it.categoria||'',valor:Number(it.valor)||0,fitid:it.fitid}));
+      total=Number(f.totalItens)||itens.reduce((a,x)=>a+x.valor,0);
+      parcInfo=C_parcelamentos.filter(p=>p.cartaoId===f.cartaoId&&p.ativo);}
+  }else if(C_previaAberta){const parts=C_previaAberta.split('|');const cid=parts[0],mes=parts[1];previa=true;
+    titulo=`${nomeCartao(cid)} · ${C_mesCurto(mes)}`;badge='<span class="badge-imut" style="background:var(--alerta-bg);color:#a86b1e">prévia</span>';
+    itens=C_parcelasDaPrevia(cid,mes).map(it=>({desc:it.desc,sub:`parc ${it.n}/${it.total}`,categoria:it.categoria||'',valor:Number(it.valor)||0}));
+    total=itens.reduce((a,x)=>a+x.valor,0);}
+  if(!C_faturaAberta&&!C_previaAberta){box.innerHTML='<div class="fat-vazio">Selecione uma fatura na lista para ver os detalhes 👈</div>';return;}
+  const porCat={};itens.forEach(it=>{porCat[it.categoria]=(porCat[it.categoria]||0)+it.valor;});
+  const entradas=Object.entries(porCat).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  if(C_catFiltro&&!porCat[C_catFiltro])C_catFiltro=null;
+  const itensFiltrados=(C_catFiltro?itens.filter(it=>it.categoria===C_catFiltro):itens).slice().sort((a,b)=>b.valor-a.valor);
+  const subtotal=itensFiltrados.reduce((a,x)=>a+x.valor,0);
+  const chips=entradas.map(([cat,val])=>{const ci=C_catInfo(cat);const pct=total?Math.round(Math.abs(val)/Math.abs(total)*100):0;return `<span class="fat-chip ${C_catFiltro===cat?'ativo':''}" onclick="C_filtrarCat('${C_jsAttr(cat)}')"><span class="fc-bol" style="background:${ci.cor}"></span>${ci.emoji} ${C_esc(ci.nome)} <span class="fc-val">${fmt(val)} · ${pct}%</span></span>`;}).join('');
+  const linhas=itensFiltrados.map(it=>{const ci=C_catInfo(it.categoria);
+    const cat=it.fitid?`<span class="pi-cat"><span class="r-cat-bolinha" style="background:${ci.cor}"></span><select class="pi-cat-sel" onchange="C_mudarCatItem('${C_jsAttr(it.fitid)}',this.value)">${C_optsCategorias(it.categoria)}</select></span>`:`<span class="pi-cat"><span class="r-cat-bolinha" style="background:${ci.cor}"></span>${ci.emoji} ${C_esc(ci.nome)}</span>`;
+    return `<div class="previa-item"><span class="pi-desc">${C_esc(it.desc)} <span class="r-pequeno">${C_esc(it.sub)}</span></span>${cat}<span class="pi-val">${fmt(it.valor)}</span></div>`;}).join('');
+  const aprenderHtml=(C_faturaAberta&&itens.some(x=>x.fitid))?`<label class="fat-aprender"><input type="checkbox" ${C_aprenderCat?'checked':''} onchange="C_aprenderCat=this.checked"/> Ao trocar categoria, aprender p/ próximas faturas deste estabelecimento</label>`:'';
+  const parcHtml=(parcInfo&&parcInfo.length)?`<div class="fat-sub">📆 Parcelamentos em aberto</div>${parcInfo.map(p=>{const rest=(Number(p.totalParcelas)||0)-(Number(p.parcelaAtual)||0);return `<div class="previa-item"><span class="pi-desc">${C_esc(p.descricao)} <span class="r-pequeno">parc ${p.parcelaAtual}/${p.totalParcelas} · faltam ${rest}</span></span><span class="pi-val">${fmt(p.valorParcela)}/mês · resta ${fmt((Number(p.valorParcela)||0)*rest)}</span></div>`;}).join('')}`:'';
+  box.innerHTML=`<div class="fat-det-head"><div><h2 style="margin:0 0 2px">${C_esc(titulo)} ${badge}</h2><div class="r-pequeno">${itens.length} ${previa?'parcela(s) projetada(s)':'itens'}</div></div><div class="fat-det-tot" style="color:${previa?'var(--accent-forte)':'var(--neg)'}">${fmt(total)}</div></div>
+    <div class="fat-pizza-wrap"><canvas id="cPizzaFat"></canvas><div class="fat-pizza-center"><span class="fp-lab">${previa?'Prévia':'Total'}</span><span class="fp-val">${fmt(total)}</span></div></div>
+    <div class="fat-chips"><span class="fat-chip ${!C_catFiltro?'ativo':''}" onclick="C_filtrarCat(null)">Todas</span>${chips}</div>
+    ${C_catFiltro?`<div class="fat-subtotal"><span>${C_catInfo(C_catFiltro).emoji} ${C_esc(C_catInfo(C_catFiltro).nome)} — ${itensFiltrados.length} item(ns)</span><span>${fmt(subtotal)}</span></div>`:''}
+    ${aprenderHtml}
+    <div class="previa-det" style="max-height:420px;overflow:auto">${linhas||'<div class="r-pequeno" style="padding:10px 0">Sem itens nessa categoria.</div>'}</div>${parcHtml}`;
+  const cv=document.getElementById('cPizzaFat');
+  if(cv&&entradas.length&&window.Chart){C_pizza=new Chart(cv,{type:'doughnut',data:{labels:entradas.map(e=>C_catInfo(e[0]).nome),datasets:[{data:entradas.map(e=>Math.abs(e[1])),backgroundColor:entradas.map(e=>C_catInfo(e[0]).cor),borderWidth:2,borderColor:'#fff'}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmt(ctx.parsed)}`}}},cutout:'64%',responsive:true,maintainAspectRatio:false,onClick:(e,els)=>{if(els.length)C_filtrarCat(entradas[els[0].index][0]);}}});}
+}
+async function C_mudarCatItem(fitid,novaCat){
+  if(!C_faturaAberta)return;
+  const f=C_faturas.find(x=>x.id===C_faturaAberta); if(!f)return;
+  const it=(f.itens||[]).find(x=>x.fitid===fitid); if(!it)return;
+  if((it.categoria||'')===novaCat)return;
+  it.categoria=novaCat;
+  await C_fbSet(C_COL_FAT,f.id,f);
+  if(it.parcela){const gid=('p_'+f.cartaoId+'_'+C_norm(it.descricao).replace(/[^a-z0-9]+/g,'_')+'_'+it.parcela.total).slice(0,140);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,gid,pex);}}
+  C_renderDetalhe();
+  if(typeof toast==='function')toast('Categoria atualizada 💚');
+}
+function C_renderRegras(){
+  const tb=document.getElementById('cRegrasTbody'), vz=document.getElementById('cRegrasVazio'); if(!tb)return;
+  const rs=(C_regras||[]).slice().sort((a,b)=>(Number(b.ocorrencias)||0)-(Number(a.ocorrencias)||0));
+  if(!rs.length){tb.innerHTML='';if(vz)vz.style.display='block';return;}
+  if(vz)vz.style.display='none';
+  tb.innerHTML=rs.map(r=>{const ci=C_catInfo(r.categoria);return `<tr><td>${C_esc(r.descricaoNormalizada||r.id)}</td><td><span class="r-cat-bolinha" style="background:${ci.cor}"></span> ${ci.emoji} ${C_esc(ci.nome)}</td><td>${Number(r.ocorrencias)||0}</td></tr>`;}).join('');
+}
+// CRUD de cartão: reaproveita o modal do WEN (coleção `cartoes` é a mesma) e re-renderiza
+window.C_abrirCartao=function(id){ if(typeof CC_abrirModalCartao==='function')CC_abrirModalCartao(id||null); };
+window.C_excluirCartao=async function(id){ if(typeof CC_excluirCartao==='function'){await CC_excluirCartao(id);} C_renderTudo(); };
+
+// ── Importar (Fase 3): reaproveita o MOTOR DE IA DO WEN, grava no modelo IMUTÁVEL ──
+window.C_impUpload=function(input,modo){
+  const cid=document.getElementById('cImpCartao').value;
+  if(!cid||!C_card(cid).nome){toast('Escolha o cartão primeiro.','#f59e0b');if(input)input.value='';return;}
+  if(!input.files||!input.files.length)return;
+  IMP_iniciarInline('cartao',()=>cid,'cImpAviso2','cImportResultado',null);
+  IMP_destinoC=true; // confirmar → C_importarDaPrevia (fatura imutável)
+  if(modo==='ofx')IMP_ofxArquivo(input); else IMP_gemini(input);
+};
+window.C_importarDaPrevia=async function(){
+  const cid=document.getElementById('cImpCartao').value;
+  const anoMes=document.getElementById('cImpMes').value; // "YYYY-MM"
+  if(!cid||!C_card(cid).nome){toast('Escolha o cartão.','#ef4444');return;}
+  if(!anoMes){toast('Escolha o mês da fatura.','#ef4444');return;}
+  const incl=IMP_previa.filter(m=>m.incluir);
+  if(!incl.length){toast('Nenhum item marcado.','#ef4444');return;}
+  const itens=incl.map((m,i)=>({
+    fitid:m.fitid||('ia_'+i+'_'+(m.data||'')+'_'+m.valor),
+    dataCompra:m.data||'', descricao:m.descricao||'Item',
+    valor:Math.round((Number(m.valor)||0)*100)/100,
+    parcela:(m.parcela&&Number(m.parcela.total)>1)?{atual:Number(m.parcela.atual)||1,total:Number(m.parcela.total)}:null,
+    categoria:m.categoria||'', memo:m.memo||''
+  }));
+  const totalItens=Math.round(itens.reduce((a,x)=>a+x.valor,0)*100)/100;
+  const fatura={id:cid+'_'+anoMes,cartaoId:cid,mesFatura:anoMes,totalItens,totalDeclarado:IMP_totalLido||null,fechada:true,itens};
+  await C_confirmarImportacaoDados(fatura);
+  await C_carregarTudo();
+  IMP_previa=[];IMP_destinoC=false;
+  const rr=document.getElementById('cImportResultado');if(rr)rr.innerHTML='';
+  const av=document.getElementById('cImpAviso2');if(av)av.innerHTML='';
+  toast('✅ Fatura '+C_ymToWen(anoMes)+' gravada — '+fmt(totalItens)+(IMP_totalLido&&Math.abs(totalItens-IMP_totalLido)>=0.01?' ⚠️ difere do total lido ('+fmt(IMP_totalLido)+')':''));
+  C_faturaAberta=fatura.id;C_previaAberta=null;
+  const btn=[...document.querySelectorAll('#page-cartoes .sub-nav button')].find(b=>(b.getAttribute('onclick')||'').includes("'Faturas'"));
+  if(btn)C_aba('Faturas',btn); else C_renderTudo();
+};
+
+// ══════════════════════════════════════════════════════
 // FASE 3 — CATEGORIAS FINANCEIRAS (módulo CF_)
 // Estende as categorias (categorias_pagar, já compartilhada por Pagar+Cartão)
 // com tipo/grupo/keyword/subcats/ativo — SEM migrar coleção (zero risco de quebra).
@@ -4868,7 +5244,7 @@ function COMP_render(){
 function PN_custosFixosMes(mref){
   return Object.values(FX_FIXAS||{}).filter(f=>f.status==='ativa'&&FX_mesesAplicaveis(f).includes(mref)).reduce((a,f)=>a+(Number(f.valorMedio)||0),0);
 }
-function PN_faturasAberto(){let t=0;Object.keys(CC_CARTOES||{}).forEach(cid=>{t+=CC_limiteUsado(cid);});return Math.round(t*100)/100;}
+function PN_faturasAberto(){let t=0;Object.keys(P_meses||{}).forEach(mes=>{(P_meses[mes]||[]).forEach(r=>{if(r.faturaCartao&&String(r.status).toUpperCase()!=='PAGO')t+=Number(r.valor)||0;});});return Math.round(t*100)/100;}
 function PN_alertas(mref){
   const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
   for(let i=Math.max(0,idx-3);i<idx;i++)prev.push(ord[i]);
@@ -5132,9 +5508,12 @@ function VENC_coletar(){
 }
 function VENC_faturasCartao(){
   const hoje=VENC_hoje0();const out=[];
-  Object.keys(CC_CARTOES||{}).forEach(cid=>{const c=CC_CARTOES[cid];const fats=CC_faturasDoCartao(cid);
-    Object.keys(fats).forEach(key=>{if(CC_isFaturaPaga(cid,key))return;const d=VENC_dataVenc(key,+c.diaVencimento||10);if(!d)return;const diff=Math.round((d-hoje)/86400000);if(diff<=15)out.push({cartao:c.nome,mes:key,total:fats[key].total,diff});});
-  });
+  // modelo NOVO: as faturas (imutáveis + prévias) já são contas do Pagar (faturaCartao)
+  Object.keys(P_meses||{}).forEach(mes=>{(P_meses[mes]||[]).forEach(r=>{
+    if(!r.faturaCartao)return;if(String(r.status).toUpperCase()==='PAGO')return;
+    const d=VENC_dataVenc(mes,+r.dia||10);if(!d)return;const diff=Math.round((d-hoje)/86400000);
+    if(diff<=15){const nome=(r.nome||'').replace(/^💳 Fatura /,'').replace(/ \(prévia\).*$/,'').split(' · ')[0].trim();out.push({cartao:nome,mes,total:Number(r.valor)||0,diff});}
+  });});
   return out.sort((a,b)=>a.diff-b.diff);
 }
 function VENC_render(){
@@ -5371,13 +5750,13 @@ function AUD_render(){
 // FASE 7 — TRAZER OS DADOS (módulo IMP_): OFX (sem IA) + foto/PDF (Gemini)
 // Importa movimentações pra conta escolhida (livro-razão), anti-duplicidade por id.
 // ══════════════════════════════════════════════════════
-let IMP_previa=[], IMP_tipo='conta', IMP_totalLido=null; // IMP_totalLido = "Valor total desta fatura" lido pela IA (conferência)
+let IMP_previa=[], IMP_tipo='conta', IMP_totalLido=null, IMP_destinoC=false; // IMP_totalLido = total lido pela IA; IMP_destinoC = confirmar grava no modelo IMUTÁVEL (C_)
 // contexto de renderização: modal (padrão) ou inline (na própria tela)
 let IMP_ctx={aviso:'impAviso',preview:'impPreview',getAlvo:()=>document.getElementById('impAlvo')?.value||'',onDone:null};
 function IMP_setAviso(html){const el=document.getElementById(IMP_ctx.aviso);if(el)el.innerHTML=html;}
 // prepara uma importação INLINE (sem modal): renderiza a revisão dentro dos containers dados
 function IMP_iniciarInline(tipo,getAlvo,avisoEl,previewEl,onDone){
-  IMP_tipo=tipo;IMP_previa=[];IMP_paginas=[];IMP_totalLido=null;
+  IMP_tipo=tipo;IMP_previa=[];IMP_paginas=[];IMP_totalLido=null;IMP_destinoC=false;
   IMP_ctx={aviso:avisoEl,preview:previewEl,getAlvo,onDone};
   const pv=document.getElementById(previewEl);if(pv)pv.innerHTML='';
 }
@@ -5601,7 +5980,7 @@ function IMP_renderPreviewRico(p){
         ${parcN?`<label style="display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:800;color:#a86b1e;cursor:pointer"><input type="checkbox" id="impChkParc" onchange="var b=document.getElementById('impBtnConfirmar');if(b)b.disabled=!this.checked" style="width:17px;height:17px;accent-color:#16a34a"> Conferi as parcelas</label>`:''}
         ${(semCatIA&&IA_temChave())?`<button class="btn btn-outline-b" id="impBtnIA" style="width:auto" onclick="IMP_sophiaCompleta()">✨ SophIA completa (${semCatIA})</button>`:''}
         <button class="btn btn-outline-b" style="width:auto" onclick="IMP_aceitarTodas()">✅ Aceitar sugestões</button>
-        <button class="btn btn-purple" id="impBtnConfirmar" style="width:auto"${parcN?' disabled':''} onclick="IMP_importar()">Importar ${incl.length} lançamento${incl.length===1?'':'s'}</button>
+        <button class="btn btn-purple" id="impBtnConfirmar" style="width:auto"${parcN?' disabled':''} onclick="${IMP_destinoC?'C_importarDaPrevia()':'IMP_importar()'}">${IMP_destinoC?'Gravar fatura':'Importar '+incl.length+' lançamento'+(incl.length===1?'':'s')}</button>
       </div>
     </div>`;
 }
@@ -5797,7 +6176,7 @@ function RPT_gerar(){
     colunas=['Parte','Valor','%'];linhas=arr.map(x=>[x[0],fmt(x[1]),RPT_pct(tot?x[1]/tot*100:0)]);
   }else if(tipo==='cartao'){
     titulo='Gastos por cartão';const acc={};let tot=0;
-    Object.values(CC_LANCS||{}).forEach(l=>{const d=(l.dataCompra||'');const mk=d.length>=7?(MESES_ABREV[parseInt(d.slice(5,7))-1]+'/'+d.slice(0,4)):null;if(!mk||!inMeses(mk))return;const nome=(CC_CARTOES[l.cartaoId]||{}).nome||'—';const v=Number(l.valor)||0;acc[nome]=(acc[nome]||0)+v;tot+=v;});
+    (C_faturas||[]).forEach(f=>{const wk=C_ymToWen(f.mesFatura);if(!inMeses(wk))return;const nome=(typeof C_card==='function'?C_card(f.cartaoId).nome:'')||'—';const v=Number(f.totalItens)||0;acc[nome]=(acc[nome]||0)+v;tot+=v;});
     const arr=Object.entries(acc).sort((a,b)=>b[1]-a[1]);
     kpis=[{l:'Total em cartões',v:fmt(tot)},{l:'Cartões',v:arr.length}];
     chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1])};
@@ -5902,7 +6281,7 @@ function FCX_coletarVenc(){
 function FCX_despesasCat(mref){
   const acc={};
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const c=r.categoria||'';acc[c]=(acc[c]||0)+(Number(r.valor)||0);});
-  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{const c=it.categoria||'';acc[c]=(acc[c]||0)+(Number(it.valor)||0);});});
+  C_itensCartaoMesWen(mref).forEach(it=>{const c=it.categoria||'';acc[c]=(acc[c]||0)+(Number(it.valor)||0);});
   return acc;
 }
 // ── Regra CANÔNICA de "despesas por categoria" (card-aware) — reusada por Rateio, Categorias, Relatórios e Sophia ──
@@ -5914,23 +6293,24 @@ function DESP_catMeses(meses){const acc={};(meses||[]).forEach(m=>{const a=FCX_d
 function DESP_itensMes(mref){
   const out=[];
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;const v=Number(r.valor)||0;out.push({nome:r.nome,valor:v,categoria:r.categoria||'outros',pago:String(r.status).toUpperCase()==='PAGO'?v:(Number(r.valorPago)||0),fixa:!!r.fixa,cartao:false});});
-  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(!fat)return;const paga=(typeof CC_isFaturaPaga==='function')&&CC_isFaturaPaga(cid,mref);fat.items.forEach(it=>{const v=Number(it.valor)||0;out.push({nome:'💳 '+it.desc,valor:v,categoria:it.categoria||'outros',pago:paga?v:0,fixa:false,cartao:true});});});
+  C_itensCartaoMesWen(mref).forEach(it=>{const v=Number(it.valor)||0;out.push({nome:'💳 '+it.desc,valor:v,categoria:it.categoria||'outros',pago:0,fixa:false,cartao:true});});
   return out;
 }
 // itens (contas a pagar + itens da fatura) de uma categoria no mês — pra expandir/recategorizar
 function FCX_itensCategoria(mref,slug){
   const out=[];
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;if((r.categoria||'')===slug)out.push({tipo:'pagar',id:r.id,mes:mref,nome:r.nome,valor:Number(r.valor)||0});});
-  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{if((it.categoria||'')===slug)out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0});});});
+  C_itensCartaoMesWen(mref).forEach(it=>{if((it.categoria||'')===slug)out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0});});
   return out;
 }
 function FCX_optsCat(sel){return '<option value="">— sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===sel).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.icon} ${c.label}</option>`).join('');}
 window.FCX_toggleCat=function(slug){FCX_catAberta=(FCX_catAberta===slug?null:slug);FCX_renderBlocos();};
 let FCX_recatPend=null;
 window.FCX_recategorizar=function(tipo,id,mes,novo){
-  if(tipo==='cartao'){ // compra de cartão = 1 categoria (todas as parcelas); aplica direto
-    const l=CC_LANCS[id];if(l){l.categoria=novo;CC_fbSalvar(CC_COL_LANC,id,l);}
-    FCX_recatFinalizar('a compra inteira do cartão');return;
+  if(tipo==='cartao'){ // item de fatura imutável: acha pela fitid e re-salva a fatura (modelo novo)
+    let achou=false;
+    (C_faturas||[]).forEach(f=>{(f.itens||[]).forEach(it=>{if(it.fitid===id){it.categoria=novo;achou=true;C_fbSet(C_COL_FAT,f.id,f);if(it.parcela){const gid=('p_'+f.cartaoId+'_'+C_norm(it.descricao).replace(/[^a-z0-9]+/g,'_')+'_'+it.parcela.total).slice(0,140);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novo;C_fbSet(C_COL_PARC,gid,pex);}}}});});
+    FCX_recatFinalizar(achou?'o item do cartão':null);return;
   }
   // conta a pagar pode repetir em vários meses → pergunta o escopo
   const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id));if(!r)return;
@@ -5961,7 +6341,7 @@ function FCX_recatFinalizar(oQue){
 function FCX_todosItens(mref){
   const out=[];
   (P_meses[mref]||[]).forEach(r=>{if(r.faturaCartao)return;out.push({tipo:'pagar',id:r.id,mes:mref,nome:r.nome,valor:Number(r.valor)||0,cat:r.categoria||''});});
-  Object.keys(CC_CARTOES||{}).forEach(cid=>{const fat=CC_faturasDoCartao(cid)[mref];if(fat)fat.items.forEach(it=>{out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0,cat:it.categoria||''});});});
+  C_itensCartaoMesWen(mref).forEach(it=>{out.push({tipo:'cartao',id:it.lancId,mes:null,nome:'💳 '+it.desc,valor:Number(it.valor)||0,cat:it.categoria||''});});
   return out.sort((a,b)=>b.valor-a.valor);
 }
 window.FCX_abrirTodos=function(){FCX_todosFiltro='';const f=document.getElementById('fcxTodosFiltro');if(f)f.value='';document.getElementById('fcxTodosBg').classList.add('open');FCX_renderTodos();};
