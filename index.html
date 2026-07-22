@@ -772,6 +772,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <div class="nav-sub-wrap" id="subnav-pagar">
   <div class="nav-sub">
     <button class="active sub-pagar" onclick="showSubP('p-dashboard',this)">📊 Dashboard</button>
+    <button class="sub-pagar" onclick="showSubP('p-painel',this)">📈 Painel Geral</button>
     <button class="sub-pagar" onclick="showSubP('p-semana',this)">📆 Semana</button>
     <button class="sub-pagar" onclick="showSubP('p-periodo',this)">🗓 Por Período</button>
     <button class="sub-pagar" onclick="showSubP('p-contas',this)">📋 Contas</button>
@@ -1186,6 +1187,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Competência = a que mês a despesa se refere. Caixa = mês em que o dinheiro realmente saiu (data do pagamento). Ex.: energia de junho paga em julho aparece na competência JUN e no caixa JUL.</p>
     </div>
     <div id="compTabela" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- p-painel (Fase 9) -->
+  <div class="page" id="page-p-painel">
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📈 Painel Geral</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Visão consolidada do mês: saldo, projeção, a receber/pagar, cartões, fixas e alertas de gasto.</p>
+    </div>
+    <div class="cards-p" id="pnCards"></div>
+    <div class="cards-p" id="pnCards2" style="margin-top:12px"></div>
+    <div id="pnAlertas" style="margin-top:18px"></div>
   </div>
 
   <!-- p-rateio (Fase 8) -->
@@ -2305,6 +2317,7 @@ function renderSubPageP(id){
   if(id==='p-vencimentos')VENC_render();
   if(id==='p-fixas')FX_render();
   if(id==='p-rateio')RT_render();
+  if(id==='p-painel')PN_render();
 }
 
 function atualizarHeaderContexto(){
@@ -4291,6 +4304,52 @@ function COMP_render(){
       <td style="padding:10px 12px;text-align:right">${fmt(tc-tx)}</td>
     </tr></tfoot></table>
     <p style="font-size:.75rem;color:#9ca3af;margin-top:8px">Δ positivo = competência maior que o caixa (despesa reconhecida mas ainda não paga no mês). Pagamentos sem data caem no mês de origem do lançamento.</p>`;
+}
+
+// ══════════════════════════════════════════════════════
+// FASE 9 — PAINEL GERAL / DASHBOARD (módulo PN_)
+// Consolida contas (BC), receber (R), pagar (P), cartões (CC), fixas (FX).
+// Só leitura; sub-aba própria (não toca o Fluxo existente).
+// ══════════════════════════════════════════════════════
+function PN_custosFixosMes(mref){
+  return Object.values(FX_FIXAS||{}).filter(f=>f.status==='ativa'&&FX_mesesAplicaveis(f).includes(mref)).reduce((a,f)=>a+(Number(f.valorMedio)||0),0);
+}
+function PN_faturasAberto(){let t=0;Object.keys(CC_CARTOES||{}).forEach(cid=>{t+=CC_limiteUsado(cid);});return Math.round(t*100)/100;}
+function PN_alertas(mref){
+  const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
+  for(let i=Math.max(0,idx-3);i<idx;i++)prev.push(ord[i]);
+  const catMes={};(P_meses[mref]||[]).forEach(r=>{if(r.categoria)catMes[r.categoria]=(catMes[r.categoria]||0)+(Number(r.valor)||0);});
+  const catPrev={};prev.forEach(m=>(P_meses[m]||[]).forEach(r=>{if(r.categoria)catPrev[r.categoria]=(catPrev[r.categoria]||0)+(Number(r.valor)||0);}));
+  const out=[];
+  Object.keys(catMes).forEach(cat=>{const media=prev.length?(catPrev[cat]||0)/prev.length:0;if(media>0&&catMes[cat]>media*1.2)out.push({cat,mes:catMes[cat],media,pct:Math.round((catMes[cat]/media-1)*100)});});
+  return out.sort((a,b)=>b.pct-a.pct);
+}
+function PN_render(){
+  const mref=mesAtualReal();
+  const contas=BC_contasAtivas().filter(id=>BC_CONTAS[id].saldoConfigurado);
+  const saldoAtual=contas.reduce((a,id)=>a+(BC_saldoConta(id)||0),0);
+  const projetado=contas.reduce((a,id)=>a+(BC_calcularPrevisao(id)||0),0);
+  const aReceber=(R_todosOsDados||[]).filter(r=>r.mes===mref&&Number(r.saldo)>0).reduce((a,r)=>a+Number(r.saldo||0),0);
+  const data=P_meses[mref]||[];
+  const aPagar=data.filter(r=>String(r.status).toUpperCase()!=='PAGO').reduce((a,r)=>a+((Number(r.valor)||0)-(Number(r.valorPago)||0)),0);
+  const receita=(R_todosOsDados||[]).filter(r=>r.mes===mref).reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  const despesa=data.reduce((a,r)=>a+(Number(r.valor)||0),0);
+  const resultado=receita-despesa;
+  const faturas=PN_faturasAberto();const fixos=PN_custosFixosMes(mref);
+  const c1=document.getElementById('pnCards');
+  if(c1)c1.innerHTML=`
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>💰 Saldo atual</label><div class="val">${fmt(saldoAtual)}</div><div class="val-sub">${contas.length} conta(s)</div></div>
+    <div class="card-p" style="border-left:4px solid #7c3aed"><label>🔮 Saldo projetado</label><div class="val" style="color:${projetado>=0?'#16a34a':'#ef4444'}">${fmt(projetado)}</div><div class="val-sub">fim do mês</div></div>
+    <div class="card-p" style="border-left:4px solid #3b82f6"><label>📥 A receber — ${mref}</label><div class="val">${fmt(aReceber)}</div><div class="val-sub">em aberto</div></div>
+    <div class="card-p" style="border-left:4px solid #ef4444"><label>📤 A pagar — ${mref}</label><div class="val">${fmt(aPagar)}</div><div class="val-sub">em aberto</div></div>`;
+  const c2=document.getElementById('pnCards2');
+  if(c2)c2.innerHTML=`
+    <div class="card-p" style="border-left:4px solid ${resultado>=0?'#16a34a':'#ef4444'}"><label>📊 Resultado do mês</label><div class="val" style="color:${resultado>=0?'#16a34a':'#ef4444'}">${fmt(resultado)}</div><div class="val-sub">receita ${fmt(receita)} − despesa ${fmt(despesa)}</div></div>
+    <div class="card-p" style="border-left:4px solid #ec4899"><label>💳 Faturas de cartão</label><div class="val">${fmt(faturas)}</div><div class="val-sub">em aberto</div></div>
+    <div class="card-p" style="border-left:4px solid #f59e0b"><label>📌 Custos fixos</label><div class="val">${fmt(fixos)}</div><div class="val-sub">${receita>0?Math.round(fixos/receita*100):0}% do faturamento</div></div>
+    <div class="card-p" style="border-left:4px solid #6366f1"><label>💵 Despesa total</label><div class="val">${fmt(despesa)}</div><div class="val-sub">competência do mês</div></div>`;
+  const al=PN_alertas(mref);const el=document.getElementById('pnAlertas');
+  if(el)el.innerHTML=`<h4 style="font-size:.9rem;font-weight:700;color:#334155;margin-bottom:10px">⚠️ Gastos acima da média (vs. últimos 3 meses)</h4>`+(al.length?al.map(a=>{const ci=catInfoP(a.cat);return `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #ef4444;border-radius:10px;padding:11px 14px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span>${catBadgeP(a.cat)||ci.label} <b style="color:#b91c1c">+${a.pct}%</b> acima da média</span><span style="font-size:.82rem;color:#6b7280">${fmt(a.mes)} <span style="color:#9ca3af">(média ${fmt(a.media)})</span></span></div>`;}).join(''):'<div style="color:#16a34a;font-size:.85rem">✅ Nenhuma categoria fora do padrão neste mês.</div>');
 }
 
 // ══════════════════════════════════════════════════════
