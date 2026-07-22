@@ -81,6 +81,22 @@ body{background:#f0f4f8;color:#1e293b}
 .imp-dupb{font-size:.66rem;font-weight:700;background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:20px}
 .conf-pill{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px}
 .conf-alta{background:#dcfce7;color:#15803d}.conf-media{background:#fef3c7;color:#b45309}.conf-baixa{background:#ffedd5;color:#c2410c}.conf-revisar{background:#fee2e2;color:#b91c1c}
+/* ── Conciliação bancária (2 colunas) ── */
+.conc-secao{font-size:.95rem;font-weight:800;color:#0f172a;margin:20px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conc-sug{display:grid;grid-template-columns:1fr 44px 1fr;gap:10px;align-items:stretch;background:#fff;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin-bottom:10px}
+@media(max-width:820px){.conc-sug{grid-template-columns:1fr}.conc-sug .conc-liga{transform:rotate(90deg)}}
+.conc-lado{border:1px solid #eef2f7;border-radius:10px;padding:9px 11px;background:#fafbfc}
+.conc-lado .rot{font-size:.64rem;color:#94a3b8;font-weight:800;letter-spacing:.03em}
+.conc-liga{display:flex;align-items:center;justify-content:center;color:#16a34a;font-size:1.3rem}
+.conc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media(max-width:820px){.conc-grid2{grid-template-columns:1fr}}
+.conc-col{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;max-height:440px;overflow-y:auto}
+.conc-col h4{font-size:.78rem;color:#334155;margin:0 0 8px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.conc-item{border:1px solid #e5e7eb;border-radius:10px;padding:9px 11px;margin-bottom:7px;cursor:pointer;transition:all .12s}
+.conc-item:hover{border-color:#94a3b8}
+.conc-item.sel{border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 1px #16a34a inset}
+.conc-tag{font-size:.64rem;font-weight:800;padding:2px 8px;border-radius:20px}
+.conc-tag.ent{background:#dcfce7;color:#15803d}.conc-tag.sai{background:#fee2e2;color:#b91c1c}
 
 /* ── CONTAINER ── */
 .container{max-width:1280px;margin:0 auto;padding:22px 16px}
@@ -6900,36 +6916,68 @@ function dispensarLembreteBackup(){
 // Guarda o vínculo em banco_conciliados (mesma coleção do selo 🔗).
 // ══════════════════════════════════════════════════════
 const CONC_COL='banco_conciliados';
-const CONC_LINKS={}; // chave -> {chave,status,tipo,id,mes,movId,label,motivo,statusAntes,valorPagoAntes,ts}
+const CONC_LINKS={}; // chave -> {chave,status:'match'|'ignorado',tipo:'pagar'|'receber',id,mes,movId,label,statusAntes,valorPagoAntes,valorReservaAntes,saldoAntes,ts}
+let CONC_tol=7, CONC_busca='', CONC_filtroTipo='todos', CONC_selMov=null, CONC_selLanc=null;
 async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);}catch(e){}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();}
-function CONC_movLinkado(movId){return Object.values(CONC_LINKS).some(x=>x&&x.movId===movId);}
-function CONC_pagarLinkado(id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.tipo==='pagar'&&x.id===id&&x.mes===mes);}
-function CONC_extratoAberto(){return (BC_MOVS||[]).filter(m=>m.origemTipo==='import'&&m.tipo==='saida'&&!m.estornada&&!CONC_movLinkado(m.id));}
-function CONC_pagarCandidatos(){
-  const out=[];Object.keys(P_meses||{}).forEach(mes=>(P_meses[mes]||[]).forEach(r=>{
-    if(String(r.status).toUpperCase()==='PAGO')return;if(r.conciliadoMov)return;
-    const saldo=(Number(r.valor)||0)-(Number(r.valorPago)||0);if(saldo<=0)return;
-    out.push({r,mes,saldo});
-  }));return out;
-}
+function CONC_movLinkado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.movId===id);}
+function CONC_movIgnorado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='ignorado'&&x.movId===id);}
+function CONC_lancLinkado(tipo,id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.tipo===tipo&&String(x.id)===String(id)&&(tipo==='pagar'?x.mes===mes:true));}
+function CONC_movs(){return (BC_MOVS||[]).filter(m=>m.origemTipo==='import'&&!m.estornada);}
 function CONC_diasEntre(a,b){const da=new Date((a||'')+'T12:00:00'),db=new Date((b||'')+'T12:00:00');if(isNaN(da)||isNaN(db))return 999;return Math.abs(Math.round((da-db)/86400000));}
-function CONC_ranked(mov,cands){const v=Math.abs(Number(mov.valor)||0);
-  return cands.map(c=>{const exato=Math.abs(c.saldo-v)<0.01;
-    // proximidade por data de vencimento (mês+dia) da conta a pagar
-    let dd=999;try{const d=VENC_dataVenc(c.mes,c.r.dia);if(d)dd=CONC_diasEntre(mov.data,d.toISOString().slice(0,10));}catch(e){}
-    return {...c,exato,score:(exato?0:1000)+Math.min(dd,60)};}).sort((a,b)=>a.score-b.score);
+function CONC_brToIso(br){const p=(br||'').split('/');if(p.length===3)return p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0');return '';}
+function CONC_isoToKey(iso){const p=(iso||'').split('-');if(p.length<2)return '';return (MESES_ABREV[(+p[1])-1]||'JAN')+'/'+p[0];}
+// lançamentos em aberto do sistema
+function CONC_pagarAbertos(){const out=[];Object.keys(P_meses||{}).forEach(mes=>(P_meses[mes]||[]).forEach(r=>{if(String(r.status).toUpperCase()==='PAGO'||r.conciliadoMov)return;const saldo=(Number(r.valor)||0)-(Number(r.valorPago)||0);if(saldo<=0)return;let iso='';try{const d=VENC_dataVenc(mes,r.dia);if(d)iso=d.toISOString().slice(0,10);}catch(e){}out.push({tipo:'pagar',id:r.id,mes,nome:r.nome||'conta',valor:Math.round(saldo*100)/100,iso,r});}));return out;}
+function CONC_receberAbertos(){const out=[];(R_todosOsDados||[]).forEach(r=>{const saldo=Number(r.saldo)||0;if(saldo<=0||r.conciliadoMov)return;out.push({tipo:'receber',id:r.id,mes:r.mes||'',nome:r.cliente||r.desc||'recebimento',valor:Math.round(saldo*100)/100,iso:CONC_brToIso(r.data)||CONC_brToIso(r.vencimento),r});});return out;}
+function CONC_lancAbertos(){return CONC_pagarAbertos().concat(CONC_receberAbertos()).filter(c=>!CONC_lancLinkado(c.tipo,c.id,c.mes));}
+// candidatos que casam com uma movimentação (valor exato + tipo + tolerância de data)
+function CONC_candidatosDe(mov){
+  const isSaida=(mov.tipo==='saida'||mov.tipo==='transferencia_saida');
+  const lista=isSaida?CONC_pagarAbertos():CONC_receberAbertos();
+  const v=Math.abs(Number(mov.valor)||0);
+  return lista.filter(c=>Math.abs(c.valor-v)<0.01&&!CONC_lancLinkado(c.tipo,c.id,c.mes))
+    .map(c=>({...c,dias:c.iso?CONC_diasEntre(mov.data,c.iso):999}))
+    .filter(c=>c.dias<=CONC_tol).sort((a,b)=>a.dias-b.dias);
+}
+function CONC_optContas(){const ids=(typeof BC_contasAtivas==='function'?BC_contasAtivas():Object.keys(BC_CONTAS));return ids.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join('')||'<option value="">— cadastre uma conta —</option>';}
+function CONC_movCard(m,ctx){ // ctx: 'sug' (sem borda) | 'sel' (selecionável)
+  const saida=(m.tipo==='saida'||m.tipo==='transferencia_saida');const v=Math.abs(Number(m.valor)||0);
+  const selCls=(ctx==='sel'&&CONC_selMov===m.id)?' sel':'';
+  const onclick=ctx==='sel'?` onclick="CONC_selMovF('${m.id}')"`:'';
+  return `<div class="${ctx==='sel'?'conc-item'+selCls:'conc-lado'}"${onclick}>
+    <div class="rot">🧾 EXTRATO <span class="conc-tag ${saida?'sai':'ent'}">${saida?'saída':'entrada'}</span></div>
+    <div style="font-weight:700;color:#0f172a;font-size:.88rem">${(m.descricao||'—').replace(/</g,'&lt;')}</div>
+    <div style="font-size:.72rem;color:#6b7280">${BC_dataBR(m.data)||'—'} · ${(BC_CONTAS[m.contaId]||{}).nome||''}</div>
+    <div style="font-weight:800;margin-top:2px;color:${saida?'#ef4444':'#16a34a'}">${saida?'−':'+'} ${fmt(v)}</div></div>`;
+}
+function CONC_lancCard(c,ctx){
+  const selKey=c.tipo+'|'+c.id+'|'+(c.mes||'');
+  const selCls=(ctx==='sel'&&CONC_selLanc===selKey)?' sel':'';
+  const onclick=ctx==='sel'?` onclick="CONC_selLancF('${selKey}')"`:'';
+  const rot=c.tipo==='pagar'?'📄 CONTA A PAGAR':'📥 CONTA A RECEBER';
+  return `<div class="${ctx==='sel'?'conc-item'+selCls:'conc-lado'}"${onclick} style="${ctx==='sel'?'':'text-align:right'}">
+    <div class="rot">${rot}</div>
+    <div style="font-weight:700;color:#0f172a;font-size:.88rem">${(c.nome||'—').replace(/</g,'&lt;')}</div>
+    <div style="font-size:.72rem;color:#6b7280">${c.iso?BC_dataBR(c.iso):(c.mes||'')}</div>
+    <div style="font-weight:800;margin-top:2px;color:#0f172a">${fmt(c.valor)}</div></div>`;
 }
 function CONC_render(){
   const resumo=document.getElementById('concResumo');const lista=document.getElementById('concLista');if(!lista)return;
-  const abertos=CONC_extratoAberto();
-  const links=Object.values(CONC_LINKS).filter(x=>x&&x.tipo==='pagar'&&x.movId);
-  const contasIds=(typeof BC_contasAtivas==='function'?BC_contasAtivas():Object.keys(BC_CONTAS));
-  const optContas=contasIds.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join('')||'<option value="">— cadastre uma conta —</option>';
+  // classifica movimentações
+  const movsAll=CONC_movs();
+  const q=(CONC_busca||'').toLowerCase();
+  const passaFiltro=m=>{if(CONC_filtroTipo==='entrada'&&!(m.tipo==='entrada'||m.tipo==='transferencia_entrada'))return false;if(CONC_filtroTipo==='saida'&&!(m.tipo==='saida'||m.tipo==='transferencia_saida'))return false;if(q){const d=(m.descricao||'').toLowerCase();if(d.indexOf(q)<0&&String(Math.abs(m.valor)).indexOf(q)<0)return false;}return true;};
+  const abertos=movsAll.filter(m=>!CONC_movLinkado(m.id)&&!CONC_movIgnorado(m.id)&&passaFiltro(m));
+  const sug=[],amb=[],sem=[];
+  abertos.forEach(m=>{const c=CONC_candidatosDe(m);if(c.length===1)sug.push({m,c:c[0]});else if(c.length>=2)amb.push({m,c});else sem.push({m});});
+  const conc=Object.values(CONC_LINKS).filter(x=>x&&x.status==='match');
+  const ign=movsAll.filter(m=>CONC_movIgnorado(m.id));
+  // ── resumo: importar + toolbar + status ──
   if(resumo)resumo.innerHTML=`
   <div class="card-cc" style="margin-bottom:14px">
     <h3 style="font-size:1rem;font-weight:700;color:#0f172a;margin:0">📥 Trazer extrato</h3>
-    <p style="font-size:.82rem;color:#6b7280;margin:4px 0 10px">Importe o extrato (OFX, PDF ou foto) e concilie aqui mesmo. A Sophia lê, categoriza e você revisa — nada é lançado sem sua confirmação.</p>
-    <div class="form-group" style="max-width:340px"><label>Conta do extrato</label><select id="concImpConta">${optContas}</select></div>
+    <p style="font-size:.82rem;color:#6b7280;margin:4px 0 10px">Importe o extrato (OFX, PDF ou foto). O sistema compara com os lançamentos e sugere as conciliações — você confirma com um clique.</p>
+    <div class="form-group" style="max-width:340px"><label>Conta do extrato</label><select id="concImpConta">${CONC_optContas()}</select></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px">
       <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
       <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens do extrato</span><input type="file" accept="image/*" multiple style="display:none" onchange="CONC_impArquivo(this,'gemini')"/></label>
@@ -6940,84 +6988,118 @@ function CONC_render(){
     <div id="concImpReview" style="margin-top:12px"></div>
   </div>
   <div class="cards-p">
-    <div class="card-p" style="border-left:4px solid #ef4444"><label>🧾 Débitos do extrato a conciliar</label><div class="val">${abertos.length}</div><div class="val-sub">${fmt(abertos.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0))}</div></div>
-    <div class="card-p" style="border-left:4px solid #16a34a"><label>🔗 Conciliados</label><div class="val">${links.length}</div></div>
+    <div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Sugestões</label><div class="val">${sug.length}</div></div>
+    <div class="card-p" style="border-left:4px solid #b45309"><label>❓ Sem correspondência</label><div class="val">${sem.length+amb.length}</div></div>
+    <div class="card-p" style="border-left:4px solid #1e40af"><label>🔗 Conciliadas</label><div class="val">${conc.length}</div></div>
+    <div class="card-p" style="border-left:4px solid #94a3b8"><label>🚫 Ignoradas</label><div class="val">${ign.length}</div></div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px">
+    <input type="text" value="${(CONC_busca||'').replace(/"/g,'&quot;')}" oninput="CONC_setBusca(this.value)" placeholder="🔍 Buscar por descrição ou valor…" style="flex:1;min-width:180px;border:1px solid #e5e7eb;border-radius:8px;padding:8px 11px;font-size:.85rem">
+    <select onchange="CONC_setFiltroTipo(this.value)" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:.83rem;background:#fff"><option value="todos" ${CONC_filtroTipo==='todos'?'selected':''}>Entradas e saídas</option><option value="entrada" ${CONC_filtroTipo==='entrada'?'selected':''}>Só entradas</option><option value="saida" ${CONC_filtroTipo==='saida'?'selected':''}>Só saídas</option></select>
+    <select onchange="CONC_setTol(this.value)" title="Tolerância de data" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:.83rem;background:#fff"><option value="0" ${CONC_tol===0?'selected':''}>Mesmo dia</option><option value="3" ${CONC_tol===3?'selected':''}>Até 3 dias</option><option value="5" ${CONC_tol===5?'selected':''}>Até 5 dias</option><option value="7" ${CONC_tol===7?'selected':''}>Até 7 dias</option></select>
   </div>`;
-  const cands=CONC_pagarCandidatos();
+  // ── seções ──
   let html='';
-  if(!abertos.length)html+='<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;color:#16a34a;font-size:.9rem">✅ Nenhum débito do extrato pendente de conciliação. Traga um extrato acima pra começar.</div>';
-  else{
-    const nBatem=abertos.filter(m=>{const b=CONC_ranked(m,cands)[0];return b&&b.exato;}).length;
-    if(nBatem)html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-bottom:12px">
-      <span style="font-size:.88rem;color:#166534">✅ <b>${nBatem}</b> débito(s) com <b>valor idêntico</b> a uma conta a pagar — dá pra conciliar de uma vez.</span>
-      <button class="btn" style="width:auto;background:#16a34a;color:#fff;border:none" onclick="CONC_conciliarTodos()">🔗 Conciliar todos que batem</button></div>`;
-    html+=abertos.map(m=>{
-      const rk=CONC_ranked(m,cands);const best=rk[0];const mval=Math.abs(Number(m.valor)||0);
-      const bate=best&&best.exato;const dif=best?Math.round((mval-best.saldo)*100)/100:null;
-      const opts='<option value="">— escolher outra conta —</option>'+rk.map(c=>`<option value="${c.mes}|${c.r.id}" ${best&&c===best?'selected':''}>${(c.r.nome||'').replace(/</g,'&lt;')} · ${fmt(c.saldo)} · ${c.mes}${c.exato?' ✓':''}</option>`).join('');
-      const ladoConta=best
-        ? `<div style="font-size:.68rem;color:#94a3b8;font-weight:800;letter-spacing:.03em">📄 CONTA A PAGAR</div>
-           <div style="font-weight:700;color:#0f172a;font-size:.9rem">${(best.r.nome||'').replace(/</g,'&lt;')}</div>
-           <div style="font-size:.72rem;color:#6b7280">vence dia ${best.r.dia||'—'} · ${best.mes}</div>
-           <div style="font-size:1.05rem;font-weight:800;color:#0f172a;margin-top:2px">${fmt(best.saldo)}</div>`
-        : `<div style="color:#9ca3af;font-size:.84rem">Sem conta a pagar parecida.<br>Escolha manualmente abaixo.</div>`;
-      return `<div style="background:#fff;border:1px solid ${bate?'#bbf7d0':'#e5e7eb'};border-radius:12px;padding:14px;margin-bottom:10px">
-        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center">
-          <div>
-            <div style="font-size:.68rem;color:#94a3b8;font-weight:800;letter-spacing:.03em">🧾 EXTRATO</div>
-            <div style="font-weight:700;color:#0f172a;font-size:.9rem">${(m.descricao||'Débito').replace(/</g,'&lt;')}</div>
-            <div style="font-size:.72rem;color:#6b7280">${BC_dataBR(m.data)||'—'} · ${(BC_CONTAS[m.contaId]||{}).nome||''}</div>
-            <div style="font-size:1.05rem;font-weight:800;color:#ef4444;margin-top:2px">− ${fmt(mval)}</div>
-          </div>
-          <div style="text-align:center"><div style="font-size:1.4rem">${bate?'✅':(best?'≈':'❓')}</div>
-            <div style="font-size:.64rem;font-weight:800;color:${bate?'#16a34a':(best?'#b45309':'#94a3b8')}">${bate?'valores batem':(best?('dif. '+fmt(Math.abs(dif))):'—')}</div></div>
-          <div style="text-align:right">${ladoConta}</div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <details style="flex:1;min-width:180px"><summary style="font-size:.76rem;color:#6b7280;cursor:pointer">trocar conta a pagar</summary>
-            <select id="conc-sel-${m.id}" onchange="if(this.value)CONC_conciliar('${m.id}',this.value)" style="margin-top:6px;width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 9px;font-size:.82rem;background:#fff">${opts}</select>
-          </details>
-          ${best?`<button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}','${best.mes}|${best.r.id}')">🔗 Conciliar</button>`:''}
-        </div>
-      </div>`;
-    }).join('');
+  // 1) Sugestões
+  html+=`<div class="conc-secao">✅ Sugestões encontradas (${sug.length}) ${sug.length?`<button class="btn" style="width:auto;background:#16a34a;color:#fff;border:none;font-size:.8rem;padding:6px 12px" onclick="CONC_conciliarTodas()">🔗 Conciliar todas</button>`:''}</div>`;
+  if(!sug.length)html+='<div style="color:#9ca3af;font-size:.85rem;margin-bottom:6px">Nenhuma sugestão automática. Importe um extrato ou concilie manualmente abaixo.</div>';
+  else html+=sug.map(({m,c})=>{const key=c.tipo+'|'+c.id+'|'+(c.mes||'');return `<div class="conc-sug">
+    ${CONC_movCard(m,'sug')}
+    <div class="conc-liga">↔</div>
+    ${CONC_lancCard(c,'sug')}
+    <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+      <button onclick="CONC_ignorar('${m.id}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:6px 10px;font-size:.78rem;color:#6b7280">🚫 Ignorar</button>
+      <button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}','${key}')">🔗 Conciliar</button></div>
+  </div>`;}).join('');
+  // ambíguos (2+ mesmo valor) — escolher manualmente
+  if(amb.length){html+=`<div class="conc-secao" style="font-size:.85rem;color:#b45309">⚠️ Vários lançamentos com o mesmo valor (${amb.length}) — escolha qual</div>`;
+    html+=amb.map(({m,c})=>{const opts=c.map(x=>`<option value="${x.tipo}|${x.id}|${x.mes||''}">${(x.nome||'').replace(/</g,'&lt;')} · ${fmt(x.valor)} · ${x.iso?BC_dataBR(x.iso):(x.mes||'')}</option>`).join('');
+      return `<div class="conc-sug" style="border-color:#fde68a">${CONC_movCard(m,'sug')}<div class="conc-liga">↔</div>
+        <div class="conc-lado"><div class="rot">ESCOLHA O LANÇAMENTO</div><select id="camb-${m.id}" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 9px;font-size:.82rem;margin-top:4px;background:#fff">${opts}</select></div>
+        <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:4px"><button onclick="CONC_ignorar('${m.id}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:6px 10px;font-size:.78rem;color:#6b7280">🚫 Ignorar</button><button class="btn btn-purple" style="width:auto" onclick="CONC_conciliar('${m.id}',document.getElementById('camb-${m.id}').value)">🔗 Conciliar</button></div></div>`;}).join('');
   }
-  if(links.length){
-    html+=`<h4 style="font-size:.85rem;font-weight:700;color:#334155;margin:18px 0 8px">🔗 Já conciliados (${links.length})</h4>`;
-    html+=links.map(x=>{const mov=(BC_MOVS||[]).find(m=>m.id===x.movId);const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));
-      return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div style="font-size:.85rem;color:#166534"><b>${r?(r.nome||'conta'):(x.label||'conta')}</b> ${x.mes} ↔ 🧾 ${mov?((mov.descricao||'').replace(/</g,'&lt;')):'débito'} · ${fmt(mov?Math.abs(Number(mov.valor)||0):0)}</div>
-        <button onclick="CONC_desfazer('${x.chave}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:5px 10px;font-size:.78rem;color:#6b7280">↩️ Desfazer</button>
-      </div>`;}).join('');
+  // 2) Sem correspondência — 2 colunas + seleção manual
+  html+=`<div class="conc-secao">❓ Sem correspondência (${sem.length})${(CONC_selMov&&CONC_selLanc)?` <button class="btn btn-purple" style="width:auto;font-size:.8rem;padding:6px 12px" onclick="CONC_conciliarSelecionados()">🔗 Conciliar selecionados</button>`:` <span style="font-size:.76rem;color:#94a3b8;font-weight:500">selecione 1 de cada lado pra conciliar manualmente</span>`}</div>`;
+  const lancAb=CONC_lancAbertos();
+  html+=`<div class="conc-grid2">
+    <div class="conc-col"><h4>🧾 Extrato (sem par)</h4>${sem.length?sem.map(({m})=>`<div>${CONC_movCard(m,'sel')}<div style="display:flex;gap:6px;margin:-2px 0 8px;flex-wrap:wrap"><button onclick="event.stopPropagation();CONC_criarLanc('${m.id}','${(m.tipo==='saida'||m.tipo==='transferencia_saida')?'pagar':'receber'}')" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:7px;cursor:pointer;padding:4px 9px;font-size:.74rem;color:#334155">➕ Criar conta a ${(m.tipo==='saida'||m.tipo==='transferencia_saida')?'pagar':'receber'}</button><button onclick="event.stopPropagation();CONC_ignorar('${m.id}')" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:7px;cursor:pointer;padding:4px 9px;font-size:.74rem;color:#6b7280">🚫 Ignorar</button></div></div>`).join(''):'<div style="color:#9ca3af;font-size:.82rem">Tudo com par ✅</div>'}</div>
+    <div class="conc-col"><h4>💼 Lançamentos do sistema (em aberto)</h4>${lancAb.length?lancAb.map(c=>CONC_lancCard(c,'sel')).join(''):'<div style="color:#9ca3af;font-size:.82rem">Nada em aberto.</div>'}</div>
+  </div>`;
+  // 3) Conciliadas
+  html+=`<div class="conc-secao">🔗 Conciliadas (${conc.length})</div>`;
+  html+=conc.length?conc.map(x=>{const mov=movsAll.find(m=>m.id===x.movId);return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div style="font-size:.85rem;color:#166534"><span class="conc-tag ${x.tipo==='receber'?'ent':'sai'}">${x.tipo==='receber'?'entrada':'saída'}</span> <b>${(x.label||'lançamento').replace(/</g,'&lt;')}</b> ↔ 🧾 ${mov?((mov.descricao||'').replace(/</g,'&lt;')):'movimentação'} · ${fmt(mov?Math.abs(Number(mov.valor)||0):0)}</div>
+    <button onclick="CONC_desfazer('${x.chave}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:5px 10px;font-size:.78rem;color:#6b7280">↩️ Desfazer</button></div>`;}).join(''):'<div style="color:#9ca3af;font-size:.82rem">Nada conciliado ainda.</div>';
+  // 4) Ignoradas
+  if(ign.length){html+=`<div class="conc-secao">🚫 Ignoradas (${ign.length})</div>`;
+    html+=ign.map(m=>`<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:9px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-size:.83rem;color:#64748b">🧾 ${(m.descricao||'').replace(/</g,'&lt;')} · ${BC_dataBR(m.data)||''} · ${fmt(Math.abs(Number(m.valor)||0))}</div><button onclick="CONC_reativar('${m.id}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:5px 10px;font-size:.78rem;color:#6b7280">↩️ Voltar pra lista</button></div>`).join('');
   }
   lista.innerHTML=html;
   const sc=document.getElementById('concImpConta');
   if(typeof IMP_ofereceRascunho==='function'&&!IMP_previa.length&&sc)IMP_ofereceRascunho('conta',sc.value,'concImpAviso');
 }
+window.CONC_setBusca=function(v){CONC_busca=v;const l=document.getElementById('concLista');/* re-render só a lista pra não perder foco do input */ if(l){/* leve debounce visual */ } CONC_render();const inp=document.querySelector('#concResumo input[type=text]');if(inp){inp.focus();inp.setSelectionRange(v.length,v.length);}};
+window.CONC_setFiltroTipo=function(v){CONC_filtroTipo=v;CONC_render();};
+window.CONC_setTol=function(v){CONC_tol=parseInt(v)||0;CONC_render();};
+window.CONC_selMovF=function(id){CONC_selMov=(CONC_selMov===id?null:id);CONC_render();};
+window.CONC_selLancF=function(key){CONC_selLanc=(CONC_selLanc===key?null:key);CONC_render();};
+function CONC_conciliarSelecionados(){if(!CONC_selMov||!CONC_selLanc){toast('Selecione uma do extrato e uma do sistema.','#f59e0b');return;}CONC_conciliar(CONC_selMov,CONC_selLanc);}
 async function CONC_conciliar(movId,val){
-  if(!val){const sel=document.getElementById('conc-sel-'+movId);val=sel?sel.value:'';}
-  if(!val){toast('Escolha a conta a pagar correspondente.','#f59e0b');return;}
-  const [mes,pid]=val.split('|');
-  const mov=(BC_MOVS||[]).find(m=>m.id===movId);const r=(P_meses[mes]||[]).find(y=>String(y.id)===String(pid));
-  if(!mov||!r){toast('Item não encontrado.','#ef4444');return;}
+  if(!val){toast('Escolha o lançamento correspondente.','#f59e0b');return;}
+  const parts=String(val).split('|');const tipo=parts[0],id=parts[1],mes=parts[2]||'';
+  const mov=CONC_movs().find(m=>m.id===movId);if(!mov){toast('Movimentação não encontrada.','#ef4444');return;}
+  if(CONC_movLinkado(movId)){toast('Essa movimentação já foi conciliada.','#f59e0b');return;}
   const chave='conc_'+movId;
-  const link={chave,status:'match',tipo:'pagar',id:r.id,mes,movId,label:r.nome||'',motivo:'conciliacao_manual',statusAntes:r.status,valorPagoAntes:(Number(r.valorPago)||0),ts:new Date().toISOString()};
-  CONC_LINKS[chave]=link;await CC_fbSalvar(CONC_COL,chave,link);
-  // marca a conta como paga (data do extrato) + vincula, SEM postar nova movimentação
-  r.status='PAGO';r.valorPago=Number(r.valor)||0;r.dataPagamento=mov.data||r.dataPagamento;r.contaBancariaId=mov.contaId;r.conciliadoMov=movId;
-  P_salvarStorage();
-  mov.conciliadoPagar=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
-  if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato ('+(BC_dataBR(mov.data)||'')+')',null,r.valorPago);
-  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
-  toast('🔗 Conciliado: '+r.nome+' ↔ extrato.');
+  if(tipo==='pagar'){
+    const r=(P_meses[mes]||[]).find(y=>String(y.id)===String(id));if(!r){toast('Lançamento não encontrado.','#ef4444');return;}
+    if(CONC_lancLinkado('pagar',id,mes)){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
+    CONC_LINKS[chave]={chave,status:'match',tipo:'pagar',id:r.id,mes,movId,label:r.nome||'',statusAntes:r.status,valorPagoAntes:(Number(r.valorPago)||0),ts:new Date().toISOString()};
+    await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);
+    r.status='PAGO';r.valorPago=Number(r.valor)||0;r.dataPagamento=mov.data||r.dataPagamento;r.contaBancariaId=mov.contaId;r.conciliadoMov=movId;P_salvarStorage();
+    mov.conciliadoPagar=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
+    if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato',null,r.valorPago);
+    toast('🔗 Conciliado: '+r.nome);
+  }else{
+    const r=(R_todosOsDados||[]).find(y=>String(y.id)===String(id));if(!r){toast('Lançamento não encontrado.','#ef4444');return;}
+    if(CONC_lancLinkado('receber',id)){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
+    CONC_LINKS[chave]={chave,status:'match',tipo:'receber',id:r.id,mes:r.mes||'',movId,label:r.cliente||r.desc||'',valorReservaAntes:(Number(r.valorReserva)||0),saldoAntes:(Number(r.saldo)||0),ts:new Date().toISOString()};
+    await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);
+    r.valorReserva=Math.round(((Number(r.valorReserva)||0)+(Number(r.saldo)||0))*100)/100;r.saldo=0;r.conciliadoMov=movId;
+    if(typeof R_fbSalvar==='function')R_fbSalvar(r);
+    mov.conciliadoReceber=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
+    if(typeof AUD_log==='function')AUD_log('editar','lancamentos',r.cliente||'recebimento','Conciliado com o extrato (recebido)',null,null);
+    toast('🔗 Conciliado (recebido): '+(r.cliente||r.desc||''));
+  }
+  CONC_selMov=null;CONC_selLanc=null;
+  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();if(typeof renderDashboardP==='function')renderDashboardP();
 }
-async function CONC_conciliarTodos(){
-  const cands=CONC_pagarCandidatos();const abertos=CONC_extratoAberto();
-  const pares=[];const usados=new Set();
-  abertos.forEach(m=>{const best=CONC_ranked(m,cands)[0];if(best&&best.exato){const key=best.mes+'|'+best.r.id;if(usados.has(key))return;usados.add(key);pares.push({movId:m.id,val:key});}});
-  if(!pares.length){toast('Nenhum par com valor idêntico pra conciliar.','#f59e0b');return;}
+async function CONC_conciliarTodas(){
+  const abertos=CONC_movs().filter(m=>!CONC_movLinkado(m.id)&&!CONC_movIgnorado(m.id));
+  const usados=new Set();const pares=[];
+  abertos.forEach(m=>{const c=CONC_candidatosDe(m);if(c.length===1){const key=c[0].tipo+'|'+c[0].id+'|'+(c[0].mes||'');if(usados.has(key))return;usados.add(key);pares.push({movId:m.id,val:key});}});
+  if(!pares.length){toast('Nenhuma sugestão única pra conciliar.','#f59e0b');return;}
   let n=0;for(const p of pares){await CONC_conciliar(p.movId,p.val);n++;}
   toast('🔗 '+n+' conciliação(ões) feitas de uma vez.');
+}
+async function CONC_ignorar(movId){const mov=CONC_movs().find(m=>m.id===movId);const chave='ign_'+movId;CONC_LINKS[chave]={chave,status:'ignorado',movId,label:mov?mov.descricao:'',ts:new Date().toISOString()};await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);if(typeof AUD_log==='function')AUD_log('editar','movimentacoes_contas',mov?mov.descricao:'',' Movimentação ignorada na conciliação',null,null);CONC_render();toast('🚫 Movimentação ignorada.','#6b7280');}
+async function CONC_reativar(movId){const chave='ign_'+movId;if(CONC_LINKS[chave]){delete CONC_LINKS[chave];await CC_fbExcluir(CONC_COL,chave);}CONC_render();toast('↩️ Voltou pra lista.','#6b7280');}
+async function CONC_criarLanc(movId,tipo){
+  const mov=CONC_movs().find(m=>m.id===movId);if(!mov)return;
+  const nomeDef=(mov.descricao||'').replace(/^📥\s*/,'').trim();
+  const nome=prompt('Nome do lançamento a criar:',nomeDef);if(nome===null)return;
+  const v=Math.abs(Number(mov.valor)||0);const iso=mov.data||BC_hoje();const mesKey=CONC_isoToKey(iso)||mesAtualReal();
+  if(tipo==='pagar'){
+    if(!P_meses[mesKey])P_meses[mesKey]=[];
+    const id=gerarId();const dia=parseInt((iso.split('-')[2]))||null;
+    P_meses[mesKey].push({id,nome:nome||'Lançamento',valor:v,valorPago:0,dia,mes:mesKey,categoria:mov.categoria||'',fixa:false,status:'PENDENTE',cod:'',obs:'Criado do extrato',dataCriacao:new Date().toISOString()});
+    P_salvarStorage();
+    await CONC_conciliar(movId,'pagar|'+id+'|'+mesKey);
+  }else{
+    const id=gerarId();
+    R_todosOsDados.push({id,cliente:nome||'Recebimento',mes:mesKey,data:BC_dataBR(iso),vencimento:'-',studio:'',horario:'',horas:0,valorTotal:v,valorReserva:0,saldo:v,desc:'Criado do extrato',obs:''});
+    if(typeof R_fbSalvar==='function')R_fbSalvar(R_todosOsDados[R_todosOsDados.length-1]);
+    await CONC_conciliar(movId,'receber|'+id+'|'+mesKey);
+  }
 }
 function CONC_irImportar(){const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);}
 function CONC_impArquivo(input,modo){
@@ -7029,12 +7111,12 @@ function CONC_impArquivo(input,modo){
 }
 async function CONC_desfazer(chave){
   const x=CONC_LINKS[chave];if(!x)return;
-  const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));
-  if(r){r.status=x.statusAntes||'PENDENTE';r.valorPago=(x.valorPagoAntes!=null?x.valorPagoAntes:0);delete r.conciliadoMov;if(x.statusAntes!=='PAGO')delete r.dataPagamento;P_salvarStorage();}
-  const mov=(BC_MOVS||[]).find(m=>m.id===x.movId);if(mov){delete mov.conciliadoPagar;BC_fbUpsert(BC_COL_MOV,mov.id,mov);}
+  if(x.tipo==='pagar'){const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));if(r){r.status=x.statusAntes||'PENDENTE';r.valorPago=(x.valorPagoAntes!=null?x.valorPagoAntes:0);delete r.conciliadoMov;if(x.statusAntes!=='PAGO')delete r.dataPagamento;P_salvarStorage();}}
+  else if(x.tipo==='receber'){const r=(R_todosOsDados||[]).find(y=>String(y.id)===String(x.id));if(r){if(x.valorReservaAntes!=null)r.valorReserva=x.valorReservaAntes;if(x.saldoAntes!=null)r.saldo=x.saldoAntes;delete r.conciliadoMov;if(typeof R_fbSalvar==='function')R_fbSalvar(r);}}
+  const mov=CONC_movs().find(m=>m.id===x.movId);if(mov){delete mov.conciliadoPagar;delete mov.conciliadoReceber;BC_fbUpsert(BC_COL_MOV,mov.id,mov);}
   delete CONC_LINKS[chave];await CC_fbExcluir(CONC_COL,chave);
-  if(typeof AUD_log==='function')AUD_log('editar','meses',r?r.nome:(x.label||''),'Conciliação desfeita',null,null);
-  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();renderDashboardP();
+  if(typeof AUD_log==='function')AUD_log('editar',x.tipo==='receber'?'lancamentos':'meses',x.label||'',' Conciliação desfeita',null,null);
+  CONC_render();if(subPAtivo==='p-contas')renderTabelaP();if(typeof renderDashboardP==='function')renderDashboardP();
   toast('↩️ Conciliação desfeita.','#6b7280');
 }
 
