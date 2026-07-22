@@ -36,6 +36,31 @@ body{background:#f0f4f8;color:#1e293b}
 .nav-sub-wrap{display:none}
 .nav-sub-wrap.active{display:block}
 
+/* ── SUB-ABAS DO CARTÃO (estilo Nossa Semente) ── */
+.cc-subtabs{display:flex;gap:4px;flex-wrap:wrap;background:#eef2f7;padding:5px;border-radius:14px;width:fit-content;max-width:100%;margin-bottom:18px}
+.cc-subtab{background:transparent;border:none;cursor:pointer;font-size:.92rem;font-weight:700;color:#64748b;padding:8px 16px;border-radius:10px;transition:all .15s}
+.cc-subtab:hover{color:#334155}
+.cc-subtab.active{background:#fff;color:#16a34a;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card-cc{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px 20px}
+.cc-imp-modo{display:flex;flex-direction:column;gap:2px;align-items:flex-start;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px;cursor:pointer;transition:all .15s}
+.cc-imp-modo:hover{border-color:#16a34a;background:#f0fdf4}
+.cc-imp-modo .ic{font-size:1.4rem}
+.cc-imp-modo b{font-size:.9rem;color:#0f172a;margin-top:4px}
+.cc-imp-modo .sub{font-size:.76rem;color:#6b7280}
+.cc-faturas-grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
+@media(max-width:760px){.cc-faturas-grid{grid-template-columns:1fr}}
+.cc-fat-item{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .12s;background:#fff}
+.cc-fat-item:hover{border-color:#16a34a;background:#f0fdf4}
+.cc-fat-item.sel{border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 1px #16a34a inset}
+.cc-fat-badge{font-size:.62rem;font-weight:800;padding:2px 7px;border-radius:20px;letter-spacing:.02em}
+.cc-cat-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e5e7eb;border-radius:20px;padding:5px 11px;font-size:.8rem;cursor:pointer;background:#fff;transition:all .12s}
+.cc-cat-chip:hover{border-color:#94a3b8}
+.cc-cat-chip.sel{border-color:#16a34a;background:#f0fdf4}
+.cc-cat-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.sophia-badge{background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:20px}
+.sophia-chip{background:#fff;border:1px solid #e5e7eb;border-radius:22px;padding:9px 15px;font-size:.85rem;font-weight:600;color:#334155;cursor:pointer;transition:all .12s}
+.sophia-chip:hover{border-color:#16a34a;color:#16a34a;background:#f0fdf4}
+
 /* ── CONTAINER ── */
 .container{max-width:1280px;margin:0 auto;padding:22px 16px}
 .page{display:none}.page.active{display:block}
@@ -1334,20 +1359,56 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 ════════════════════════════════════════ -->
 <div class="page" id="page-cartoes">
   <div class="container">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-      <div>
-        <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">💳 Cartões de Crédito</h2>
-        <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Limites, compras parceladas e faturas automáticas. Feche a fatura pra gerar a conta a pagar.</p>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-outline-b" onclick="IMP_abrir('cartao')">📥 Importar fatura</button>
-        <button class="btn btn-outline-b" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
-        <button class="btn btn-purple" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
+    <!-- sub-abas do cartão (estilo Nossa Semente) -->
+    <div class="cc-subtabs">
+      <button class="cc-subtab active" id="ccTabCartoes" onclick="CC_aba('cartoes',this)">💳 Meus cartões</button>
+      <button class="cc-subtab" id="ccTabImportar" onclick="CC_aba('importar',this)">📥 Importar fatura</button>
+      <button class="cc-subtab" id="ccTabFaturas" onclick="CC_aba('faturas',this)">📄 Faturas</button>
+    </div>
+
+    <!-- ── Meus cartões ── -->
+    <div class="cc-panel" id="ccPanelCartoes">
+      <div class="card-cc">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <h2 style="font-size:1.1rem;font-weight:700;color:#0f172a;margin:0">💳 Meus cartões</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline-b" style="width:auto" onclick="CC_abrirModalCompra()">➕ Nova compra</button>
+            <button class="btn btn-purple" style="width:auto" onclick="CC_abrirModalCartao()">➕ Novo cartão</button>
+          </div>
+        </div>
+        <div id="ccListaCartoes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:14px"></div>
       </div>
     </div>
-    <div id="ccListaCartoes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
-    <div id="ccResumo" style="margin-top:20px"></div>
-    <div id="ccFaturasWrap" style="margin-top:24px"></div>
+
+    <!-- ── Importar fatura (Trazer minha fatura) ── -->
+    <div class="cc-panel" id="ccPanelImportar" style="display:none">
+      <div class="card-cc">
+        <h2 style="font-size:1.1rem;font-weight:700;color:#0f172a;margin:0">🧾 Trazer minha fatura</h2>
+        <p style="font-size:.84rem;color:#6b7280;margin:4px 0 0">A IA lê, organiza e prepara tudo para você revisar. <span style="opacity:.7">Nada é lançado antes da sua confirmação.</span></p>
+        <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-top:12px">
+          <div style="font-weight:800;color:#334155;margin-bottom:10px">Para qual fatura vamos trazer os lançamentos?</div>
+          <div class="form-row">
+            <div class="form-group"><label>Cartão</label><select id="ccImpCartao"></select></div>
+            <div class="form-group"><label>Mês da fatura (vencimento)</label><input type="month" id="ccImpMes"/></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-cc" style="margin-top:14px">
+        <div style="font-weight:800;color:#0f172a">Como deseja trazer sua fatura?</div>
+        <p style="font-size:.84rem;color:#6b7280;margin:2px 0 0">A IA identifica compras, valores, datas, categorias e parcelas.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px">
+          <label class="cc-imp-modo"><span class="ic">✨</span><b>PDF com a IA</b><span class="sub">A IA lê o PDF pra você</span><input type="file" accept="application/pdf,.pdf" style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
+          <label class="cc-imp-modo"><span class="ic">🖼️</span><b>Escolher da galeria</b><span class="sub">Imagens da fatura</span><input type="file" accept="image/*" multiple style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
+          <label class="cc-imp-modo"><span class="ic">📷</span><b>Tirar fotos</b><span class="sub">Uma foto por página</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="CC_impArquivo(this,'gemini')"/></label>
+          <label class="cc-imp-modo"><span class="ic">📄</span><b>Arquivo OFX</b><span class="sub">Extrato .ofx do banco</span><input type="file" accept=".ofx,.qfx" style="display:none" onchange="CC_impArquivo(this,'ofx')"/></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Faturas ── -->
+    <div class="cc-panel" id="ccPanelFaturas" style="display:none">
+      <div id="ccFaturasWrap"></div>
+    </div>
   </div>
 </div>
 
@@ -1447,16 +1508,27 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 ════════════════════════════════════════ -->
 <div class="page" id="page-sophia">
   <div class="container">
-    <div style="margin-bottom:12px">
-      <h2 style="font-size:1.15rem;font-weight:700;color:#0f172a">✨ Sophia — assistente financeira</h2>
-      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Pergunte sobre as finanças da WEN. A Sophia usa um resumo dos seus dados (sem enviar tudo) + a IA do Gemini.</p>
+    <!-- Resumo da Sophia -->
+    <div class="card-cc" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin:0">📊 Resumo da Sophia</h2><span class="sophia-badge">✨ Sophia</span></div>
+      <p style="font-size:.85rem;color:#6b7280;margin:6px 0 0">Toque num período e a Sophia conta como estão as finanças da WEN.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button class="sophia-chip" onclick="SOPHIA_resumo('hoje')">📅 Hoje</button>
+        <button class="sophia-chip" onclick="SOPHIA_resumo('semana')">📝 Semana</button>
+        <button class="sophia-chip" onclick="SOPHIA_resumo('mes')">📅 Mês</button>
+        <button class="sophia-chip" onclick="SOPHIA_resumo('ano')">🎉 Ano</button>
+      </div>
     </div>
-    <div id="sophiaAviso" style="font-size:.82rem;margin-bottom:12px"></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="sophiaSugestoes"></div>
-    <div id="sophiaChat" style="display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow-y:auto;margin-bottom:12px"></div>
-    <div style="display:flex;gap:8px">
-      <input type="text" id="sophiaInput" placeholder="Ex: quais contas estão atrasadas?" onkeydown="if(event.key==='Enter')SOPHIA_perguntar()" style="flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:.9rem;outline:none"/>
-      <button class="btn btn-purple" style="width:auto" onclick="SOPHIA_perguntar()">Perguntar</button>
+    <!-- Pergunte para a Sophia -->
+    <div class="card-cc">
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin:0">💬 Pergunte para a Sophia</h2><span class="sophia-badge">✨ Sophia</span></div>
+      <p style="font-size:.85rem;color:#6b7280;margin:6px 0 0">Pergunte sobre as finanças da WEN em português — a Sophia responde com base nos <b>seus dados</b>. Usa a mesma chave de IA da importação de fatura.</p>
+      <div id="sophiaAviso" style="font-size:.82rem;margin:12px 0"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px" id="sophiaSugestoes"></div>
+      <textarea id="sophiaInput" rows="2" placeholder="Ex.: quais contas estão atrasadas?" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();SOPHIA_perguntar();}" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;font-size:.92rem;outline:none;resize:vertical;font-family:inherit"></textarea>
+      <button class="btn" style="width:auto;margin-top:10px;background:#16a34a;color:#fff;border:none" onclick="SOPHIA_perguntar()">Perguntar ✨</button>
+      <div id="sophiaChat" style="display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow-y:auto;margin-top:16px"></div>
+      <p style="font-size:.78rem;color:#9ca3af;margin-top:14px">💡 A Sophia lê os dados só pra responder você — as respostas são estimativas com base no que está lançado. Confira sempre os valores importantes.</p>
     </div>
   </div>
 </div>
@@ -3951,7 +4023,8 @@ const CC_LANCS={};   // id -> {cartaoId,descricao,valor,dataCompra,parcelas,cate
 // competencia = mês de vencimento (chave 'MMM/YYYY', igual P_meses), congelada na geração.
 // Alimentam as faturas PRÉVIAS (previstas pelas parcelas). Faturas são derivadas.
 const CC_PARCELAS={}; // id -> {compraId,cartaoId,numero,total,valor,competencia,descricao,categoria,status,criadoEm}
-let CC_selecionado=null, CC_editandoCartaoId=null;
+let CC_selecionado=null, CC_editandoCartaoId=null, CC_subaba='cartoes';
+let CC_faturaFiltro='todos', CC_faturaSelKey=null, CC_faturaSelCid=null, CC_faturaPie=null, CC_faturaCatFiltro='todas';
 
 async function CC_fbSalvar(col,id,dados){
   const fields={};Object.keys(dados).forEach(k=>fields[k]=toFV(dados[k]));
@@ -4198,7 +4271,36 @@ async function CC_excluirCompra(id){
 }
 
 // ── Render ──
-function CC_render(){CC_renderCartoes();CC_renderResumo();CC_renderFaturas();}
+function CC_render(){CC_renderCartoes();CC_renderFaturas();if(CC_subaba==='importar')CC_prepararImportar();}
+// ── Sub-abas do cartão (estilo NS): Meus cartões / Importar fatura / Faturas ──
+function CC_aba(id,btn){
+  CC_subaba=id;
+  document.querySelectorAll('#page-cartoes .cc-subtab').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');else{const map={cartoes:'ccTabCartoes',importar:'ccTabImportar',faturas:'ccTabFaturas'};const b=document.getElementById(map[id]);if(b)b.classList.add('active');}
+  document.getElementById('ccPanelCartoes').style.display=(id==='cartoes')?'':'none';
+  document.getElementById('ccPanelImportar').style.display=(id==='importar')?'':'none';
+  document.getElementById('ccPanelFaturas').style.display=(id==='faturas')?'':'none';
+  if(id==='importar')CC_prepararImportar();
+  if(id==='faturas')CC_renderFaturas();
+  if(id==='cartoes')CC_renderCartoes();
+}
+function CC_prepararImportar(){
+  const sc=document.getElementById('ccImpCartao');if(!sc)return;
+  const ativos=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');
+  const prev=sc.value;
+  sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}${CC_CARTOES[id].final?(' ··'+CC_CARTOES[id].final):''}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
+  if(prev&&CC_CARTOES[prev])sc.value=prev;else if(CC_selecionado&&CC_CARTOES[CC_selecionado]&&CC_CARTOES[CC_selecionado].status!=='inativo')sc.value=CC_selecionado;
+  const mes=document.getElementById('ccImpMes');if(mes&&!mes.value){const d=new Date();mes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+}
+// os 4 modos da aba "Importar fatura" reaproveitam o importador (já mirando o cartão escolhido)
+function CC_impArquivo(input,modo){
+  const cid=document.getElementById('ccImpCartao').value;
+  if(!cid||!CC_CARTOES[cid]){toast('Escolha o cartão primeiro.','#f59e0b');input.value='';return;}
+  if(!input.files||!input.files.length)return;
+  IMP_abrir('cartao');
+  const alvo=document.getElementById('impAlvo');if(alvo)alvo.value=cid;
+  if(modo==='ofx')IMP_ofxArquivo(input);else IMP_gemini(input);
+}
 function CC_mesIdx(key){const p=(key||'').split('/');return parseInt(p[1])*12+(MESES_IDX[p[0]]??0);}
 function CC_renderResumo(){
   const el=document.getElementById('ccResumo');if(!el)return;
@@ -4238,7 +4340,7 @@ function CC_renderCartoes(){
   if(CC_selecionado&&!CC_CARTOES[CC_selecionado])CC_selecionado=null;
   if(!CC_selecionado&&ids.length)CC_selecionado=ids[0];
   el.innerHTML=ids.map(id=>{
-    const c=CC_CARTOES[id];const cor=c.cor||'#7c3aed';const usado=CC_limiteUsado(id);const disp=Math.round(((+c.limite||0)-usado)*100)/100;
+    const c=CC_CARTOES[id];const cor=c.cor||'#7c3aed';const parcVir=CC_parcelasAVir(id);
     const sel=id===CC_selecionado;const inativo=c.status==='inativo';
     return `<div onclick="CC_selecionar('${id}')" title="Ver faturas deste cartão" style="cursor:pointer;background:linear-gradient(140deg,${cor} 0%,${CC_darken(cor,55)} 100%);color:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 6px 20px ${cor}44;position:relative;${inativo?'opacity:.55':''}${sel?';outline:3px solid rgba(255,255,255,.55);outline-offset:2px':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -4250,41 +4352,86 @@ function CC_renderCartoes(){
       </div>
       <div style="font-size:1.15rem;letter-spacing:.12em;margin:18px 0 12px;font-weight:600">•••• •••• •••• ${c.final||'----'}</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.74rem;opacity:.92">
-        <span>Vence dia ${c.diaVencimento||'—'}</span><span>Fecha dia ${c.diaFechamento||'—'}</span><span>Limite ${fmt(c.limite||0)}</span>
+        <span>Vence dia ${c.diaVencimento||'—'}</span>${c.diaFechamento?`<span>Fecha dia ${c.diaFechamento}</span>`:''}<span>Limite ${fmt(c.limite||0)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.2);font-size:.78rem">
-        <span>Usado <b>${fmt(usado)}</b> · Disp. <b>${fmt(disp)}</b></span><span style="opacity:.85">ver faturas ›</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap;font-size:.78rem">
+        ${parcVir>0?`<span style="background:rgba(255,255,255,.2);padding:4px 10px;border-radius:20px;font-weight:700">🔮 Parcelas a vir: ${fmt(parcVir)}</span>`:'<span></span>'}<span style="opacity:.85">ver faturas ›</span>
       </div>
     </div>`;
   }).join('')||'<div style="color:#9ca3af;font-size:.85rem;grid-column:1/-1">Nenhum cartão. Clique em <b>➕ Novo cartão</b>.</div>';
 }
+function CC_parcelasAVir(cid){const fats=CC_faturasDoCartao(cid);const idxRef=CC_mesIdx(mesAtualReal());let s=0;Object.keys(fats).forEach(k=>{if(CC_mesIdx(k)>idxRef)s+=fats[k].total;});return Math.round(s*100)/100;}
+function CC_faturaBadge(f,previa){
+  return previa
+    ? `<span class="cc-fat-badge" style="background:#ede9fe;color:#7c3aed">PRÉVIA</span>`
+    : `<span class="cc-fat-badge" style="background:${f.st.bg};color:${f.st.cor}">${f.st.label.replace(/^[^ ]+ /,'').toUpperCase()}</span>`;
+}
 function CC_renderFaturas(){
   const wrap=document.getElementById('ccFaturasWrap');if(!wrap)return;
-  if(!CC_selecionado||!CC_CARTOES[CC_selecionado]){wrap.innerHTML='';return;}
-  const cid=CC_selecionado;const c=CC_CARTOES[cid];const fat=CC_faturasDoCartao(cid);
-  const keys=Object.keys(fat).sort((a,b)=>{const A=fat[a],B=fat[b];return A.ano!==B.ano?A.ano-B.ano:A.mes-B.mes;});
-  // fatura aberta = a de menor data de fechamento que ainda não fechou
-  const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10,hoje=new Date();let aberturaKey=null,melhorFd=null;
-  keys.forEach(k=>{const o=fat[k];let cm=(venc<=fech)?CC_addMonths(o.ano,o.mes,-1):{ano:o.ano,mes:o.mes};const fd=new Date(cm.ano,cm.mes,fech,23,59,59);if(fd>=hoje&&(!melhorFd||fd<melhorFd)){melhorFd=fd;aberturaKey=k;}});
-  let html=`<h3 style="font-size:.95rem;font-weight:700;color:#334155;margin:0 0 10px">Faturas — ${c.nome}</h3>`;
-  if(!keys.length){html+='<div style="color:#9ca3af;font-size:.85rem">Nenhuma compra lançada ainda. Clique em <b>➕ Nova compra</b>.</div>';wrap.innerHTML=html;return;}
-  html+=keys.map(k=>{
-    const o=fat[k];const st=CC_statusFatura(cid,k,o,aberturaKey);const paga=st.k==='paga';
-    return `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${st.cor};border-radius:10px;padding:12px 14px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <div><span style="font-weight:700;color:#0f172a">${k}</span> <span style="font-size:.72rem;font-weight:700;background:${st.bg};color:${st.cor};padding:2px 8px;border-radius:20px;margin-left:6px">${st.label}</span>
-          <div style="font-size:.73rem;color:#6b7280;margin-top:3px">Vence dia ${c.diaVencimento} · ${o.items.length} parcela(s)</div></div>
-        <div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;color:#0f172a">${fmt(o.total)}</div>
-          ${paga?'<div style="font-size:.7rem;color:#16a34a;margin-top:3px">✅ Fatura quitada</div>':'<div style="font-size:.7rem;color:#1e40af;margin-top:3px">📄 No Contas a Pagar (automático)</div>'}</div>
+  if(CC_faturaPie){try{CC_faturaPie.destroy();}catch(e){}CC_faturaPie=null;}
+  const cards=Object.keys(CC_CARTOES);
+  if(!cards.length){wrap.innerHTML='<div class="card-cc" style="color:#9ca3af;font-size:.85rem">Nenhum cartão ainda. Cadastre um em <b>Meus cartões</b>.</div>';return;}
+  const idxRef=CC_mesIdx(mesAtualReal());
+  const lista=[];
+  cards.filter(cid=>CC_faturaFiltro==='todos'||cid===CC_faturaFiltro).forEach(cid=>{
+    const c=CC_CARTOES[cid];const fats=CC_faturasDoCartao(cid);
+    Object.keys(fats).forEach(k=>{const o=fats[k];lista.push({cid,cnome:c.nome,key:k,idx:CC_mesIdx(k),total:o.total,items:o.items,st:CC_statusFatura(cid,k,o,null)});});
+  });
+  const atuais=lista.filter(f=>f.idx<=idxRef).sort((a,b)=>b.idx-a.idx);
+  const proximas=lista.filter(f=>f.idx>idxRef).sort((a,b)=>a.idx-b.idx);
+  if(!lista.find(f=>f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey)){
+    const def=atuais[0]||proximas[0]||lista[0];
+    CC_faturaSelCid=def?def.cid:null;CC_faturaSelKey=def?def.key:null;CC_faturaCatFiltro='todas';
+  }
+  const sel=lista.find(f=>f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey);
+  const optFiltro='<option value="todos">Todos os cartões</option>'+cards.map(cid=>`<option value="${cid}" ${CC_faturaFiltro===cid?'selected':''}>${CC_CARTOES[cid].nome}</option>`).join('');
+  const itemHtml=f=>{const previa=f.idx>idxRef;const selCls=(f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey)?' sel':'';
+    return `<div class="cc-fat-item${selCls}" onclick="CC_selFatura('${f.cid}','${f.key.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div><div style="font-weight:700;color:#0f172a;font-size:.9rem">${f.cnome} · ${f.key}</div>
+          <div style="margin-top:4px">${CC_faturaBadge(f,previa)} <span style="font-size:.72rem;color:#6b7280">${f.items.length} ${previa?'parcela(s) projetada(s)':'item(ns)'}</span></div></div>
+        <div style="font-weight:800;color:#b91c1c;white-space:nowrap">${fmt(f.total)}</div>
+      </div></div>`;};
+  const listaHtml=`<div class="card-cc">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+        <h3 style="font-size:1rem;font-weight:700;color:#0f172a;margin:0">📄 Faturas</h3>
+        <select onchange="CC_faturaFiltro=this.value;CC_renderFaturas()" style="border:1px solid #e5e7eb;border-radius:10px;padding:6px 10px;font-size:.82rem;font-weight:600;background:#fff;color:#334155">${optFiltro}</select>
       </div>
-      <div style="margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px;display:flex;flex-direction:column;gap:4px">
-        ${o.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')}
+      ${atuais.map(itemHtml).join('')||'<div style="color:#9ca3af;font-size:.82rem">Sem faturas neste mês.</div>'}
+      ${proximas.length?`<div style="font-size:.72rem;font-weight:800;color:#7c3aed;margin:16px 0 8px;letter-spacing:.02em">🔮 PRÓXIMAS (PREVISTAS PELAS PARCELAS)</div>`+proximas.map(itemHtml).join(''):''}
+    </div>`;
+  let dirHtml='<div class="card-cc" style="color:#9ca3af;font-size:.85rem">Selecione uma fatura na lista.</div>';
+  if(sel){
+    const porCat={};sel.items.forEach(it=>{const cat=it.categoria||'';porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0);});
+    const cats=Object.keys(porCat).sort((a,b)=>porCat[b]-porCat[a]);
+    const previa=sel.idx>idxRef;
+    const chips=`<span class="cc-cat-chip${CC_faturaCatFiltro==='todas'?' sel':''}" onclick="CC_faturaCatFiltro='todas';CC_renderFaturas()">Todas</span>`+cats.map(cat=>{const ci=catInfoP(cat);const pct=sel.total>0?Math.round(porCat[cat]/sel.total*100):0;return `<span class="cc-cat-chip${CC_faturaCatFiltro===cat?' sel':''}" onclick="CC_faturaCatFiltro=(CC_faturaCatFiltro==='${cat}'?'todas':'${cat}');CC_renderFaturas()"><span class="cc-cat-dot" style="background:${ci.color}"></span>${ci.icon} ${ci.label} <b>${fmt(porCat[cat])}</b> · ${pct}%</span>`;}).join('');
+    const itensF=sel.items.filter(it=>CC_faturaCatFiltro==='todas'||(it.categoria||'')===CC_faturaCatFiltro);
+    dirHtml=`<div class="card-cc">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div><div style="font-size:1.05rem;font-weight:800;color:#0f172a">${sel.cnome} · ${sel.key}</div><div style="margin-top:4px">${CC_faturaBadge(sel,previa)} <span style="font-size:.74rem;color:#6b7280">${sel.items.length} item(ns)</span></div></div>
+        <div style="font-size:1.5rem;font-weight:800;color:#b91c1c">${fmt(sel.total)}</div>
+      </div>
+      <div style="position:relative;max-width:280px;margin:16px auto 4px">
+        <canvas id="ccFaturaPie" height="240"></canvas>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><span style="font-size:.66rem;color:#6b7280;letter-spacing:.06em">TOTAL</span><span style="font-size:1.05rem;font-weight:800;color:#0f172a">${fmt(sel.total)}</span></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px">${chips}</div>
+      <div style="margin-top:12px;border-top:1px dashed #e5e7eb;padding-top:10px;display:flex;flex-direction:column;gap:6px">
+        ${itensF.map(it=>`<div style="display:flex;justify-content:space-between;font-size:.8rem;color:#374151"><span>${catBadgeP(it.categoria)||''} ${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span><span>${fmt(it.valor)}</span></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>'}
       </div>
     </div>`;
-  }).join('');
-  wrap.innerHTML=html;
+  }
+  wrap.innerHTML=`<div class="cc-faturas-grid">${listaHtml}${dirHtml}</div>`;
+  if(sel&&typeof Chart!=='undefined'){
+    const porCat={};sel.items.forEach(it=>{const cat=it.categoria||'';porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0);});
+    const cats=Object.keys(porCat).sort((a,b)=>porCat[b]-porCat[a]);
+    const cv=document.getElementById('ccFaturaPie');
+    if(cv)CC_faturaPie=new Chart(cv,{type:'doughnut',data:{labels:cats.map(c=>catInfoP(c).label),datasets:[{data:cats.map(c=>porCat[c]),backgroundColor:cats.map(c=>catInfoP(c).color),borderWidth:2,borderColor:'#fff'}]},options:{cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>x.label+': '+fmt(x.raw)}}}}});
+  }
 }
-function CC_selecionar(id){CC_selecionado=id;CC_render();}
+function CC_selFatura(cid,key){CC_faturaSelCid=cid;CC_faturaSelKey=key;CC_faturaCatFiltro='todas';CC_renderFaturas();}
+function CC_selecionar(id){CC_selecionado=id;CC_faturaFiltro=id;CC_faturaSelCid=null;CC_faturaSelKey=null;CC_renderCartoes();CC_aba('faturas');}
 
 // ══════════════════════════════════════════════════════
 // FASE 3 — CATEGORIAS FINANCEIRAS (módulo CF_)
@@ -5097,17 +5244,29 @@ async function IMP_importar(){
 // Manda só um RESUMO dos dados (não a base inteira) + a pergunta.
 // ══════════════════════════════════════════════════════
 let SOPHIA_MSGS=[];
-const SOPHIA_SUGESTOES=['Quais contas estão atrasadas?','Quanto gastei por categoria neste mês?','Qual meu saldo e a projeção?','Onde estou gastando acima da média?'];
+const SOPHIA_SUGESTOES=['Quais contas estão atrasadas?','Qual cartão teve mais gastos?','Quanto gastei por categoria neste mês?','Qual meu saldo e a projeção?','Qual conta vence primeiro?','Onde estou gastando acima da média?'];
 function SOPHIA_abrir(){
   const av=document.getElementById('sophiaAviso');
   if(av)av.innerHTML=IA_temChave()?'<span style="color:#16a34a">✅ Sophia pronta.</span>':'<span style="color:#b45309">Cole a chave Gemini em Config → Inteligência Artificial pra ativar a Sophia.</span>';
   const sg=document.getElementById('sophiaSugestoes');
-  if(sg)sg.innerHTML=SOPHIA_SUGESTOES.map(s=>`<button class="bc-fil" onclick="document.getElementById('sophiaInput').value=this.textContent;SOPHIA_perguntar()">${s}</button>`).join('');
+  if(sg)sg.innerHTML=SOPHIA_SUGESTOES.map(s=>`<button class="sophia-chip" onclick="document.getElementById('sophiaInput').value=this.textContent;SOPHIA_perguntar()">${s}</button>`).join('');
   SOPHIA_render();
+}
+// Resumo por período (botões Hoje/Semana/Mês/Ano) — reusa o motor de pergunta
+function SOPHIA_resumo(p){
+  if(!IA_temChave()){toast('Cole a chave Gemini em Config primeiro.','#f59e0b');return;}
+  const map={
+    hoje:'Faça um resumo rápido das finanças da WEN hoje: saldo atual das contas, o que vence ou venceu, e algum alerta se houver.',
+    semana:'Faça um resumo das finanças da WEN nesta semana: o que vence nos próximos 7 dias, contas atrasadas e como está o caixa.',
+    mes:'Faça um resumo das finanças da WEN neste mês: entradas, saídas, resultado, gastos por categoria e alertas.',
+    ano:'Faça um resumo geral das finanças da WEN no panorama atual: saldo, compromissos futuros (parcelas e faturas) e pontos de atenção.'
+  };
+  const inp=document.getElementById('sophiaInput');if(inp)inp.value=map[p]||map.mes;
+  SOPHIA_perguntar();
 }
 function SOPHIA_render(){
   const el=document.getElementById('sophiaChat');if(!el)return;
-  el.innerHTML=SOPHIA_MSGS.map(m=>`<div style="align-self:${m.role==='user'?'flex-end':'flex-start'};max-width:82%;background:${m.role==='user'?'#7c3aed':'#fff'};color:${m.role==='user'?'#fff':'#0f172a'};border:1px solid ${m.role==='user'?'#7c3aed':'#e5e7eb'};border-radius:12px;padding:9px 13px;font-size:.88rem;white-space:pre-wrap">${(m.text||'').replace(/</g,'&lt;')}</div>`).join('');
+  el.innerHTML=SOPHIA_MSGS.map(m=>`<div style="align-self:${m.role==='user'?'flex-end':'flex-start'};max-width:82%;background:${m.role==='user'?'#16a34a':'#fff'};color:${m.role==='user'?'#fff':'#0f172a'};border:1px solid ${m.role==='user'?'#16a34a':'#e5e7eb'};border-radius:12px;padding:9px 13px;font-size:.88rem;white-space:pre-wrap">${(m.text||'').replace(/</g,'&lt;')}</div>`).join('');
   el.scrollTop=el.scrollHeight;
 }
 function SOPHIA_contexto(){
@@ -5278,6 +5437,8 @@ window.RPT_imprimir=function(){if(!RPT_ultimo){toast('Gere um relatório primeir
 // Aditivo: injeta em containers próprios (#fcxLembretes/#fcxPizza), não toca renderFluxoCaixa.
 // ══════════════════════════════════════════════════════
 let FCX_pie=null, FCX_dismiss={venc:false,gasto:false}, FCX_catAberta=null, FCX_todosFiltro='';
+let FCX_vencAberto=(function(){try{return localStorage.getItem('fcxVencAberto')!=='0';}catch(e){return true;}})();
+function FCX_toggleVenc(){FCX_vencAberto=!FCX_vencAberto;try{localStorage.setItem('fcxVencAberto',FCX_vencAberto?'1':'0');}catch(e){}FCX_renderBlocos();}
 function FCX_ddmmaa(d){if(!d)return'';const dt=(d instanceof Date)?d:new Date(d);if(isNaN(dt.getTime()))return'';const p=n=>String(n).padStart(2,'0');return p(dt.getDate())+'/'+p(dt.getMonth()+1)+'/'+String(dt.getFullYear()).slice(2);}
 function FCX_addDias(n){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);return d;}
 // vencimentos (contas + faturas de cartão) com dias e data
@@ -5387,10 +5548,15 @@ function FCX_renderBlocos(){
   const venc=FCX_coletarVenc();const atras=venc.filter(v=>v.diff<0).sort((a,b)=>a.diff-b.diff);const prox=venc.filter(v=>v.diff>=0&&v.diff<=7).sort((a,b)=>a.diff-b.diff);
   const soma=a=>a.reduce((s,x)=>s+(x.valor||0),0);
   let html='';
-  // Vencimentos & atrasos
+  // Vencimentos & atrasos (recolhível)
+  const vencN=atras.length+prox.length;const vencTot=soma(atras)+soma(prox);
   html+=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-top:16px">
-    <b style="font-size:1rem;color:#0f172a">🔔 Vencimentos &amp; atrasos</b>
-    <p style="font-size:.82rem;color:#6b7280;margin:2px 0 12px">Contas a pagar de todos os meses, pelo que ainda falta pagar.</p>`;
+    <div onclick="FCX_toggleVenc()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div><b style="font-size:1rem;color:#0f172a">🔔 Vencimentos &amp; atrasos</b>
+      <p style="font-size:.82rem;color:#6b7280;margin:2px 0 0">Contas a pagar de todos os meses, pelo que ainda falta pagar.${(!FCX_vencAberto&&vencN)?` <b style="color:#b91c1c">· ${vencN} em aberto (${fmt(vencTot)})</b>`:''}</p></div>
+      <span title="${FCX_vencAberto?'Esconder':'Mostrar'}" style="color:#9ca3af;font-size:1.15rem;flex-shrink:0;transform:rotate(${FCX_vencAberto?'90':'0'}deg);transition:.15s">▸</span>
+    </div>
+    <div id="fcxVencBody" style="${FCX_vencAberto?'margin-top:12px':'display:none'}">`;
   if(atras.length)html+=`<div style="border:1px solid #fecaca;border-radius:12px;padding:10px 14px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;font-weight:700;color:#b91c1c;margin-bottom:6px"><span>🔴 Vencidas</span><span>${fmt(soma(atras))}</span></div>
     ${atras.map(v=>`<div style="display:flex;justify-content:space-between;font-size:.88rem;padding:4px 0"><span>${v.nome}<br><span style="font-size:.74rem;color:#ef4444">${Math.abs(v.diff)} dia(s) em atraso · venceu ${FCX_ddmmaa(v.due)}</span></span><b>${fmt(v.valor)}</b></div>`).join('')}</div>`;
@@ -5398,7 +5564,7 @@ function FCX_renderBlocos(){
     <div style="display:flex;justify-content:space-between;font-weight:700;color:#b45309;margin-bottom:6px"><span>🟠 Vencem em 7 dias</span><span>${fmt(soma(prox))}</span></div>
     ${prox.map(v=>`<div style="display:flex;justify-content:space-between;font-size:.88rem;padding:4px 0"><span>${v.nome}<br><span style="font-size:.74rem;color:#9ca3af">${v.diff===0?'vence hoje':'em '+v.diff+' dia(s)'} · ${FCX_ddmmaa(v.due)}</span></span><b>${fmt(v.valor)}</b></div>`).join('')}</div>`;
   if(!atras.length&&!prox.length)html+='<div style="color:#16a34a;font-size:.86rem">✅ Nada vencido nem vencendo nos próximos 7 dias.</div>';
-  html+=`</div>`;
+  html+=`</div></div>`;
   // Rateio geral do mês (donut)
   const mref=mesAtualReal();const acc=FCX_despesasCat(mref);
   const arr=Object.entries(acc).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);const tot=arr.reduce((a,x)=>a+x[1],0);
