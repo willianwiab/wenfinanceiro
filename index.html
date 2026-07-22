@@ -5360,6 +5360,7 @@ async function IMP_importar(){
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
   }else{
     if(!alvo||!BC_CONTAS[alvo]){toast('Escolha a conta de destino.','#ef4444');return;}
+    let saidas=0;
     sel.forEach(i=>{const mv=IMP_previa[i];if(!mv)return;const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
       if(BC_MOVS.some(x=>x.id===chave)){dup++;return;}
       const catEl=document.querySelector('#impPreview .imp-cat[data-i="'+i+'"]');
@@ -5367,10 +5368,14 @@ async function IMP_importar(){
       const categoria=catEl?(catEl.value||null):null;
       const valor=valEl?Math.abs(parseFloat(valEl.value)||0):Math.abs(Number(mv.valor)||0);
       const mov={id:chave,contaId:alvo,tipo:mv.tipo,valor,data:mv.data||BC_hoje(),descricao:'📥 '+(mv.descricao||'Importado'),categoria,origemTipo:'import',origemId:String(mv.fitid),estornada:false};
-      BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;});
-    toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
+      BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);n++;if(mv.tipo==='saida')saidas++;});
     IMP_fechar();if(mainAtivo==='contas')BC_renderPainel();
     if(n>0&&typeof AUD_log==='function')AUD_log('importar','movimentacoes_contas',BC_CONTAS[alvo].nome,n+' movimentação(ões) importada(s)',null,null);
+    if(saidas>0){ // leva direto pra conciliar os débitos com as contas a pagar
+      const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);
+      const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);
+      toast(`✅ ${n} importada(s). Agora concilie ${saidas} débito(s) com suas contas a pagar. 🔗`);
+    } else toast(`✅ ${n} importada(s)${dup?' · '+dup+' já existiam':''}.`);
   }
 }
 
