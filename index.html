@@ -1389,6 +1389,18 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
      CONFIG / BACKUP
 ════════════════════════════════════════ -->
 <div class="page" id="page-config">
+  <div class="backup-box" style="border:1px solid #ddd6fe;background:#faf5ff">
+    <h3>🤖 Inteligência Artificial (Google Gemini)</h3>
+    <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Cole a chave do Gemini pra ligar a <b>leitura de fatura/extrato por foto e PDF</b> e a <b>Sophia</b>. A chave fica salva no banco da WEN; a imagem vai do navegador direto pro Google (não passa por servidor nosso). Gere de graça em <b>aistudio.google.com/apikey</b>. O OFX funciona sem chave.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="password" id="iaKeyInput" placeholder="AIza..." style="flex:1;min-width:220px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:.9rem;outline:none"/>
+      <button class="btn btn-purple" style="width:auto" onclick="IA_salvarChaveUI()">Salvar</button>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_testarUI()">Testar</button>
+      <button class="btn btn-outline-b" style="width:auto" onclick="IA_apagarChaveUI()">Remover</button>
+    </div>
+    <div id="iaKeyStatus" style="margin-top:10px;font-size:.85rem"></div>
+  </div>
+
   <div class="backup-box">
     <h3>☁️ Banco de Dados — Contas a Receber</h3>
     <p style="font-size:.86rem;color:#6b7280;margin-bottom:14px">Dados salvos automaticamente no Firebase (coleção: lancamentos). Ficam em cache local no navegador — cada carregamento de página só busca o que mudou desde a última vez, pra não estourar a cota do Firebase.</p>
@@ -2005,7 +2017,7 @@ function toast(msg,cor='#16a34a'){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, centros_custo:{}, projetos:{}, config_ia:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -2149,7 +2161,7 @@ function showMain(id,btn){
   if(id==='cartoes')CC_render();
   if(id==='categorias')CF_render();
   if(id==='banco')BK_executarMatching();
-  if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;}
+  if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();}
 }
 
 function showSubR(id,btn){
@@ -4177,6 +4189,57 @@ function COMP_render(){
     <p style="font-size:.75rem;color:#9ca3af;margin-top:8px">Δ positivo = competência maior que o caixa (despesa reconhecida mas ainda não paga no mês). Pagamentos sem data caem no mês de origem do lançamento.</p>`;
 }
 
+// ══════════════════════════════════════════════════════
+// IA — chave do Gemini (config no Firestore, igual ao Nossa Semente)
+// A chave mora em config_ia/geral.geminiKey. A imagem/PDF da fatura vai do
+// navegador direto pra API do Google. Sem chave: só OFX funciona.
+// ══════════════════════════════════════════════════════
+const IA_COL='config_ia', IA_DOC='geral', IA_MODEL_FALLBACK='gemini-flash-latest';
+let IA_chaveMem='', IA_candidatosCache=null;
+function IA_getKey(){return IA_chaveMem||'';}
+function IA_temChave(){return !!IA_getKey();}
+async function IA_carregarChave(){
+  try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);const j=await res.json();
+    if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields&&d.fields.geminiKey)IA_chaveMem=(fromFV(d.fields.geminiKey)||'').trim();}
+  }catch(e){}
+  IA_refreshStatus();
+}
+async function IA_persistirChave(k){
+  IA_chaveMem=(k||'').trim();IA_candidatosCache=null;
+  await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_chaveMem)}})});
+}
+function IA_refreshStatus(){
+  const el=document.getElementById('iaKeyStatus');if(!el)return;const k=IA_getKey();
+  el.innerHTML=k
+    ?`<span style="color:#16a34a;font-weight:600">✅ Chave salva (••••${k.slice(-4)}). Leitura por foto/PDF e Sophia liberadas.</span>`
+    :`<span style="color:#9ca3af">Nenhuma chave ainda — importação por foto/PDF e Sophia desligadas (OFX funciona sem chave).</span>`;
+  const inp=document.getElementById('iaKeyInput');if(inp&&k)inp.placeholder='chave salva ••••'+k.slice(-4);
+}
+async function IA_salvarChaveUI(){const v=document.getElementById('iaKeyInput').value.trim();if(!v){toast('Cole a chave do Gemini.','#ef4444');return;}await IA_persistirChave(v);document.getElementById('iaKeyInput').value='';IA_refreshStatus();toast('✅ Chave salva!');}
+async function IA_apagarChaveUI(){if(!confirm('Remover a chave da IA? A leitura por foto/PDF e a Sophia ficam desligadas.'))return;await IA_persistirChave('');IA_refreshStatus();toast('Chave removida.','#6b7280');}
+// Lista modelos válidos na conta (prefere flash); não quebra quando o Google muda os nomes.
+async function IA_candidatos(key){
+  if(IA_candidatosCache)return IA_candidatosCache;let ordem=[];
+  try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+encodeURIComponent(key));
+    if(r.ok){const j=await r.json();
+      const modelos=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>(m.name||'').replace(/^models\//,'')).filter(n=>/^gemini/i.test(n)&&!/(embedding|aqa|imagen|tts|image-generation|thinking)/i.test(n));
+      const add=n=>{if(n&&ordem.indexOf(n)<0)ordem.push(n);};
+      add(modelos.find(n=>/flash-latest/i.test(n)));modelos.filter(n=>/flash/i.test(n)).sort().reverse().forEach(add);modelos.filter(n=>/latest/i.test(n)).forEach(add);modelos.forEach(add);
+    }
+  }catch(e){}
+  if(!ordem.length)ordem=[IA_MODEL_FALLBACK,'gemini-flash-lite-latest','gemini-2.0-flash'];
+  IA_candidatosCache=ordem;return ordem;
+}
+async function IA_testarUI(){
+  const k=IA_getKey()||document.getElementById('iaKeyInput').value.trim();
+  if(!k){toast('Cole ou salve a chave primeiro.','#ef4444');return;}
+  const el=document.getElementById('iaKeyStatus');el.innerHTML='⏳ Testando com o Google...';IA_candidatosCache=null;
+  try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+encodeURIComponent(k));
+    if(r.ok){const mods=await IA_candidatos(k);el.innerHTML=`<span style="color:#16a34a;font-weight:600">✅ Chave válida! Modelos: ${mods.slice(0,3).join(', ')}…</span>`;}
+    else{const t=await r.text();el.innerHTML=`<span style="color:#ef4444">⚠️ Chave recusada pelo Google (${r.status}). Confira se copiou certo.</span>`;}
+  }catch(e){el.innerHTML='<span style="color:#ef4444">⚠️ Erro de rede: '+e.message+'</span>';}
+}
+
 // Estado Pagar
 let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
 let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
@@ -5140,6 +5203,7 @@ CAT_inicializar();
 BC_inicializar();
 CC_inicializar();
 CF_inicializar();
+IA_carregarChave();
 </script>
 <script src="js/banco.js?v=7"></script>
 </body>
