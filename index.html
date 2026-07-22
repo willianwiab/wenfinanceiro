@@ -5313,19 +5313,34 @@ async function IMP_ofxArquivo(input){const f=input.files[0];if(!f)return;input.v
 }
 function IMP_extrairJSON(txt){try{return JSON.parse(txt);}catch(e){}const i=txt.indexOf('['),j=txt.lastIndexOf(']');if(i>=0&&j>i){try{return JSON.parse(txt.slice(i,j+1));}catch(e){}}return [];}
 async function IMP_gemini(input){
-  const f=input.files[0];if(!f)return;input.value='';
+  const files=input&&input.files?[...input.files]:[];if(input)input.value='';
+  if(!files.length)return;
   if(!IA_temChave()){IMP_setAviso('<span style="color:#b45309">📸 Cole a chave Gemini em Config → Inteligência Artificial pra usar foto/PDF.</span>');return;}
-  IMP_setAviso('⏳ Lendo o arquivo com a IA (Gemini)...');
+  const isCartao=(IMP_tipo==='cartao');
+  IMP_setAviso('⏳ A SophIA está lendo '+files.length+' '+(files.length===1?'arquivo':'páginas')+'…');
   try{
-    const b64=await IMP_fileB64(f);const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
-    const prompt='Extraia as transações financeiras deste extrato/fatura bancária. Responda APENAS um array JSON, cada item {"data":"YYYY-MM-DD","descricao":"texto curto","valor":número (negativo p/ saída/despesa, positivo p/ entrada/crédito)}. Sem nenhum texto fora do JSON.';
-    const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:f.type||'application/pdf',data:b64}}]}],generationConfig:{temperature:0}};
+    const key=IA_getKey();const modelos=await IA_candidatos(key);const modelo=modelos[0]||IA_MODEL_FALLBACK;
+    const sinal=isCartao
+      ? 'É uma FATURA DE CARTÃO DE CRÉDITO. valor: número POSITIVO para compras/débitos; NEGATIVO apenas para estornos, créditos ou pagamentos recebidos.'
+      : 'É um EXTRATO BANCÁRIO. valor: número NEGATIVO para saídas/débitos; POSITIVO para entradas/créditos.';
+    const prompt='Você é a SophIA lendo um documento financeiro brasileiro que pode ter VÁRIAS páginas/imagens — leia TODAS as páginas. '+sinal+'\n'
+      +'Extraia TODAS as transações/lançamentos, linha por linha, SEM PULAR NENHUMA e SEM INVENTAR. NÃO inclua linhas de total, subtotal, saldo anterior, limite, pagamento mínimo, encargos informativos ou cabeçalhos.\n'
+      +'Para cada transação devolva: data ("YYYY-MM-DD"; se só houver dia/mês, use o ano da fatura), descricao (nome do estabelecimento como aparece, mantendo o "X/Y" da parcela se houver), valor (número), parcela ("X/Y" se for parcelada; senão "").\n'
+      +'Responda SOMENTE JSON: {"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
+    const parts=[{text:prompt}];
+    for(const f of files){const b64=await IMP_fileB64(f);parts.push({inline_data:{mime_type:f.type||'image/jpeg',data:b64}});}
+    const body={contents:[{parts}],generationConfig:{temperature:0,responseMimeType:'application/json'}};
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=`+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){IMP_setAviso('⚠️ Gemini recusou ('+r.status+'). Confira a chave em Config.');return;}
+    if(!r.ok){IMP_setAviso('⚠️ A SophIA recusou ('+r.status+'). Confira a chave em Config.');return;}
     const j=await r.json();const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
-    const arr=IMP_extrairJSON(txt);
-    IMP_previa=(Array.isArray(arr)?arr:[]).map((x,i)=>{const v=Number(x.valor)||0;return {fitid:'ia_'+i+'_'+(x.data||'')+'_'+v,data:x.data||'',valor:v,descricao:x.descricao||'Item',tipo:v<0?'saida':'entrada'};});
-    IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} transação(ões) lida(s) pela IA. Revise e importe.`:'Não consegui extrair transações — tente outra foto/PDF mais nítido.');
+    let dados;try{dados=JSON.parse(txt);}catch(e){dados=null;}
+    let arr=dados&&Array.isArray(dados.itens)?dados.itens:(Array.isArray(dados)?dados:IMP_extrairJSON(txt));
+    IMP_previa=(Array.isArray(arr)?arr:[]).map((x,i)=>{
+      let v=Number(x.valor)||0;let desc=x.descricao||'Item';
+      if(x.parcela&&/^\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/.test(x.parcela)&&!/\d{1,2}\s*\/\s*\d{1,2}/.test(desc))desc+=' '+String(x.parcela).trim();
+      return {fitid:'ia_'+i+'_'+(x.data||'')+'_'+v,data:x.data||'',valor:v,descricao:desc,tipo:v<0?'saida':'entrada'};
+    });
+    IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} lançamento(s) lido(s) pela SophIA. Revise abaixo antes de confirmar.`:'Não consegui extrair transações — tente uma imagem mais nítida ou o PDF/OFX.');
     IMP_renderPreview();
   }catch(e){IMP_setAviso('⚠️ Erro na leitura: '+e.message);}
 }
