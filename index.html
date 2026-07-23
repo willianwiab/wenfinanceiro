@@ -1410,7 +1410,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Onde o dinheiro da WEN está — saldo, livre e previsão. Livro-razão por conta.</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-outline-b" onclick="CONC_irImportar()">📥 Trazer extrato</button>
+        <button class="btn btn-outline-b" onclick="CX_abrir()">📥 Trazer extrato</button>
         <button class="btn btn-outline-b" onclick="BC_novaTransf()">🔄 Transferência</button>
         <button class="btn btn-purple" onclick="BC_abrirModal()">➕ Nova conta</button>
       </div>
@@ -4306,6 +4306,9 @@ const C_COL_FAT='cartao_faturas', C_COL_PARC='cartao_parcelamentos', C_COL_REGRA
 let C_cartoes=[], C_faturas=[], C_parcelamentos=[], C_regras=[], C_carregado=false;
 
 function C_norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+// Remove o "X/N" da descrição p/ o ID do parcelamento casar entre meses (mês 5/6 e 6/6 = MESMA compra).
+function C_descSemParc(s){return String(s||'').replace(/\d{1,2}\s*(?:\/|de)\s*\d{1,2}/g,' ').replace(/\s+/g,' ').trim();}
+function C_gidParcela(cartaoId,descricao,total){return ('p_'+cartaoId+'_'+C_norm(C_descSemParc(descricao)).replace(/[^a-z0-9]+/g,'_')+'_'+total).slice(0,140);}
 function C_ymAdd(ym,n){const p=String(ym||'').split('-').map(Number);const d=new Date(p[0],(p[1]||1)-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function C_ymToWen(ym){return CC_ymToKey(ym);} // "2026-07" -> "JUL/2026"
 function C_ymFromWen(wenKey){const ma=CC_mesAnoDaKey(wenKey);return ma.ano+'-'+String(ma.mes+1).padStart(2,'0');} // "JUL/2026" -> "2026-07"
@@ -4364,8 +4367,8 @@ function C_projetarParcelamentos(fatura){
   (fatura.itens||[]).forEach(it=>{
     if(!it.parcela||!(Number(it.parcela.total)>1))return;
     const N=Number(it.parcela.total),X=Number(it.parcela.atual)||1;
-    const descNorm=C_norm(it.descricao);
-    const gid=('p_'+fatura.cartaoId+'_'+descNorm.replace(/[^a-z0-9]+/g,'_')+'_'+N).slice(0,140);
+    const descNorm=C_norm(C_descSemParc(it.descricao));
+    const gid=C_gidParcela(fatura.cartaoId,it.descricao,N);
     const mesInicio=C_ymAdd(fatura.mesFatura,-(X-1)), mesFim=C_ymAdd(mesInicio,N-1);
     const ex=C_parcelamentos.find(p=>p.id===gid);
     const parcelaAtual=Math.max(ex?Number(ex.parcelaAtual)||0:0, X);
@@ -4393,10 +4396,13 @@ function C_lancarFaturaEmPagar(fatura,cartao){
   semEsta.push(nova); P_meses[wk]=semEsta; P_salvarStorage();
 }
 
-// Projeta parcelas FUTURAS como faturas "prévia"; mesmo faturaId da real → importar o mês substitui a prévia
+// Projeta parcelas FUTURAS como faturas "prévia"; mesmo faturaId da real → importar o mês substitui a prévia.
+// PODA (importante): remove prévias que deixaram de ser projetadas (parcela quitada) e prévias de meses que
+// já têm fatura REAL — assim importar a PRÓXIMA fatura apaga a prévia duplicada em vez de somar duas.
 function C_sincronizarFaturasPrevias(cartaoId){
   const c0=(typeof C_card==='function')?C_card(cartaoId):null; // usa o store VIVO (CC_CARTOES), não C_cartoes (vazio com 429)
   const cartao=(c0&&c0.nome)?c0:C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
+  // 1) meses/valores que AINDA devem ter prévia (parcelas futuras das compras ativas)
   const porMes={};
   C_parcelamentos.filter(p=>p.ativo&&p.cartaoId===cartaoId).forEach(p=>{
     const pr=String(p.mesInicio||'').split('-').map(Number); const ay=pr[0],am=pr[1]; if(!ay)return;
@@ -4405,8 +4411,31 @@ function C_sincronizarFaturasPrevias(cartaoId){
       porMes[k]=Math.round(((porMes[k]||0)+(Number(p.valorParcela)||0))*100)/100;
     }
   });
+  // 2) meses que já têm fatura REAL importada desse cartão → prévia nunca pode coexistir
+  const mesesComReal=new Set();
+  Object.keys(P_meses||{}).forEach(wk=>{(P_meses[wk]||[]).forEach(c=>{
+    if(c.faturaCartao&&c.faturaCartao.cartaoId===cartaoId&&!c.previa){const ym=C_ymFromWen(wk);if(ym)mesesComReal.add(ym);}
+  });});
   let mudou=false;
+  // SEGURANÇA: só poda "prévia que sumiu do porMes" quando os dados do cartão realmente carregaram.
+  // Se a nuvem falhou (429) e C_parcelamentos veio vazio, NÃO apagamos prévias por engano — elas se
+  // reconciliam quando os dados voltarem. A remoção por "mês já tem fatura real" é sempre segura.
+  const dadosCarregados=(C_parcelamentos&&C_parcelamentos.length)||(C_faturas&&C_faturas.length);
+  // 3) PODA: apaga prévias deste cartão que não estão mais em porMes OU cujo mês tem fatura real
+  Object.keys(P_meses||{}).forEach(wk=>{
+    const antes=(P_meses[wk]||[]).length;
+    P_meses[wk]=(P_meses[wk]||[]).filter(c=>{
+      if(!(c.previa&&c.faturaCartao&&c.faturaCartao.cartaoId===cartaoId))return true;
+      const ym=C_ymFromWen(wk);
+      if(mesesComReal.has(ym))return false;              // mês já tem fatura real → prévia sai (sempre)
+      if(!dadosCarregados)return true;                    // dados não carregaram → não arrisca apagar
+      return porMes[ym]!==undefined;                      // mantém só o que ainda é projetado
+    });
+    if((P_meses[wk]||[]).length!==antes)mudou=true;
+  });
+  // 4) cria/atualiza as prévias que devem existir (pula meses com fatura real)
   Object.keys(porMes).forEach(m=>{
+    if(mesesComReal.has(m))return;
     const total=porMes[m], fid=cartaoId+'_'+m, wk=C_ymToWen(m); if(!wk)return;
     if(!P_meses[wk])P_meses[wk]=[];
     const contas=P_meses[wk];
@@ -4422,7 +4451,7 @@ function C_sincronizarFaturasPrevias(cartaoId){
   });
   if(mudou)P_salvarStorage();
 }
-function C_sincronizarTodasPrevias(){C_cartoes.forEach(c=>C_sincronizarFaturasPrevias(c.id));}
+function C_sincronizarTodasPrevias(){(typeof C_liveCartoes==='function'?C_liveCartoes():C_cartoes).forEach(c=>C_sincronizarFaturasPrevias(c.id));}
 
 // Orquestrador de dados: grava fatura imutável + projeta parcelas + lança no Pagar (mês atual + prévias)
 async function C_confirmarImportacaoDados(fatura){
@@ -4572,7 +4601,7 @@ async function C_mudarCatItem(fitid,novaCat){
   it.categoria=novaCat;
   C_salvarCache();
   await C_fbSet(C_COL_FAT,f.id,f);
-  if(it.parcela){const gid=('p_'+f.cartaoId+'_'+C_norm(it.descricao).replace(/[^a-z0-9]+/g,'_')+'_'+it.parcela.total).slice(0,140);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,gid,pex);}}
+  if(it.parcela){const gid=C_gidParcela(f.cartaoId,it.descricao,it.parcela.total);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,gid,pex);}}
   C_renderDetalhe();
   if(typeof toast==='function')toast('Categoria atualizada 💚');
 }
@@ -4864,8 +4893,9 @@ function PN_faturasAberto(){let t=0;Object.keys(P_meses||{}).forEach(mes=>{(P_me
 function PN_alertas(mref){
   const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
   for(let i=Math.max(0,idx-3);i<idx;i++)prev.push(ord[i]);
-  const catMes={};(P_meses[mref]||[]).forEach(r=>{if(r.categoria)catMes[r.categoria]=(catMes[r.categoria]||0)+(Number(r.valor)||0);});
-  const catPrev={};prev.forEach(m=>(P_meses[m]||[]).forEach(r=>{if(r.categoria)catPrev[r.categoria]=(catPrev[r.categoria]||0)+(Number(r.valor)||0);}));
+  // card-aware: a fatura agregada 'cartoes' não entra; usa as categorias REAIS do cartão (FCX_despesasCat)
+  const catMes=(typeof FCX_despesasCat==='function')?FCX_despesasCat(mref):{};
+  const catPrev={};prev.forEach(m=>{const a=(typeof FCX_despesasCat==='function')?FCX_despesasCat(m):{};Object.entries(a).forEach(([k,v])=>catPrev[k]=(catPrev[k]||0)+(Number(v)||0));});
   const out=[];
   Object.keys(catMes).forEach(cat=>{const media=prev.length?(catPrev[cat]||0)/prev.length:0;if(media>0&&catMes[cat]>media*1.2)out.push({cat,mes:catMes[cat],media,pct:Math.round((catMes[cat]/media-1)*100)});});
   return out.sort((a,b)=>b.pct-a.pct);
@@ -5162,6 +5192,7 @@ function VENC_render(){
 // ══════════════════════════════════════════════════════
 const IA_COL='config_ia', IA_DOC='geral', IA_MODEL_FALLBACK='gemini-flash-latest', IA_CLAUDE_MODEL='claude-sonnet-5';
 let IA_gemKey='', IA_claudeKey='', IA_prov='gemini', IA_candidatosCache=null;
+function IA_claudeOk(k){return /^sk-ant-/.test(String(k||'').trim());} // chave Claude tem prefixo estável; barra lixo colado por engano
 function IA_getKey(){return (IA_prov==='claude'?IA_claudeKey:IA_gemKey)||'';}
 function IA_temChave(){return !!IA_getKey();}
 function IA_provNome(){return IA_prov==='claude'?'Claude':'Gemini';}
@@ -5172,6 +5203,7 @@ async function IA_carregarChave(){
   try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);const j=await res.json();
     if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields){const g=(fromFV(d.fields.geminiKey)||'').trim(),cl=(fromFV(d.fields.claudeKey)||'').trim(),pv=fromFV(d.fields.provedor);if(g)IA_gemKey=g;if(cl)IA_claudeKey=cl;if(pv)IA_prov=pv==='claude'?'claude':'gemini';}}
   }catch(e){}
+  if(IA_claudeKey&&!IA_claudeOk(IA_claudeKey))IA_claudeKey=''; // ignora chave Claude corrompida (ex.: texto colado por engano)
   if(IA_prov==='claude'&&!IA_claudeKey&&IA_gemKey)IA_prov='gemini';
   IA_refreshStatus();
 }
@@ -5191,7 +5223,7 @@ function IA_refreshStatus(){
 }
 async function IA_setProvedor(v){IA_prov=(v==='claude'?'claude':'gemini');IA_candidatosCache=null;await IA_persistir();IA_refreshStatus();if(mainAtivo==='sophia'&&typeof SOPHIA_abrir==='function')SOPHIA_abrir();toast('IA: usando '+IA_provNome()+'.');}
 async function IA_salvarChaveUI(qual){
-  if(qual==='claude'){const el=document.getElementById('iaClaudeInput');const v=el.value.trim();if(!v){toast('Cole a chave do Claude.','#ef4444');return;}IA_claudeKey=v;el.value='';}
+  if(qual==='claude'){const el=document.getElementById('iaClaudeInput');const v=el.value.trim();if(!v){toast('Cole a chave do Claude.','#ef4444');return;}if(!IA_claudeOk(v)){toast('Essa não parece uma chave do Claude (começa com "sk-ant-"). Confira e cole de novo.','#ef4444',6000);return;}IA_claudeKey=v;el.value='';}
   else{const el=document.getElementById('iaGemInput');const v=el.value.trim();if(!v){toast('Cole a chave do Gemini.','#ef4444');return;}IA_gemKey=v;IA_candidatosCache=null;el.value='';}
   await IA_persistir();IA_refreshStatus();toast('✅ Chave salva!');
 }
@@ -5200,6 +5232,7 @@ async function IA_apagarChaveUI(qual){if(!confirm('Remover esta chave?'))return;
 async function IA_gerarConteudo(prompt,imagens,opts){
   opts=opts||{};imagens=imagens||[];const key=IA_getKey();if(!key)throw new Error('Sem chave de IA. Configure em Config → Inteligência Artificial.');
   if(IA_prov==='claude'){
+    if(!IA_claudeOk(key))throw new Error('Chave do Claude inválida (deve começar com "sk-ant-"). Cole a chave de novo em Config → IA.');
     const content=[{type:'text',text:prompt}];
     imagens.forEach(im=>{const mime=im.mime||'image/jpeg';if(mime.indexOf('pdf')>=0)content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:im.b64}});else content.push({type:'image',source:{type:'base64',media_type:mime,data:im.b64}});});
     const body={model:IA_CLAUDE_MODEL,max_tokens:8000,messages:[{role:'user',content}]};
@@ -5888,7 +5921,7 @@ let FCX_recatPend=null;
 window.FCX_recategorizar=function(tipo,id,mes,novo){
   if(tipo==='cartao'){ // item de fatura imutável: acha pela fitid e re-salva a fatura (modelo novo)
     let achou=false;
-    (C_faturas||[]).forEach(f=>{(f.itens||[]).forEach(it=>{if(it.fitid===id){it.categoria=novo;achou=true;C_fbSet(C_COL_FAT,f.id,f);if(it.parcela){const gid=('p_'+f.cartaoId+'_'+C_norm(it.descricao).replace(/[^a-z0-9]+/g,'_')+'_'+it.parcela.total).slice(0,140);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novo;C_fbSet(C_COL_PARC,gid,pex);}}}});});
+    (C_faturas||[]).forEach(f=>{(f.itens||[]).forEach(it=>{if(it.fitid===id){it.categoria=novo;achou=true;C_fbSet(C_COL_FAT,f.id,f);if(it.parcela){const gid=C_gidParcela(f.cartaoId,it.descricao,it.parcela.total);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novo;C_fbSet(C_COL_PARC,gid,pex);}}}});});
     FCX_recatFinalizar(achou?'o item do cartão':null);return;
   }
   // conta a pagar pode repetir em vários meses → pergunta o escopo
@@ -5938,8 +5971,8 @@ function FCX_renderTodos(){
 function FCX_anomalias(){
   const mref=mesAtualReal();const ord=P_getMesesOrdenados();const idx=ord.indexOf(mref);const prev=[];
   for(let i=Math.max(0,idx-3);i<idx;i++)prev.push(ord[i]);
-  const soma={},cnt={};prev.forEach(m=>(P_meses[m]||[]).forEach(r=>{if(!r.categoria)return;soma[r.categoria]=(soma[r.categoria]||0)+(Number(r.valor)||0);cnt[r.categoria]=(cnt[r.categoria]||0)+1;}));
-  const out=[];(P_meses[mref]||[]).forEach(r=>{if(!r.categoria)return;const media=cnt[r.categoria]?soma[r.categoria]/cnt[r.categoria]:0;const v=Number(r.valor)||0;if(media>0&&v>media*2)out.push({valor:v,ci:catInfoP(r.categoria),desc:r.nome,x:v/media});});
+  const soma={},cnt={};prev.forEach(m=>(P_meses[m]||[]).forEach(r=>{if(!r.categoria||r.faturaCartao)return;soma[r.categoria]=(soma[r.categoria]||0)+(Number(r.valor)||0);cnt[r.categoria]=(cnt[r.categoria]||0)+1;}));
+  const out=[];(P_meses[mref]||[]).forEach(r=>{if(!r.categoria||r.faturaCartao)return;const media=cnt[r.categoria]?soma[r.categoria]/cnt[r.categoria]:0;const v=Number(r.valor)||0;if(media>0&&v>media*2)out.push({valor:v,ci:catInfoP(r.categoria),desc:r.nome,x:v/media});});
   return out.sort((a,b)=>b.x-a.x).slice(0,6);
 }
 window.FCX_dispensar=function(k){FCX_dismiss[k]=true;FCX_render();};
@@ -7262,6 +7295,53 @@ IA_carregarChave();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=7"></script>
+<!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
+<script src="js/concil.js?v=1"></script>
+<style>
+  #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
+  #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  #cxModalBg .cx-box{background:#f1f5f9;border-radius:10px;padding:8px 12px;min-width:76px;text-align:center}
+  #cxModalBg .cx-box .n{font-size:1.05rem;font-weight:800;color:#0f172a}#cxModalBg .cx-box .l{font-size:.68rem;color:#64748b;text-transform:uppercase}
+  #cxModalBg .cx-box.ok .n{color:#16a34a}#cxModalBg .cx-box.rem .n{color:#dc2626}#cxModalBg .cx-box.dup .n{color:#b45309}
+  #cxModalBg .cx-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  #cxModalBg .cx-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:4px 12px;font-size:.8rem;cursor:pointer;color:#334155}
+  #cxModalBg .cx-chip.on{background:#dcfce7;border-color:#16a34a;color:#15803d;font-weight:700}
+  #cxModalBg .cx-tab{width:100%;border-collapse:collapse;font-size:.84rem}
+  #cxModalBg .cx-tab th{text-align:left;color:#64748b;font-size:.7rem;text-transform:uppercase;padding:6px;border-bottom:1px solid #e5e7eb}
+  #cxModalBg .cx-tab td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  #cxModalBg .cx-sel{border:1px solid #cbd5e1;border-radius:8px;padding:4px 8px;font-size:.82rem}
+  #cxModalBg .cx-badge{background:#fee2e2;color:#991b1b;border-radius:6px;padding:0 6px;font-size:.68rem}
+  #cxModalBg .cx-acoes{display:flex;justify-content:space-between;gap:10px;margin-top:14px}
+  #cxModalBg .cx-btn{background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:7px 14px;cursor:pointer;font-size:.86rem}
+  #cxModalBg .cx-btn.prim{background:#16a34a;color:#fff;border-color:#16a34a;font-weight:700}
+  #cxModalBg .cx-col-h{font-weight:800;font-size:.76rem;text-transform:uppercase;color:#64748b;margin-bottom:6px}
+  #cxModalBg .cx-dica{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:9px 12px;margin:6px 0 12px;font-size:.84rem;color:#1e40af}
+  #cxModalBg .cx-rodape{background:#fffbeb;border:1px solid #fbbf24;border-radius:12px;padding:12px;margin-top:12px;color:#92400e}
+</style>
+<div id="cxModalBg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;align-items:flex-start;justify-content:center;overflow:auto;padding:20px">
+  <div style="background:#fff;border-radius:16px;max-width:940px;width:100%;padding:20px;margin:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0;font-size:1.2rem">📥 Trazer extrato bancário</h2>
+      <button class="cx-btn" onclick="CX_fechar()">✕</button>
+    </div>
+    <p style="margin:0 0 12px;color:#64748b;font-size:.86rem">A conciliação lê, organiza e prepara as movimentações pra você revisar. Nada é lançado antes da sua confirmação.</p>
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:12px">
+      <label style="font-weight:700;font-size:.82rem">Conta do extrato</label>
+      <select id="cxConta" class="cx-sel" style="width:100%;margin-top:4px" onchange="CX_mudarConta()"></select>
+      <div id="cxContaInfo" style="font-size:.8rem;color:#64748b;margin-top:4px"></div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <div style="flex:1"><label style="font-size:.76rem;color:#64748b">Data inicial</label><input type="date" id="cxDe" class="cx-sel" style="width:100%"></div>
+        <div style="flex:1"><label style="font-size:.76rem;color:#64748b">Data final</label><input type="date" id="cxAte" class="cx-sel" style="width:100%"></div>
+      </div>
+    </div>
+    <div style="border:2px dashed #cbd5e1;border-radius:12px;padding:16px;text-align:center">
+      <input type="file" id="cxOfxInput" accept=".ofx,application/x-ofx,text/plain" style="display:none" onchange="CX_ofxArquivo(event)">
+      <button class="cx-btn prim" onclick="document.getElementById('cxOfxInput').click()">📄 Escolher arquivo OFX</button>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:6px">Importe o extrato <b>.ofx</b> da conta. Gera uma revisão antes de qualquer coisa ser lançada.</div>
+    </div>
+    <div id="cxResultado"></div>
+  </div>
+</div>
 
 <!-- ═══ TEMA "NS na cara da WEN" — camada de refinamento visual (não muda lógica/estrutura) ═══ -->
 <style id="ns-theme">
