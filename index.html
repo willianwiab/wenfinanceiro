@@ -3962,14 +3962,28 @@ function BC_tipoInfo(t){return BC_TIPOS[t]||BC_TIPOS.personalizada;}
 function BC_hoje(){return new Date().toISOString().slice(0,10);}
 function BC_dataBR(iso){if(!iso)return'';const p=String(iso).slice(0,10).split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso;}
 
-// ── Persistência REST genérica ──
-async function BC_fbUpsert(col,id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
-async function BC_fbExcluir(col,id){await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
+// ── Cache local: contas/movimentações/transferências sobrevivem ao refresh mesmo com Firestore fora (429) ──
+function BC_salvarCache(){try{localStorage.setItem('wen_bc',JSON.stringify({contas:BC_CONTAS,movs:BC_MOVS,transfs:BC_TRANSFS}));}catch(e){}}
+function BC_carregarCache(){try{const c=JSON.parse(localStorage.getItem('wen_bc')||'{}');
+  if(c.contas&&typeof c.contas==='object'){Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);Object.keys(c.contas).forEach(k=>BC_CONTAS[k]=c.contas[k]);}
+  if(Array.isArray(c.movs))BC_MOVS=c.movs;
+  if(Array.isArray(c.transfs))BC_TRANSFS=c.transfs;
+}catch(e){}}
+
+// ── Persistência REST genérica (grava no cache local ANTES da nuvem) ──
+async function BC_fbUpsert(col,id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
+async function BC_fbExcluir(col,id){BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
 async function BC_fbCarregar(col){const out=[];try{let pt=null;do{let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;const res=await fetch(url);const json=await res.json();if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={id:doc.name.split('/').pop()};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out.push(o);});pt=json.nextPageToken||null;}while(pt);}catch(e){console.warn('Contas('+col+'):',e.message);}return out;}
 async function BC_inicializar(){
-  const [contas,movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL),BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
-  Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);contas.forEach(c=>BC_CONTAS[c.id]=c);
-  BC_MOVS=movs; BC_TRANSFS=transfs;
+  BC_carregarCache(); // 1) instantâneo, do cache local
+  try{
+    const [contas,movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL),BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
+    // 2) só substitui se a nuvem RESPONDEU com dados; se veio vazia (429/quota), mantém o cache local
+    if(contas&&contas.length){Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);contas.forEach(c=>BC_CONTAS[c.id]=c);}
+    if(movs&&movs.length)BC_MOVS=movs;
+    if(transfs&&transfs.length)BC_TRANSFS=transfs;
+  }catch(e){console.warn('BC_inicializar',e.message);}
+  BC_salvarCache();
   BC_popularSelectBaixa();
   if(mainAtivo==='contas')BC_renderPainel();
   if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
