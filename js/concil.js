@@ -165,6 +165,43 @@ async function CX_regraAprender(descricao, nomeConta, tipo) {
   if (ex) Object.assign(ex, dados); else CX_regras.push(dados);
 }
 
+// ── CATEGORIAS contextuais: DESPESA reusa CATS_P do WEN; RECEITA é uma lista nova
+// e editável (coleção `categorias_receber`), espelhando o padrão de `categorias_pagar`.
+// Nos dois casos o dropdown tem "➕ adicionar nova", que persiste na lista certa.
+const CX_CATS_R_SEED = [
+  { id: 'locacao_estudio', label: 'Locação estúdio' },
+  { id: 'edicao', label: 'Edição' },
+  { id: 'servicos_rec', label: 'Serviços' },
+  { id: 'outros_rec', label: 'Outros' },
+];
+let CX_catsR = null, CX_catsRCarregado = false;
+async function CX_carregarCatsR() {
+  if (CX_catsRCarregado) return;
+  try {
+    const raw = (typeof BC_fbCarregar === 'function') ? await BC_fbCarregar('categorias_receber') : [];
+    const arr = (Array.isArray(raw) ? raw : Object.values(raw || {})).filter(c => c && c.label);
+    if (arr.length) CX_catsR = arr.map(c => ({ id: c.id || CX_slug(c.label), label: c.label }));
+    else { CX_catsR = CX_CATS_R_SEED.slice(); for (const c of CX_catsR) { try { await BC_fbUpsert('categorias_receber', c.id, { label: c.label }); } catch (e) {} } }
+    CX_catsRCarregado = true;
+  } catch (e) { CX_catsR = CX_CATS_R_SEED.slice(); }
+}
+function CX_slug(label) { try { if (typeof CAT_slug === 'function') return CAT_slug(label); } catch (e) {} return String(label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('cat_' + Date.now()); }
+function CX_catsReceita() { return CX_catsR || CX_CATS_R_SEED.slice(); }
+function CX_catsDespesa() { try { return Object.keys(CATS_P).map(k => ({ id: k, label: (catInfoP(k) || {}).label || k })); } catch (e) { return []; } }
+// cria de verdade na lista certa (receita → categorias_receber; despesa → CATS_P/categorias_pagar)
+async function CX_criarCategoria(label, ehReceita) {
+  const slug = CX_slug(label);
+  if (ehReceita) {
+    CX_catsR = (CX_catsR || CX_CATS_R_SEED.slice()); CX_catsR.push({ id: slug, label });
+    try { if (typeof BC_fbUpsert === 'function') await BC_fbUpsert('categorias_receber', slug, { label }); } catch (e) {}
+  } else {
+    const dados = { label, icon: '📦', color: '#94a3b8', bg: '#f1f5f9' };
+    try { CATS_P[slug] = dados; } catch (e) {}
+    try { if (typeof CAT_fbSalvar === 'function') await CAT_fbSalvar(slug, dados); } catch (e) {}
+  }
+  return slug;
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // MOTOR CX_ — UI portada do EX_ do Nossa Semente (lado a lado, rateio, mês,
 // filtros, aprende). Só roda no navegador (usa DOM). Ligada ao adaptador acima.
@@ -239,7 +276,7 @@ if (typeof document !== 'undefined') (function () {
       if (idsMov.has(chave)) dup = { tipo: 'existente' };
       else { const k = b.data + '|' + Math.round(b.valor * 100) + '|' + CX_norm(b.descricao); if (vistos.has(k)) dup = { tipo: 'lote' }; else vistos.add(k); }
       const cc = !dup ? concilCand({ valor: b.valor, data: b.data, descricao: b.descricao }, contaId) : null;
-      return { id: 'cx' + idx, fitid: b.fitid, chave, data: b.data, valor: b.valor, descricao: b.descricao, categoria: CX_categoria(b.descricao) || null, confianca: 'revisar', tipoMov, dup, concilCand: cc, pares: cc ? [cc] : [], conciliar: !!cc, incluir: !dup };
+      return { id: 'cx' + idx, fitid: b.fitid, chave, data: b.data, valor: b.valor, descricao: b.descricao, categoria: (b.valor < 0 ? (CX_categoria(b.descricao) || null) : null), confianca: 'revisar', tipoMov, dup, concilCand: cc, pares: cc ? [cc] : [], conciliar: !!cc, incluir: !dup };
     });
     const datas = itens.map(i => i.data).filter(Boolean).sort();
     if (datas.length) { const de = el('cxDe'), ate = el('cxAte'); if (de && !de.value) de.value = datas[0]; if (ate && !ate.value) ate.value = datas[datas.length - 1]; }
@@ -291,7 +328,7 @@ if (typeof document !== 'undefined') (function () {
     else if (it.concilCand) { const mao = it.concilCand.viaRegra ? ' 🧠 aprendida' : ''; concilB = `<div style="margin-top:2px"><label style="font-size:.72rem;color:#15803d;cursor:pointer"><input type="checkbox" onchange="CX_toggleConciliar(${i})"> 🟢 Conciliar${mao} com <b>${esc(it.concilCand.nome)}</b></label></div>`; }
     const ent = it.valor >= 0;
     const tipoCell = it.conciliar ? `<span style="font-size:.72rem;color:#15803d">🟢 ${(it.pares || []).length > 1 ? 'rateio' : 'conciliação'}</span>` : `<select class="cx-sel" onchange="CX_setTipo(${i},this.value)">${optsTipo(it.tipoMov)}</select>`;
-    const catCell = it.conciliar ? `<span style="font-size:.72rem;color:#94a3b8">dá baixa</span>` : `<input class="cx-sel" value="${esc(it.categoria || '')}" placeholder="categoria" onchange="CX_setCat(${i},this.value)">`;
+    const catCell = it.conciliar ? `<span style="font-size:.72rem;color:#94a3b8">dá baixa</span>` : `<select class="cx-sel" style="border-color:${it.valor >= 0 ? '#16a34a' : '#dc2626'}" onchange="CX_setCat(${i},this.value)">${optsCatCtx(it)}</select>`;
     return `<tr${it.conciliar ? ' style="background:#f0fdf4"' : (it.incluir ? '' : ' style="opacity:.5"')}>
       <td style="text-align:center"><input type="checkbox" ${it.incluir ? 'checked' : ''} onchange="CX_toggleIncluir(${i})"></td>
       <td>${esc(it.descricao)}${dupB}${concilB}</td><td>${dataBR(it.data)}</td>
@@ -356,7 +393,26 @@ if (typeof document !== 'undefined') (function () {
   window.CX_setFiltro = f => { IMP.filtro = f; renderRevisao(); };
   window.CX_setVista = v => { IMP.vista = v; selE = null; selD = null; renderRevisao(); };
   window.CX_toggleIncluir = i => { IMP.itens[i].incluir = !IMP.itens[i].incluir; renderRevisao(); };
-  window.CX_setCat = (i, v) => { IMP.itens[i].categoria = v || null; IMP.itens[i].confianca = v ? 'alta' : 'revisar'; };
+  // dropdown CONTEXTUAL: entrada → categorias de receita; saída → de despesa. Sempre com "➕ adicionar nova".
+  function optsCatCtx(it) {
+    const ent = it.valor >= 0, sel = it.categoria || '';
+    const lista = ent ? CX_catsReceita() : CX_catsDespesa();
+    return `<option value="">— ${ent ? 'receita' : 'despesa'} —</option>`
+      + lista.map(c => `<option value="${esc(c.id)}" ${sel === c.id ? 'selected' : ''}>${esc(c.label)}</option>`).join('')
+      + `<option value="__nova__">➕ adicionar nova…</option>`;
+  }
+  window.CX_setCat = async (i, v) => {
+    const it = IMP.itens[i];
+    if (v === '__nova__') {
+      const ent = it.valor >= 0;
+      const nome = (prompt('Nome da nova categoria de ' + (ent ? 'receita' : 'despesa') + ':') || '').trim();
+      if (!nome) return renderRevisao();
+      try { it.categoria = await CX_criarCategoria(nome, ent); aviso(`Categoria "${nome}" criada 💚`, '#16a34a'); }
+      catch (e) { aviso('Não consegui criar a categoria agora.', '#ef4444'); }
+      return renderRevisao();
+    }
+    it.categoria = v || null; it.confianca = v ? 'alta' : 'revisar'; renderRevisao();
+  };
   window.CX_setTipo = (i, v) => { IMP.itens[i].tipoMov = v; };
   window.CX_toggleConciliar = i => { const it = IMP.itens[i]; if (!it.concilCand) return; if (it.pares && it.pares.length) it.pares = []; else { it.pares = [it.concilCand]; it.incluir = true; } sync(it); renderRevisao(); };
   window.CX_aceitarSugestao = id => { const it = IMP.itens.find(x => x.id === id); if (it && it.concilCand) { it.pares = [it.concilCand]; it.incluir = true; sync(it); aviso('Conciliado 💚', '#16a34a'); } selE = null; selD = null; renderRevisao(); };
@@ -425,6 +481,7 @@ if (typeof document !== 'undefined') (function () {
   };
   async function abrir() {
     try { if (typeof CX_carregarRegras === 'function') await CX_carregarRegras(); } catch (e) {}
+    try { if (typeof CX_carregarCatsR === 'function') await CX_carregarCatsR(); } catch (e) {}   // lista de categorias de RECEITA
     const ativas = contasAtivas();
     if (!ativas.length) return aviso('Cadastre uma conta bancária primeiro.', '#ef4444');
     const sel = el('cxConta'); if (sel) sel.innerHTML = ativas.map(id => `<option value="${id}">${esc(contaInfo(id).inst + ' · ' + contaInfo(id).nome)}</option>`).join('');
