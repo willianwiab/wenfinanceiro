@@ -257,6 +257,10 @@ if (typeof document !== 'undefined') (function () {
     return allAbertos(contaId).filter(fx => (!set.size || set.has(fx.mes)) && !idsCasados.has(fx.id));
   }
 
+  // saldo final do extrato (LEDGERBAL) — alimenta o banner "saldo do extrato × saldo cadastrado"
+  function parseSaldoOFX(texto) {
+    try { const b = [...String(texto).matchAll(/<LEDGERBAL>[\s\S]*?<BALAMT>([^<\r\n]*)/gi)].map(m => parseFloat(String(m[1]).replace(',', '.'))); return { saldoFinal: b.length ? b[b.length - 1] : null }; } catch (e) { return {}; }
+  }
   // ── contas (BC_) ──
   const contasAtivas = () => (typeof BC_contasAtivas === 'function') ? BC_contasAtivas() : Object.keys(BC_CONTAS || {});
   const contaInfo = id => { const c = (BC_CONTAS || {})[id] || {}; return { inst: c.banco || '', nome: c.nome || '' }; };
@@ -308,15 +312,21 @@ if (typeof document !== 'undefined') (function () {
     const chip = (id, lbl, n) => `<button class="cx-chip ${f === id ? 'on' : ''}" onclick="CX_setFiltro('${id}')">${lbl}${n != null ? ` (${n})` : ''}</button>`;
     const vis = imp.itens.map((it, i) => ({ it, i })).filter(({ it }) => f === 'entradas' ? (it.incluir && it.valor >= 0) : f === 'saidas' ? (it.incluir && it.valor < 0) : f === 'pendencias' ? (it.incluir && !it.categoria && !it.conciliar) : f === 'duplicidades' ? !!it.dup : f === 'conciliacoes' ? (!!it.concilCand || (it.pares && it.pares.length)) : f === 'excluidos' ? !it.incluir : true);
     const box = (n, l, cls) => `<div class="cx-box ${cls || ''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+    // banner "saldo final do extrato × saldo cadastrado" (igual ao NS)
+    let saldoBloco = '';
+    if (imp.saldoFinal != null) {
+      const sAtual = contaSaldo(imp.contaId), bate = sAtual != null && Math.abs(imp.saldoFinal - sAtual) < 0.02;
+      saldoBloco = `<div style="border-radius:10px;padding:9px 12px;margin:6px 0;font-size:.84rem;${bate ? 'background:#f0fdf4;border:1px solid #16a34a;color:#15803d' : 'background:#fffbeb;border:1px solid #f59e0b;color:#92400e'}">Saldo final no extrato: <b>${money(imp.saldoFinal)}</b> · Saldo cadastrado hoje: <b>${sAtual == null ? 'não informado' : money(sAtual)}</b>. ${bate ? '✓ conferem.' : (sAtual == null ? 'Informe o saldo da conta para conciliar.' : 'O saldo do extrato está diferente do saldo no sistema.')}</div>`;
+    }
     cont.innerHTML = `<div class="cx-card">
       <h3 style="margin:0 0 2px">Revisar movimentações</h3>
       <p style="margin:0 0 10px;font-size:.84rem;color:#64748b"><b>${esc(info.inst)} · ${esc(info.nome)}</b> — confira e ajuste. Nada é lançado antes de você confirmar.</p>
       <div class="cx-resumo">${box(imp.itens.length, 'encontradas')}${box(money(totEnt), 'entradas', 'ok')}${box(money(totSai), 'saídas', 'rem')}${box(money(liquido), 'líquido', liquido >= 0 ? 'ok' : 'rem')}${box(pend, 'com pendência', pend ? 'rem' : '')}${box(dupN, 'duplicidades', dupN ? 'dup' : '')}${concilN ? box(concilOn + '/' + concilN, 'conciliações', 'ok') : ''}</div>
-      ${mostraConcil ? `<div class="cx-chips" style="margin-bottom:2px"><button class="cx-chip ${imp.vista === 'ladoalado' ? 'on' : ''}" onclick="CX_setVista('ladoalado')">⇄ Lado a lado</button><button class="cx-chip ${imp.vista !== 'ladoalado' ? 'on' : ''}" onclick="CX_setVista('lista')">📋 Lista</button></div>` : ''}
-      ${(mostraConcil && imp.vista === 'ladoalado') ? renderLadoALado(imp) : `
+      ${saldoBloco}
       <div class="cx-chips">${chip('todos', 'Todos', imp.itens.length)}${chip('entradas', 'Entradas')}${chip('saidas', 'Saídas')}${chip('pendencias', 'Pendências', pend)}${concilN ? chip('conciliacoes', '🟢 Conciliações', concilN) : ''}${chip('duplicidades', 'Duplicidades', dupN)}${chip('excluidos', 'Excluídos', imp.itens.filter(i => !i.incluir).length)}</div>
-      <div style="overflow-x:auto"><table class="cx-tab"><thead><tr><th>✓</th><th>Descrição</th><th>Data</th><th>Valor</th><th>Tipo</th><th>Categoria</th><th>Conf.</th></tr></thead><tbody>${vis.map(({ it, i }) => linha(it, i)).join('') || `<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:14px">Nenhum item neste filtro.</td></tr>`}</tbody></table></div>
-      ${rodapePendentes(imp)}`}
+      ${mostraConcil ? renderLadoALado(imp) : `
+      <div style="overflow-x:auto"><table class="cx-tab"><thead><tr><th>✓</th><th>Descrição</th><th>Data</th><th>Valor</th><th>Tipo</th><th>Categoria</th><th>Conf.</th></tr></thead><tbody>${vis.map(({ it, i }) => linha(it, i)).join('') || `<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:14px">Nenhum item neste filtro.</td></tr>`}</tbody></table></div>`}
+      ${rodapePendentes(imp)}
       <div class="cx-acoes"><button class="cx-btn" onclick="CX_cancelar()">Cancelar</button><button class="cx-btn prim" id="cxBtnConfirmar" onclick="CX_confirmar()">Confirmar ${incl.length} ${incl.length === 1 ? 'movimentação' : 'movimentações'}${concilOn ? ` · ${concilOn} concilia${concilOn === 1 ? '' : 'm'}` : ''}</button></div>
     </div>`;
   }
@@ -347,22 +357,37 @@ if (typeof document !== 'undefined') (function () {
 
   // ── lado a lado (rateio + mês + filtros) ──
   function renderLadoALado(imp) {
-    const itensE = imp.itens.filter(it => !it.dup);
-    const itemDe = fx => itensE.find(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
+    // TELA ÚNICA: os filtros do topo valem para a coluna do extrato (não existe mais "modo lista")
+    const fTopo = imp.filtro || 'todos';
+    const passa = it => fTopo === 'entradas' ? it.valor >= 0 : fTopo === 'saidas' ? it.valor < 0
+      : fTopo === 'pendencias' ? (it.incluir && !it.categoria && !it.conciliar)
+        : fTopo === 'conciliacoes' ? (!!it.concilCand || (it.pares && it.pares.length))
+          : fTopo === 'excluidos' ? !it.incluir : true;
+    const itensE = (fTopo === 'duplicidades') ? imp.itens.filter(it => it.dup) : imp.itens.filter(it => !it.dup && passa(it));
+    const pareaveis = imp.itens.filter(it => !it.dup);   // pareamento olha todos, não só os filtrados
+    const itemDe = fx => pareaveis.find(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
     const cardE = it => {
       const ent = it.valor >= 0, sel = selE === it.id, np = (it.pares || []).length, comp = completo(it);
       const bg = comp ? '#f0fdf4' : (np ? '#fffbeb' : (sel ? '#eff6ff' : '#fff')), bd = comp ? '#16a34a' : (np ? '#f59e0b' : (sel ? '#3b82f6' : '#e5e7eb'));
       let sub;
-      if (np) { const nomes = it.pares.map(p => esc(p.nome)).join(' + '), ft = falta(it), mao = (np === 1 && it.pares[0].viaRegra) ? ' 🧠' : ''; sub = (comp ? `<span style="color:#15803d">🟢 ${nomes}${mao}</span>` : `<span style="color:#a16207">➗ ${nomes} · faltam ${money(ft)}</span>`) + ` · <a onclick="event.stopPropagation();CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a>`; }
-      else if (it.concilCand) { const mao = it.concilCand.viaRegra ? ' 🧠 aprendida' : ''; sub = `<span style="color:#94a3b8">sugestão${mao}: ${esc(it.concilCand.nome)}</span> · <a onclick="event.stopPropagation();CX_aceitarSugestao('${it.id}')" style="color:#15803d;cursor:pointer">conciliar</a>`; }
+      // mostra o VALOR de cada conta ao lado do nome — dá pra conferir se a soma bate com o extrato
+      if (np) { const nomes = it.pares.map(p => `${esc(p.nome)} <span style="opacity:.7">(${money(p.valor)})</span>`).join(' + '), ft = falta(it), mao = (np === 1 && it.pares[0].viaRegra) ? ' 🧠' : ''; sub = (comp ? `<span style="color:#15803d">🟢 ${nomes}${mao}</span>` : `<span style="color:#a16207">➗ ${nomes} · faltam ${money(ft)}</span>`) + ` · <a onclick="event.stopPropagation();CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a>`; }
+      else if (it.concilCand) { const mao = it.concilCand.viaRegra ? ' 🧠 aprendida' : ''; sub = `<span style="color:#94a3b8">sugestão${mao}: ${esc(it.concilCand.nome)} <span style="opacity:.7">(${money(it.concilCand.valor)})</span></span> · <a onclick="event.stopPropagation();CX_aceitarSugestao('${it.id}')" style="color:#15803d;cursor:pointer">conciliar</a>`; }
       else sub = sel ? `<span style="color:#3b82f6">agora toque nas contas à direita →</span>` : `<span style="color:#94a3b8">sem par → vira lançamento novo</span>`;
-      return `<div onclick="CX_pickE('${it.id}')" style="cursor:pointer;background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${esc(it.descricao)}</span><span style="font-size:.82rem;font-weight:700;color:${ent ? '#16a34a' : '#dc2626'};white-space:nowrap">${ent ? '+' : '−'}${money(Math.abs(it.valor))}</span></div><div style="font-size:.71rem;margin-top:1px">${dataBR(it.data)} · ${sub}</div></div>`;
+      // TELA ÚNICA: item sem par vira lançamento novo → categoria/tipo/lançar direto no card
+      const idx = imp.itens.indexOf(it);
+      const linhaNovo = (!np && !it.dup) ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">
+          <select class="cx-sel" style="font-size:.7rem;padding:2px 6px;flex:1;min-width:110px;border-color:${ent ? '#16a34a' : '#dc2626'}" onchange="CX_setCat(${idx},this.value)">${optsCatCtx(it)}</select>
+          <select class="cx-sel" style="font-size:.7rem;padding:2px 6px;min-width:92px" onchange="CX_setTipo(${idx},this.value)">${optsTipo(it.tipoMov)}</select>
+          <label style="font-size:.68rem;color:#64748b;display:inline-flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" ${it.incluir ? 'checked' : ''} onchange="CX_toggleIncluir(${idx})">lançar</label>
+        </div>` : '';
+      return `<div onclick="CX_pickE('${it.id}')" style="cursor:pointer;background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px;${it.incluir ? '' : 'opacity:.55;'}"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${esc(it.descricao)}</span><span style="font-size:.82rem;font-weight:700;color:${ent ? '#16a34a' : '#dc2626'};white-space:nowrap">${ent ? '+' : '−'}${money(Math.abs(it.valor))}</span></div><div style="font-size:.71rem;margin-top:1px">${dataBR(it.data)} · ${sub}</div>${linhaNovo}</div>`;
     };
     const colE = itensE.length ? itensE.map(cardE).join('') : `<div style="color:#94a3b8;font-size:.84rem;padding:10px">Nada a revisar.</div>`;
     const mes = imp.mesConcil, todas = fixasDoMes(imp.contaId, mes); lancCache = todas;
     const idsAntes = idsConciliadasAntes();
     const keyOf = fx => fx.tipo + '|' + fx.id + '|' + (fx.mes || '');
-    const pareada = fx => itensE.some(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
+    const pareada = fx => pareaveis.some(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
     const estado = fx => { if (ignoradas.has(keyOf(fx))) return 'ignorada'; if (pareada(fx) || idsAntes.has(String(fx.id)) || fx.pago) return 'conciliada'; return 'aconciliar'; };
     const grupos = { aconciliar: [], conciliada: [], ignorada: [] }; todas.forEach(fx => grupos[estado(fx)].push(fx));
     const fl = imp.filtroConcil || 'aconciliar', selEsq = selE && imp.itens.find(x => x.id === selE);
@@ -380,7 +405,7 @@ if (typeof document !== 'undefined') (function () {
     const chip = (id, lbl, n) => `<button class="cx-chip ${fl === id ? 'on' : ''}" style="padding:2px 9px;font-size:.74rem" onclick="CX_setFiltroConcil('${id}')">${lbl} (${n})</button>`;
     const nav = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><button class="cx-btn" style="padding:1px 10px" onclick="CX_setMesConcil(-1)">‹</button><span style="font-weight:700;font-size:.82rem;flex:1;text-align:center">${esc(CX_mesLabel(mes))}</span><button class="cx-btn" style="padding:1px 10px" onclick="CX_setMesConcil(1)">›</button></div>`;
     const filtros = `<div class="cx-chips" style="margin-bottom:6px">${chip('aconciliar', 'A conciliar', grupos.aconciliar.length)}${chip('conciliada', 'Conciliadas', grupos.conciliada.length)}${grupos.ignorada.length ? chip('ignorada', 'Ignoradas', grupos.ignorada.length) : ''}</div>`;
-    const nR = itensE.filter(it => (it.pares || []).length > 1).length;
+    const nR = pareaveis.filter(it => (it.pares || []).length > 1).length;
     const dica = selEsq ? `Selecionado <b>${esc(selEsq.descricao)}</b> (${money(Math.abs(selEsq.valor))}). Toque em cada conta que ele quita — pode ser mais de uma.${soma(selEsq) ? ` Faltam ${money(falta(selEsq))}.` : ''}` : `Toque num item do extrato e depois em cada conta que ele paga. Um débito pode quitar <b>várias contas</b> (rateio). Use ‹ › pra achar contas de outros meses.`;
     return `<style>@media(max-width:640px){.cx-grid{grid-template-columns:1fr !important}}</style>
       <div class="cx-dica">👆 ${dica}${nR ? ` <span style="color:#15803d">· ${nR} rateio(s)</span>` : ''}</div>
@@ -476,7 +501,7 @@ if (typeof document !== 'undefined') (function () {
   window.CX_ofxArquivo = ev => {
     const f = ev.target.files[0]; if (!f) return; ev.target.value = '';
     const r = new FileReader();
-    r.onload = e => { try { const brutos = (typeof IMP_parseOFX === 'function') ? IMP_parseOFX(e.target.result) : []; if (!brutos.length) return aviso('Nenhuma movimentação no arquivo.', '#f59e0b'); montar(brutos, {}, 'ofx'); } catch (err) { aviso('Erro ao ler OFX: ' + err.message, '#ef4444'); } };
+    r.onload = e => { try { const txt = e.target.result; const brutos = (typeof IMP_parseOFX === 'function') ? IMP_parseOFX(txt) : []; if (!brutos.length) return aviso('Nenhuma movimentação no arquivo.', '#f59e0b'); montar(brutos, parseSaldoOFX(txt), 'ofx'); } catch (err) { aviso('Erro ao ler OFX: ' + err.message, '#ef4444'); } };
     r.readAsText(f);
   };
   async function abrir() {
