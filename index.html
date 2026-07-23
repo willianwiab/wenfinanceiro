@@ -4,7 +4,23 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache"/>
 <title>WEN Produtora — Financeiro</title>
+<script>
+/* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
+   recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
+window.APP_VERSION='20260723a';
+(function(){try{
+  fetch('version.json?t='+Date.now(),{cache:'no-store'})
+   .then(function(r){return r.ok?r.json():null;})
+   .then(function(j){
+     if(!j||!j.v||j.v===window.APP_VERSION)return;
+     if(sessionStorage.getItem('appVReload')===j.v)return; /* já recarregou 1x p/ esta versão nesta sessão */
+     sessionStorage.setItem('appVReload',j.v);
+     var u=new URL(location.href);u.searchParams.set('v',j.v);location.replace(u.toString());
+   }).catch(function(){});
+}catch(e){}})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
