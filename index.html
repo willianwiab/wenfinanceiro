@@ -2234,30 +2234,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <!-- Modal nova compra no cartão (Fase 2) -->
-<div class="modal-bg" id="ccModalCompraBg">
-  <div class="modal" style="max-width:460px">
-    <h2 id="ccCompraTitle">🛒 Nova Compra</h2>
-    <div class="form-group"><label>Cartão</label><select id="ccCFCartao"></select></div>
-    <div class="form-group"><label>Descrição</label><input type="text" id="ccCFDesc" placeholder="Ex: Assinatura Adobe"/></div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor total (R$)</label><input type="number" id="ccCFValor" placeholder="0,00" step="0.01" oninput="CC_previewParcelas()"/></div>
-      <div class="form-group"><label>Parcelas</label><input type="number" id="ccCFParcelas" value="1" min="1" max="48" oninput="CC_previewParcelas()"/></div>
-    </div>
-    <div id="ccCFPreviewParcela" style="font-size:.78rem;color:#6b7280;margin:-6px 0 10px"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Data da compra</label><input type="date" id="ccCFData"/></div>
-      <div class="form-group"><label>Categoria</label><select id="ccCFCategoria"></select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Responsável</label><input type="text" id="ccCFResp" placeholder="Ex: William"/></div>
-      <div class="form-group"><label>Observação</label><input type="text" id="ccCFObs" placeholder="opcional"/></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-outline-b" onclick="CC_fecharModalCompra()">Cancelar</button>
-      <button class="btn btn-purple" onclick="CC_salvarCompra()">✅ Salvar</button>
-    </div>
-  </div>
-</div>
 
 <!-- Modal ratear despesa (Fase 8) -->
 <div class="modal-bg" id="rtModalBg">
@@ -4239,65 +4215,16 @@ async function CC_fbCarregar(col){
   return out;
 }
 async function CC_inicializar(){
-  // 1) localStorage primeiro (sobrevive ao refresh mesmo sem Firestore)
-  try{const c=JSON.parse(localStorage.getItem('wen_cc')||'{}');
-    if(c.cartoes)Object.assign(CC_CARTOES,c.cartoes);if(c.lancs)Object.assign(CC_LANCS,c.lancs);
-    if(c.parcelas)Object.assign(CC_PARCELAS,c.parcelas);if(c.regras)Object.assign(CC_REGRAS,c.regras);
-  }catch(e){}
-  // 2) Firestore por cima (se tiver dados) — mantém multi-dispositivo
-  const [cards,lancs,parc,regras]=await Promise.all([CC_fbCarregar(CC_COL_CARD),CC_fbCarregar(CC_COL_LANC),CC_fbCarregar(CC_COL_PARC),CC_fbCarregar(CC_COL_REGRA)]);
+  try{const c=JSON.parse(localStorage.getItem('wen_cc')||'{}');if(c.cartoes)Object.assign(CC_CARTOES,c.cartoes);}catch(e){}
+  const cards=await CC_fbCarregar(CC_COL_CARD);
   if(Object.keys(cards).length){Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);Object.assign(CC_CARTOES,cards);}
-  if(Object.keys(lancs).length){Object.keys(CC_LANCS).forEach(k=>delete CC_LANCS[k]);Object.assign(CC_LANCS,lancs);}
-  if(Object.keys(parc).length){Object.keys(CC_PARCELAS).forEach(k=>delete CC_PARCELAS[k]);Object.assign(CC_PARCELAS,parc);}
-  if(Object.keys(regras).length){Object.keys(CC_REGRAS).forEach(k=>delete CC_REGRAS[k]);Object.assign(CC_REGRAS,regras);}
-  await CC_reconciliarParcelasTodas(); // gera/atualiza parcelas persistidas das compras (migração idempotente)
   CC_salvarCache();
-  CC_sincronizarTodas(); // projeta as faturas futuras no Pagar automaticamente
   if(mainAtivo==='cartoes')CC_render();
   if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
 }
-// ── Parcelas persistidas (Fase 2) ──
-// Congela a competência (mês de vencimento) na geração. Não recomputa parcela cuja
-// fatura já está PAGA (preserva histórico). Idempotente: só grava o que mudou.
-function CC_competenciaParcela(l,c,k){
-  if(l.competenciaInicio){const ma=CC_mesAnoDaKey(l.competenciaInicio);const m=CC_addMonths(ma.ano,ma.mes,k);return CC_mesKey(m.ano,m.mes);}
-  const base=CC_baseVenc(l.dataCompra,+c.diaFechamento||1,+c.diaVencimento||10);const m=CC_addMonths(base.ano,base.mes,k);return CC_mesKey(m.ano,m.mes);
-}
-async function CC_reconciliarParcelasCompra(compraId){
-  const l=CC_LANCS[compraId];const c=l?CC_CARTOES[l.cartaoId]:null;
-  if(!l||!c){ // compra sumiu → remove parcelas órfãs (menos as de fatura paga)
-    for(const[pid,p]of Object.entries(CC_PARCELAS)){if(p.compraId===compraId&&!CC_isFaturaPaga(p.cartaoId,p.competencia)){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}}
-    return;
-  }
-  const P=Math.max(1,parseInt(l.parcelas)||1);const vp=Math.round((Number(l.valor)/P)*100)/100;
-  const base=Math.max(1,parseInt(l.parcelaBase)||1);      // 1ª parcela desta compra (importada pode começar em X)
-  const total=Math.max(base+P-1,parseInt(l.parcelaTotal)||P); // total do parcelamento (p/ mostrar X/N)
-  for(let k=0;k<P;k++){
-    const numero=base+k;const pid=compraId+'_'+numero;const ex=CC_PARCELAS[pid];
-    const congelada=ex&&CC_isFaturaPaga(ex.cartaoId,ex.competencia); // fatura paga → não move
-    const competencia=congelada?ex.competencia:CC_competenciaParcela(l,c,k);
-    const dados={compraId,cartaoId:l.cartaoId,numero,total,valor:vp,competencia,descricao:l.descricao,categoria:l.categoria||'',status:(ex&&ex.status)||'aberta',criadoEm:(ex&&ex.criadoEm)||new Date().toISOString()};
-    const mudou=!ex||['cartaoId','total','valor','competencia','descricao','categoria'].some(f=>ex[f]!==dados[f]);
-    CC_PARCELAS[pid]=dados;if(mudou)await CC_fbSalvar(CC_COL_PARC,pid,dados);
-  }
-  // remove parcelas fora da faixa atual [base..base+P-1] (nº de parcelas mudou), exceto fatura paga
-  for(const[pid,p]of Object.entries(CC_PARCELAS)){if(p.compraId===compraId&&(p.numero<base||p.numero>base+P-1)&&!CC_isFaturaPaga(p.cartaoId,p.competencia)){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}}
-}
-async function CC_reconciliarParcelasTodas(){for(const id of Object.keys(CC_LANCS))await CC_reconciliarParcelasCompra(id);}
-async function CC_reconciliarParcelasCartao(cid){for(const[id,l]of Object.entries(CC_LANCS))if(l.cartaoId===cid)await CC_reconciliarParcelasCompra(id);}
-
 // ── Datas / faturas ──
 function CC_addMonths(ano,mes,n){let m=mes+n;const a=ano+Math.floor(m/12);m=((m%12)+12)%12;return{ano:a,mes:m};}
 function CC_mesKey(ano,mes){return MESES_ABREV[mes]+'/'+ano;}
-// Mês de VENCIMENTO da 1ª parcela de uma compra
-function CC_baseVenc(dataCompra,diaFech,diaVenc){
-  const d=new Date((dataCompra||'')+'T12:00:00');
-  let ano=d.getFullYear(),mes=d.getMonth();const dia=d.getDate();
-  if(isNaN(ano))return{ano:new Date().getFullYear(),mes:new Date().getMonth()};
-  if(dia>diaFech)mes+=1;              // comprou depois do fechamento → próximo ciclo
-  if(diaVenc<=diaFech)mes+=1;         // vencimento cai no mês seguinte ao fechamento
-  return CC_addMonths(ano,mes,0);
-}
 // Mapa mesVencimento -> {items,total,ano,mes}
 // Fase 2: lê as PARCELAS PERSISTIDAS (fallback deriva on-the-fly se ainda não migrou).
 function CC_mesAnoDaKey(key){const p=(key||'').split('/');return{mes:MESES_IDX[p[0]]??0,ano:parseInt(p[1])||new Date().getFullYear()};}
@@ -4306,96 +4233,6 @@ function IMP_faturaMesKey(mv){const el=document.getElementById('ccImpMes');if(el
   // TODOS os itens da fatura caem no MÊS ESCOLHIDO — nada de espalhar por data de compra
   // (o usuário importa a fatura já fechada e diz a que mês ela pertence). Sem o campo, usa o mês atual.
   const d=new Date();return CC_mesKey(d.getFullYear(),d.getMonth());}
-function CC_faturasDoCartao(cid){
-  const c=CC_CARTOES[cid];if(!c)return{};
-  const parc=Object.values(CC_PARCELAS).filter(p=>p.cartaoId===cid);
-  const map={};
-  if(parc.length){
-    parc.forEach(p=>{const key=p.competencia;const ma=CC_mesAnoDaKey(key);const v=Math.round((Number(p.valor)||0)*100)/100;
-      map[key]=map[key]||{items:[],total:0,ano:ma.ano,mes:ma.mes};
-      map[key].items.push({lancId:p.compraId,parcelaId:p.compraId+'_'+p.numero,desc:p.descricao,parcela:p.numero,parcelas:p.total,valor:v,categoria:p.categoria});
-      map[key].total=Math.round((map[key].total+v)*100)/100;});
-    return map;
-  }
-  // fallback (cartão ainda sem parcelas persistidas): deriva como antes
-  const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10;
-  Object.entries(CC_LANCS).filter(([id,l])=>l.cartaoId===cid).forEach(([id,l])=>{
-    const P=Math.max(1,parseInt(l.parcelas)||1);const vp=Math.round((Number(l.valor)/P)*100)/100;
-    const base=CC_baseVenc(l.dataCompra,fech,venc);
-    for(let k=0;k<P;k++){
-      const m=CC_addMonths(base.ano,base.mes,k);const key=CC_mesKey(m.ano,m.mes);
-      map[key]=map[key]||{items:[],total:0,ano:m.ano,mes:m.mes};
-      map[key].items.push({lancId:id,desc:l.descricao,parcela:k+1,parcelas:P,valor:vp,categoria:l.categoria});
-      map[key].total=Math.round((map[key].total+vp)*100)/100;
-    }
-  });
-  return map;
-}
-// Conta a pagar gerada a partir de uma fatura (trava anti-duplicidade)
-function CC_faturaLanc(cid,key){
-  for(const mes of Object.keys(P_meses||{})){
-    const r=(P_meses[mes]||[]).find(x=>x.faturaCartao&&x.faturaCartao.cartaoId===cid&&x.faturaCartao.mes===key);
-    if(r)return{r,mes};
-  }
-  return null;
-}
-function CC_isFaturaGerada(cid,key){return !!CC_faturaLanc(cid,key);}
-function CC_isFaturaPaga(cid,key){const f=CC_faturaLanc(cid,key);return !!(f&&String(f.r.status).toUpperCase()==='PAGO');}
-function CC_limiteUsado(cid){const fat=CC_faturasDoCartao(cid);let u=0;Object.keys(fat).forEach(key=>{if(!CC_isFaturaPaga(cid,key))u+=fat[key].total;});return Math.round(u*100)/100;}
-function CC_gerarContaPagar(cid,key){
-  if(CC_isFaturaGerada(cid,key)){toast('Essa fatura já virou conta a pagar.','#f59e0b');return;}
-  const c=CC_CARTOES[cid];const fat=CC_faturasDoCartao(cid)[key];if(!c||!fat)return;
-  const venc=+c.diaVencimento||10;
-  if(!P_meses[key])P_meses[key]=[];
-  P_meses[key].push({id:gerarId(),nome:'💳 Fatura '+c.nome+' · '+key,valor:Math.round(fat.total*100)/100,valorPago:0,dia:venc,mes:key,categoria:'cartoes',fixa:false,status:'PENDENTE',cod:'',obs:'Gerada da fatura do cartão',faturaCartao:{cartaoId:cid,mes:key}});
-  P_salvarStorage();
-  CC_render();if(typeof renderSubPageP==='function'&&mainAtivo==='pagar')renderSubPageP(subPAtivo);
-  toast('✅ Conta a pagar gerada em '+key+' ('+fmt(fat.total)+')');
-}
-// AUTOMÁTICO: projeta TODAS as faturas do cartão como lançamentos agregados no Pagar.
-// Cria as faltantes, recalcula o valor das NÃO pagas, remove órfãs não pagas (compra excluída/editada).
-// Não mexe em fatura já PAGA. Anti-duplicidade por faturaCartao{cartaoId,mes}.
-function CC_sincronizarFaturasPagar(cid){
-  return 0; // DESLIGADO (Fase 4): o modelo NOVO (C_) posta a fatura imutável no Pagar. Evita duplicar.
-  const c=CC_CARTOES[cid];if(!c)return 0;
-  const fats=CC_faturasDoCartao(cid);const venc=+c.diaVencimento||10;let mudou=0;
-  Object.keys(fats).forEach(key=>{
-    const novoValor=Math.round(fats[key].total*100)/100;const ex=CC_faturaLanc(cid,key);
-    if(ex){ if(String(ex.r.status).toUpperCase()!=='PAGO'&&ex.r.valor!==novoValor){ex.r.valor=novoValor;mudou++;} }
-    else{ if(!P_meses[key])P_meses[key]=[];
-      P_meses[key].push({id:gerarId(),nome:'💳 Fatura '+c.nome+' · '+key,valor:novoValor,valorPago:0,dia:venc,mes:key,categoria:'cartoes',fixa:false,status:'PENDENTE',cod:'',obs:'Fatura do cartão (agregada, automática)',faturaCartao:{cartaoId:cid,mes:key},competencia:key,dataCriacao:new Date().toISOString()});mudou++; }
-  });
-  // remove faturas não pagas que ficaram sem itens
-  Object.keys(P_meses||{}).forEach(mes=>{const antes=(P_meses[mes]||[]).length;P_meses[mes]=(P_meses[mes]||[]).filter(r=>!(r.faturaCartao&&r.faturaCartao.cartaoId===cid&&!fats[r.faturaCartao.mes]&&String(r.status).toUpperCase()!=='PAGO'));if((P_meses[mes]||[]).length!==antes)mudou++;});
-  if(mudou)P_salvarStorage();
-  return mudou;
-}
-function CC_sincronizarTodas(){let t=0;Object.keys(CC_CARTOES).forEach(cid=>t+=CC_sincronizarFaturasPagar(cid));if(t&&mainAtivo==='pagar'&&typeof renderSubPageP==='function')renderSubPageP(subPAtivo);return t;}
-
-// ── Status de fatura (relativo a hoje) ──
-function CC_statusFatura(cid,key,fatObj,aberturaKey){
-  if(CC_isFaturaPaga(cid,key))return{k:'paga',label:'✅ Paga',cor:'#16a34a',bg:'#dcfce7'};
-  const c=CC_CARTOES[cid];const fech=+c.diaFechamento||1,venc=+c.diaVencimento||10;
-  // mês em que ESTA fatura fecha (venc no mês seguinte ao fechamento se venc<=fech)
-  let cm=(venc<=fech)?CC_addMonths(fatObj.ano,fatObj.mes,-1):{ano:fatObj.ano,mes:fatObj.mes};
-  const fd=new Date(cm.ano,cm.mes,fech,23,59,59);const vd=new Date(fatObj.ano,fatObj.mes,venc,23,59,59);const hoje=new Date();
-  const gerada=CC_isFaturaGerada(cid,key);
-  if(hoje>fd){ // já fechou
-    if(hoje>vd&&!gerada)return{k:'vencida',label:'🔴 Vencida',cor:'#b91c1c',bg:'#fee2e2'};
-    return gerada?{k:'gerada',label:'📄 Conta gerada',cor:'#1e40af',bg:'#dbeafe'}:{k:'fechada',label:'🔒 Fechada',cor:'#b45309',bg:'#fef3c7'};
-  }
-  return (key===aberturaKey)?{k:'aberta',label:'🟢 Aberta',cor:'#15803d',bg:'#dcfce7'}:{k:'futura',label:'🔮 Futura',cor:'#6b7280',bg:'#f1f5f9'};
-}
-
-// ── Modais ──
-function CC_popularSelectsCompra(){
-  const sc=document.getElementById('ccCFCartao');
-  if(sc){const v=sc.value;const ativos=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');
-    sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
-    if(v&&CC_CARTOES[v])sc.value=v;else if(CC_selecionado&&CC_CARTOES[CC_selecionado])sc.value=CC_selecionado;}
-  const cat=document.getElementById('ccCFCategoria');
-  if(cat){const v=cat.value;cat.innerHTML='<option value="">— Sem categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false||k===v).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');if(v)cat.value=v;}
-}
 function CC_abrirModalCartao(id=null){
   CC_editandoCartaoId=id;const c=id?CC_CARTOES[id]:null;
   document.getElementById('ccCartaoTitle').textContent=id?'✏️ Editar Cartão':'➕ Novo Cartão';
@@ -4425,8 +4262,6 @@ async function CC_salvarCartao(){
   };
   const id=CC_editandoCartaoId||('c'+Date.now()+Math.floor(Math.random()*9999));
   CC_CARTOES[id]=dados;await CC_fbSalvar(CC_COL_CARD,id,dados);
-  await CC_reconciliarParcelasCartao(id); // fechamento/venc podem ter mudado a competência das parcelas não pagas
-  CC_sincronizarFaturasPagar(id); // fechamento/vencimento podem ter mudado as faturas
   if(!CC_selecionado)CC_selecionado=id;
   CC_fecharModalCartao();CC_render();toast('✅ Cartão salvo!');
 }
@@ -4439,272 +4274,8 @@ async function CC_excluirCartao(id){
   if(CC_selecionado===id)CC_selecionado=Object.keys(CC_CARTOES)[0]||null;
   CC_render();toast('🗑️ Cartão removido.','#6b7280');
 }
-function CC_abrirModalCompra(){
-  if(!Object.keys(CC_CARTOES).length){toast('Cadastre um cartão primeiro.','#f59e0b');return;}
-  CC_popularSelectsCompra();
-  document.getElementById('ccCFDesc').value='';document.getElementById('ccCFValor').value='';
-  document.getElementById('ccCFParcelas').value='1';document.getElementById('ccCFData').value=new Date().toISOString().split('T')[0];
-  document.getElementById('ccCFResp').value='';document.getElementById('ccCFObs').value='';
-  CC_previewParcelas();
-  document.getElementById('ccModalCompraBg').classList.add('open');
-}
-function CC_fecharModalCompra(){document.getElementById('ccModalCompraBg').classList.remove('open');}
-function CC_previewParcelas(){
-  const v=parseFloat(document.getElementById('ccCFValor').value)||0;const p=Math.max(1,parseInt(document.getElementById('ccCFParcelas').value)||1);
-  const el=document.getElementById('ccCFPreviewParcela');if(!el)return;
-  el.textContent=(v>0&&p>1)?`${p}x de ${fmt(Math.round(v/p*100)/100)}`:(v>0?`À vista: ${fmt(v)}`:'');
-}
-async function CC_salvarCompra(){
-  const cartaoId=document.getElementById('ccCFCartao').value;
-  const desc=document.getElementById('ccCFDesc').value.trim();
-  const valor=parseFloat(document.getElementById('ccCFValor').value)||0;
-  if(!cartaoId){toast('Selecione o cartão.','#ef4444');return;}
-  if(!desc){toast('Informe a descrição.','#ef4444');return;}
-  if(valor<=0){toast('Informe o valor.','#ef4444');return;}
-  const dados={
-    cartaoId,descricao:desc,valor,
-    dataCompra:document.getElementById('ccCFData').value||new Date().toISOString().split('T')[0],
-    parcelas:Math.max(1,parseInt(document.getElementById('ccCFParcelas').value)||1),
-    categoria:document.getElementById('ccCFCategoria').value,
-    responsavel:document.getElementById('ccCFResp').value.trim(),
-    obs:document.getElementById('ccCFObs').value.trim(),
-    criadoEm:new Date().toISOString()
-  };
-  const id='l'+Date.now()+Math.floor(Math.random()*9999);
-  CC_LANCS[id]=dados;await CC_fbSalvar(CC_COL_LANC,id,dados);
-  await CC_reconciliarParcelasCompra(id); // gera as parcelas persistidas
-  CC_sincronizarFaturasPagar(cartaoId); // projeta/atualiza as faturas no Pagar
-  CC_selecionado=cartaoId;CC_fecharModalCompra();CC_render();toast('✅ Compra lançada!');
-}
-async function CC_excluirCompra(id){
-  if(!confirm('Excluir esta compra? As parcelas dela somem das faturas.'))return;
-  const cartaoId=(CC_LANCS[id]||{}).cartaoId;
-  delete CC_LANCS[id];await CC_fbExcluir(CC_COL_LANC,id);
-  await CC_reconciliarParcelasCompra(id); // remove as parcelas persistidas órfãs
-  if(cartaoId)CC_sincronizarFaturasPagar(cartaoId); // recalcula faturas (remove órfãs não pagas)
-  CC_render();toast('🗑️ Compra removida.','#6b7280');
-}
-
-// ── Render ──
-function CC_render(){CC_renderCartoes();CC_renderFaturas();if(CC_subaba==='importar')CC_prepararImportar();}
+function CC_render(){if(typeof C_renderTudo==='function')C_renderTudo();} // atalho: a pagina de cartao agora e o modulo C_
 // ── Sub-abas do cartão (estilo NS): Meus cartões / Importar fatura / Faturas ──
-function CC_aba(id,btn){
-  CC_subaba=id;
-  document.querySelectorAll('#page-cartoes .cc-subtab').forEach(b=>b.classList.remove('active'));
-  if(btn)btn.classList.add('active');else{const map={cartoes:'ccTabCartoes',importar:'ccTabImportar',faturas:'ccTabFaturas',regras:'ccTabRegras'};const b=document.getElementById(map[id]);if(b)b.classList.add('active');}
-  document.getElementById('ccPanelCartoes').style.display=(id==='cartoes')?'':'none';
-  document.getElementById('ccPanelImportar').style.display=(id==='importar')?'':'none';
-  document.getElementById('ccPanelFaturas').style.display=(id==='faturas')?'':'none';
-  const pr=document.getElementById('ccPanelRegras');if(pr)pr.style.display=(id==='regras')?'':'none';
-  if(id==='importar')CC_prepararImportar();
-  if(id==='faturas')CC_renderFaturas();
-  if(id==='cartoes')CC_renderCartoes();
-  if(id==='regras')CC_renderRegras();
-}
-// ── Regras de categorização (auto-categoria na importação) ──
-function CC_regraSugerir(desc){
-  const d=IMP_normDesc(desc);if(!d)return '';
-  const regras=Object.values(CC_REGRAS).filter(r=>r&&r.termo).sort((a,b)=>(b.termo.length-a.termo.length));
-  for(const r of regras){const t=IMP_normDesc(r.termo);if(t.length>=2&&d.includes(t))return r.categoria||'';}
-  return '';
-}
-function CC_renderRegras(){
-  const sel=document.getElementById('ccRegraCat');
-  if(sel&&sel.dataset.pop!=='1'){sel.innerHTML='<option value="">— categoria —</option>'+Object.entries(CATS_P).filter(([k,c])=>c.ativo!==false).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');sel.dataset.pop='1';}
-  const el=document.getElementById('ccRegrasLista');if(!el)return;
-  const regras=Object.entries(CC_REGRAS).sort((a,b)=>(a[1].termo||'').localeCompare(b[1].termo||''));
-  if(!regras.length){el.innerHTML='<div style="color:#9ca3af;font-size:.85rem;padding:8px 0">Nenhuma regra ainda. Crie a primeira acima — ela já vale na próxima importação.</div>';return;}
-  el.innerHTML=`<div style="font-size:.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">${regras.length} regra(s)</div>`+regras.map(([id,r])=>{const ci=catInfoP(r.categoria);return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #f1f5f9">
-    <span style="flex:1;font-size:.88rem;color:#0f172a">contém "<b>${(r.termo||'').replace(/</g,'&lt;')}</b>"</span>
-    <span style="font-size:.9rem">→</span>
-    <span class="cat-badge-p" style="background:${ci.bg};color:${ci.color}">${ci.icon} ${ci.label}</span>
-    <button onclick="CC_delRegra('${id}')" title="Excluir regra" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;padding:4px 8px;font-size:.8rem">🗑️</button></div>`;}).join('');
-}
-async function CC_addRegra(){
-  const termo=(document.getElementById('ccRegraTermo').value||'').trim();
-  const categoria=document.getElementById('ccRegraCat').value;
-  if(!termo){toast('Escreva o termo (ex.: uber).','#ef4444');return;}
-  if(!categoria){toast('Escolha a categoria.','#ef4444');return;}
-  const id='rg'+Date.now()+Math.floor(Math.random()*9999);
-  const dados={termo,categoria,criadoEm:new Date().toISOString()};
-  CC_REGRAS[id]=dados;await CC_fbSalvar(CC_COL_REGRA,id,dados);
-  document.getElementById('ccRegraTermo').value='';
-  CC_renderRegras();
-  if(typeof AUD_log==='function')AUD_log('criar','cartao_regras','"'+termo+'" → '+(catInfoP(categoria).label),'Regra de categorização',null,null);
-  toast('✅ Regra criada: "'+termo+'" → '+catInfoP(categoria).label);
-}
-async function CC_delRegra(id){
-  if(!CC_REGRAS[id])return;
-  const t=CC_REGRAS[id].termo;delete CC_REGRAS[id];await CC_fbExcluir(CC_COL_REGRA,id);
-  CC_renderRegras();toast('🗑️ Regra "'+t+'" removida.','#6b7280');
-}
-function CC_prepararImportar(){
-  const sc=document.getElementById('ccImpCartao');if(!sc)return;
-  const ativos=Object.keys(CC_CARTOES).filter(id=>CC_CARTOES[id].status!=='inativo');
-  const prev=sc.value;
-  sc.innerHTML=ativos.map(id=>`<option value="${id}">${CC_CARTOES[id].nome}${CC_CARTOES[id].final?(' ··'+CC_CARTOES[id].final):''}</option>`).join('')||'<option value="">— cadastre um cartão —</option>';
-  if(prev&&CC_CARTOES[prev])sc.value=prev;else if(CC_selecionado&&CC_CARTOES[CC_selecionado]&&CC_CARTOES[CC_selecionado].status!=='inativo')sc.value=CC_selecionado;
-  const mes=document.getElementById('ccImpMes');if(mes&&!mes.value){const d=new Date();mes.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
-  if(typeof IMP_ofereceRascunho==='function'&&!IMP_previa.length)IMP_ofereceRascunho('cartao',sc.value,'ccImpAviso');
-}
-// os 4 modos da aba "Importar fatura" reaproveitam o importador (já mirando o cartão escolhido)
-function CC_impArquivo(input,modo){
-  const cid=document.getElementById('ccImpCartao').value;
-  if(!cid||!CC_CARTOES[cid]){toast('Escolha o cartão primeiro.','#f59e0b');input.value='';return;}
-  if(!input.files||!input.files.length)return;
-  // revisão INLINE na própria aba (sem modal)
-  IMP_iniciarInline('cartao',()=>document.getElementById('ccImpCartao').value,'ccImpAviso','ccImpReview',function(){const r=document.getElementById('ccImpReview');if(r)r.innerHTML='';CC_render();CC_aba('faturas');});
-  if(modo==='ofx')IMP_ofxArquivo(input);else if(modo==='galeria'||modo==='foto')IMP_stagePaginas(input);else IMP_gemini(input);
-}
-function CC_mesIdx(key){const p=(key||'').split('/');return parseInt(p[1])*12+(MESES_IDX[p[0]]??0);}
-function CC_renderResumo(){
-  const el=document.getElementById('ccResumo');if(!el)return;
-  if(!Object.keys(CC_CARTOES).length){el.innerHTML='';return;}
-  const mref=mesAtualReal();const idxRef=CC_mesIdx(mref);
-  let fatMes=0,futuras=0,pago=0,pendente=0,avista=0,parcelado=0;
-  const porMes={},porCartao={},porCat={};
-  Object.keys(CC_CARTOES).forEach(cid=>{const fats=CC_faturasDoCartao(cid);
-    Object.keys(fats).forEach(key=>{const t=fats[key].total;const paga=CC_isFaturaPaga(cid,key);
-      porMes[key]=(porMes[key]||0)+t;porCartao[CC_CARTOES[cid].nome]=(porCartao[CC_CARTOES[cid].nome]||0)+t;
-      if(paga)pago+=t;else pendente+=t;
-      if(key===mref)fatMes+=t; if(CC_mesIdx(key)>idxRef)futuras+=t;
-      fats[key].items.forEach(it=>{const ci=catInfoP(it.categoria);porCat[ci.label]=(porCat[ci.label]||0)+it.valor;});
-    });
-  });
-  Object.values(CC_LANCS).forEach(l=>{const v=Number(l.valor)||0;if((parseInt(l.parcelas)||1)>1)parcelado+=v;else avista+=v;});
-  const linha=(obj,ordChrono)=>{const ks=Object.keys(obj);(ordChrono?ks.sort((a,b)=>CC_mesIdx(a)-CC_mesIdx(b)):ks.sort((a,b)=>obj[b]-obj[a]));return ks.map(k=>`<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:4px 0;border-top:1px solid #f1f5f9"><span>${k}</span><b>${fmt(obj[k])}</b></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>';};
-  el.innerHTML=`
-    <div class="cards-p">
-      <div class="card-p" style="border-left:4px solid #ec4899"><label>💳 Fatura do mês (${mref})</label><div class="val">${fmt(fatMes)}</div></div>
-      <div class="card-p" style="border-left:4px solid #7c3aed"><label>🔮 Parcelas futuras</label><div class="val">${fmt(futuras)}</div><div class="val-sub">meses à frente</div></div>
-      <div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Pago</label><div class="val">${fmt(pago)}</div></div>
-      <div class="card-p" style="border-left:4px solid #ef4444"><label>🔴 Pendente</label><div class="val">${fmt(pendente)}</div></div>
-      <div class="card-p" style="border-left:4px solid #0891b2"><label>🛒 À vista</label><div class="val">${fmt(avista)}</div></div>
-      <div class="card-p" style="border-left:4px solid #f59e0b"><label>📅 Parceladas</label><div class="val">${fmt(parcelado)}</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">🔮 Projeção por mês</h4>${linha(porMes,true)}</div>
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">💳 Por cartão</h4>${linha(porCartao)}</div>
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 16px"><h4 style="font-size:.85rem;color:#334155;margin-bottom:6px">🏷️ Por categoria</h4>${linha(porCat)}</div>
-    </div>`;
-}
-function CC_darken(hex,amt){try{const c=(hex||'#7c3aed').replace('#','');let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);r=Math.max(0,r-amt);g=Math.max(0,g-amt);b=Math.max(0,b-amt);return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');}catch(e){return hex||'#7c3aed';}}
-function CC_renderCartoes(){
-  const el=document.getElementById('ccListaCartoes');if(!el)return;
-  const ids=Object.keys(CC_CARTOES);
-  if(CC_selecionado&&!CC_CARTOES[CC_selecionado])CC_selecionado=null;
-  if(!CC_selecionado&&ids.length)CC_selecionado=ids[0];
-  el.innerHTML=ids.map(id=>{
-    const c=CC_CARTOES[id];const cor=c.cor||'#7c3aed';const parcVir=CC_parcelasAVir(id);
-    const sel=id===CC_selecionado;const inativo=c.status==='inativo';
-    return `<div onclick="CC_selecionar('${id}')" title="Ver faturas deste cartão" style="cursor:pointer;background:linear-gradient(140deg,${cor} 0%,${CC_darken(cor,55)} 100%);color:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 6px 20px ${cor}44;position:relative;${inativo?'opacity:.55':''}${sel?';outline:3px solid rgba(255,255,255,.55);outline-offset:2px':''}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div><div style="font-weight:800;font-size:1.05rem">${c.nome}</div><div style="font-size:.76rem;opacity:.85;margin-top:1px">${c.banco||''}${inativo?' · inativo':''}</div></div>
-        <div style="display:flex;gap:2px">
-          <button onclick="event.stopPropagation();CC_abrirModalCartao('${id}')" style="background:rgba(255,255,255,.18);border:none;cursor:pointer;font-size:.85rem;border-radius:8px;padding:4px 7px" title="Editar">✏️</button>
-          <button onclick="event.stopPropagation();CC_excluirCartao('${id}')" style="background:rgba(255,255,255,.18);border:none;cursor:pointer;font-size:.85rem;border-radius:8px;padding:4px 7px" title="Excluir">🗑️</button>
-        </div>
-      </div>
-      <div style="font-size:1.15rem;letter-spacing:.12em;margin:18px 0 12px;font-weight:600">•••• •••• •••• ${c.final||'----'}</div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.74rem;opacity:.92">
-        <span>Vence dia ${c.diaVencimento||'—'}</span>${c.diaFechamento?`<span>Fecha dia ${c.diaFechamento}</span>`:''}<span>Limite ${fmt(c.limite||0)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap;font-size:.78rem">
-        ${parcVir>0?`<span style="background:rgba(255,255,255,.2);padding:4px 10px;border-radius:20px;font-weight:700">🔮 Parcelas a vir: ${fmt(parcVir)}</span>`:'<span></span>'}<span style="opacity:.85">ver faturas ›</span>
-      </div>
-    </div>`;
-  }).join('')||'<div style="color:#9ca3af;font-size:.85rem;grid-column:1/-1">Nenhum cartão. Clique em <b>➕ Novo cartão</b>.</div>';
-}
-function CC_parcelasAVir(cid){const fats=CC_faturasDoCartao(cid);const idxRef=CC_mesIdx(mesAtualReal());let s=0;Object.keys(fats).forEach(k=>{if(CC_mesIdx(k)>idxRef)s+=fats[k].total;});return Math.round(s*100)/100;}
-function CC_faturaBadge(f,previa){
-  return previa
-    ? `<span class="cc-fat-badge" style="background:#ede9fe;color:#7c3aed">PRÉVIA</span>`
-    : `<span class="cc-fat-badge" style="background:${f.st.bg};color:${f.st.cor}">${f.st.label.replace(/^[^ ]+ /,'').toUpperCase()}</span>`;
-}
-function CC_renderFaturas(){
-  const wrap=document.getElementById('ccFaturasWrap');if(!wrap)return;
-  if(CC_faturaPie){try{CC_faturaPie.destroy();}catch(e){}CC_faturaPie=null;}
-  const cards=Object.keys(CC_CARTOES);
-  if(!cards.length){wrap.innerHTML='<div class="card-cc" style="color:#9ca3af;font-size:.85rem">Nenhum cartão ainda. Cadastre um em <b>Meus cartões</b>.</div>';return;}
-  const idxRef=CC_mesIdx(mesAtualReal());
-  const lista=[];
-  cards.filter(cid=>CC_faturaFiltro==='todos'||cid===CC_faturaFiltro).forEach(cid=>{
-    const c=CC_CARTOES[cid];const fats=CC_faturasDoCartao(cid);
-    Object.keys(fats).forEach(k=>{const o=fats[k];lista.push({cid,cnome:c.nome,key:k,idx:CC_mesIdx(k),total:o.total,items:o.items,st:CC_statusFatura(cid,k,o,null)});});
-  });
-  const atuais=lista.filter(f=>f.idx<=idxRef).sort((a,b)=>b.idx-a.idx);
-  const proximas=lista.filter(f=>f.idx>idxRef).sort((a,b)=>a.idx-b.idx);
-  if(!lista.find(f=>f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey)){
-    const def=atuais[0]||proximas[0]||lista[0];
-    CC_faturaSelCid=def?def.cid:null;CC_faturaSelKey=def?def.key:null;CC_faturaCatFiltro='todas';
-  }
-  const sel=lista.find(f=>f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey);
-  const optFiltro='<option value="todos">Todos os cartões</option>'+cards.map(cid=>`<option value="${cid}" ${CC_faturaFiltro===cid?'selected':''}>${CC_CARTOES[cid].nome}</option>`).join('');
-  const itemHtml=f=>{const previa=f.idx>idxRef;const selCls=(f.cid===CC_faturaSelCid&&f.key===CC_faturaSelKey)?' sel':'';
-    return `<div class="cc-fat-item${selCls}" onclick="CC_selFatura('${f.cid}','${f.key.replace(/'/g,"\\'")}')">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div><div style="font-weight:700;color:#0f172a;font-size:.9rem">${f.cnome} · ${f.key}</div>
-          <div style="margin-top:4px">${CC_faturaBadge(f,previa)} <span style="font-size:.72rem;color:#6b7280">${f.items.length} ${previa?'parcela(s) projetada(s)':'item(ns)'}</span></div></div>
-        <div style="font-weight:800;color:#b91c1c;white-space:nowrap">${fmt(f.total)}</div>
-      </div></div>`;};
-  const listaHtml=`<div class="card-cc">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
-        <h3 style="font-size:1rem;font-weight:700;color:#0f172a;margin:0">📄 Faturas</h3>
-        <select onchange="CC_faturaFiltro=this.value;CC_renderFaturas()" style="border:1px solid #e5e7eb;border-radius:10px;padding:6px 10px;font-size:.82rem;font-weight:600;background:#fff;color:#334155">${optFiltro}</select>
-      </div>
-      ${atuais.map(itemHtml).join('')||'<div style="color:#9ca3af;font-size:.82rem">Sem faturas neste mês.</div>'}
-      ${proximas.length?`<div style="font-size:.72rem;font-weight:800;color:#7c3aed;margin:16px 0 8px;letter-spacing:.02em">🔮 PRÓXIMAS (PREVISTAS PELAS PARCELAS)</div>`+proximas.map(itemHtml).join(''):''}
-    </div>`;
-  let dirHtml='<div class="card-cc" style="color:#9ca3af;font-size:.85rem">Selecione uma fatura na lista.</div>';
-  if(sel){
-    const porCat={};sel.items.forEach(it=>{const cat=it.categoria||'';porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0);});
-    const cats=Object.keys(porCat).sort((a,b)=>porCat[b]-porCat[a]);
-    const previa=sel.idx>idxRef;
-    const chips=`<span class="cc-cat-chip${CC_faturaCatFiltro==='todas'?' sel':''}" onclick="CC_faturaCatFiltro='todas';CC_renderFaturas()">Todas</span>`+cats.map(cat=>{const ci=catInfoP(cat);const pct=sel.total>0?Math.round(porCat[cat]/sel.total*100):0;return `<span class="cc-cat-chip${CC_faturaCatFiltro===cat?' sel':''}" onclick="CC_faturaCatFiltro=(CC_faturaCatFiltro==='${cat}'?'todas':'${cat}');CC_renderFaturas()"><span class="cc-cat-dot" style="background:${ci.color}"></span>${ci.icon} ${ci.label} <b>${fmt(porCat[cat])}</b> · ${pct}%</span>`;}).join('');
-    const itensF=sel.items.filter(it=>CC_faturaCatFiltro==='todas'||(it.categoria||'')===CC_faturaCatFiltro);
-    dirHtml=`<div class="card-cc">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div><div style="font-size:1.05rem;font-weight:800;color:#0f172a">${sel.cnome} · ${sel.key}</div><div style="margin-top:4px">${CC_faturaBadge(sel,previa)} <span style="font-size:.74rem;color:#6b7280">${sel.items.length} item(ns)</span></div></div>
-        <div style="font-size:1.5rem;font-weight:800;color:#b91c1c">${fmt(sel.total)}</div>
-      </div>
-      <div style="position:relative;max-width:280px;margin:16px auto 4px">
-        <canvas id="ccFaturaPie" height="240"></canvas>
-        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><span style="font-size:.66rem;color:#6b7280;letter-spacing:.06em">TOTAL</span><span style="font-size:1.05rem;font-weight:800;color:#0f172a">${fmt(sel.total)}</span></div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px">${chips}</div>
-      <label style="display:flex;align-items:center;gap:7px;font-size:.78rem;color:#334155;margin-top:12px;cursor:pointer"><input type="checkbox" ${CC_faturaAprender?'checked':''} onchange="CC_faturaAprender=this.checked" style="width:15px;height:15px;accent-color:#16a34a"> Ao trocar categoria, aprender p/ próximas faturas deste estabelecimento</label>
-      <div style="margin-top:10px;border-top:1px dashed #e5e7eb;padding-top:10px;display:flex;flex-direction:column;gap:7px">
-        ${itensF.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.82rem;color:#374151"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.desc}${it.parcelas>1?` <span style="color:#9ca3af">(${it.parcela}/${it.parcelas})</span>`:''}</span>
-          <select onchange="CC_recatItemFatura('${it.lancId}',this.value)" onclick="event.stopPropagation()" style="border:1px solid #e5e7eb;border-radius:7px;padding:4px 7px;font-size:.76rem;max-width:150px;background:#fff">${IMP_catOptions(it.categoria||'')}</select>
-          <b style="flex-shrink:0;white-space:nowrap">${fmt(it.valor)}</b></div>`).join('')||'<div style="color:#9ca3af;font-size:.8rem">—</div>'}
-      </div>
-    </div>`;
-  }
-  wrap.innerHTML=`<div class="cc-faturas-grid">${listaHtml}${dirHtml}</div>`;
-  if(sel&&typeof Chart!=='undefined'){
-    const porCat={};sel.items.forEach(it=>{const cat=it.categoria||'';porCat[cat]=(porCat[cat]||0)+(Number(it.valor)||0);});
-    const cats=Object.keys(porCat).sort((a,b)=>porCat[b]-porCat[a]);
-    const cv=document.getElementById('ccFaturaPie');
-    if(cv)CC_faturaPie=new Chart(cv,{type:'doughnut',data:{labels:cats.map(c=>catInfoP(c).label),datasets:[{data:cats.map(c=>porCat[c]),backgroundColor:cats.map(c=>catInfoP(c).color),borderWidth:2,borderColor:'#fff'}]},options:{cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>x.label+': '+fmt(x.raw)}}}}});
-  }
-}
-function CC_selFatura(cid,key){CC_faturaSelCid=cid;CC_faturaSelKey=key;CC_faturaCatFiltro='todas';CC_renderFaturas();}
-// recategoriza um item da fatura (atualiza a compra + parcelas) e, se marcado, aprende uma regra
-async function CC_recatItemFatura(compraId,novaCat){
-  const l=CC_LANCS[compraId];if(!l)return;
-  l.categoria=novaCat||'';await CC_fbSalvar(CC_COL_LANC,compraId,l);
-  await CC_reconciliarParcelasCompra(compraId);CC_sincronizarFaturasPagar(l.cartaoId);
-  if(CC_faturaAprender&&novaCat){
-    const termo=(l.descricao||'').replace(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/,'').replace(/\s+/g,' ').trim();
-    if(termo.length>=3&&!Object.values(CC_REGRAS).some(r=>IMP_normDesc(r.termo)===IMP_normDesc(termo))){
-      const id='rg'+Date.now()+Math.floor(Math.random()*9999);const dados={termo,categoria:novaCat,criadoEm:new Date().toISOString()};
-      CC_REGRAS[id]=dados;CC_fbSalvar(CC_COL_REGRA,id,dados);toast('🏷️ Aprendido: "'+termo+'" → '+catInfoP(novaCat).label);
-    }
-  }
-  if(typeof AUD_log==='function')AUD_log('editar','cartao_lancamentos',l.descricao,'Recategorizado p/ '+catInfoP(novaCat).label,null,null);
-  CC_renderFaturas();
-}
-function CC_selecionar(id){CC_selecionado=id;CC_faturaFiltro=id;CC_faturaSelCid=null;CC_faturaSelKey=null;CC_renderCartoes();CC_aba('faturas');}
 
 // ══════════════════════════════════════════════════════
 // CARTÃO — PORT DO NOSSA SEMENTE (módulo C_) · FASE 1: camada de dados IMUTÁVEL
@@ -6018,44 +5589,7 @@ async function IMP_importar(){
   const itens=IMP_previa.filter(m=>m.incluir);
   if(!itens.length){toast('Nenhum item marcado pra importar.','#ef4444');return;}
   let n=0,dup=0;
-  if(IMP_tipo==='cartao'){
-    if(!alvo||!CC_CARTOES[alvo]){toast('Escolha o cartão.','#ef4444');return;}
-    const novos=[];
-    itens.forEach(mv=>{
-      if(mv.parcela&&mv.parcela.total>1){
-        // PARCELAMENTO (Feature 4): a fatura importada (ex: JUL) mostra o valor EXATO da parcela atual (X)
-        // e as futuras (X+1..N) entram como prévia nos PRÓXIMOS meses. NÃO espalha pra meses passados.
-        // (Feature 1) Idempotente por descrição+total: reimportar a próxima fatura preserva a âncora e não duplica.
-        const N=mv.parcela.total,X=Math.min(mv.parcela.atual||1,N);
-        // remove o "X/N" da descrição pra chave do grupo ser estável entre os meses (senão duplica)
-        const descBase=(mv.descricao||'Compra').replace(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/,'').replace(/\s+/g,' ').trim()||'Compra';
-        const norm=IMP_normDesc(descBase).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50);
-        const pid='pg_'+alvo+'_'+norm+'_'+N;
-        const ex=CC_LANCS[pid];const novo=!ex;
-        const fatKey=IMP_faturaMesKey(mv);
-        // 1ª vez: ancora no mês DESTA fatura (parcela X), projeta X..N pra frente. Reimport: mantém a âncora original.
-        const competenciaInicio=novo?fatKey:(ex.competenciaInicio||fatKey);
-        const parcelaBase=novo?X:(ex.parcelaBase||X);
-        const parcelasCount=novo?(N-X+1):(ex.parcelas||(N-X+1));
-        const vp=Math.abs(Number(mv.valor)||0); // valor de UMA parcela (o que aparece na fatura deste mês)
-        const dados={cartaoId:alvo,descricao:descBase,valor:Math.round(vp*parcelasCount*100)/100,dataCompra:(ex&&ex.dataCompra)||mv.data||BC_hoje(),parcelas:parcelasCount,parcelaBase,parcelaTotal:N,competenciaInicio,categoria:(ex&&ex.categoria)||mv.categoria||'',responsavel:'',obs:'Importado — parcelamento '+N+'x (parcela '+X+'/'+N+' em '+fatKey+'; futuras como prévia)',importParcelamento:true,criadoEm:(ex&&ex.criadoEm)||new Date().toISOString()};
-        CC_LANCS[pid]=dados;CC_fbSalvar(CC_COL_LANC,pid,dados);novos.push(pid);if(novo)n++;
-      }else{
-        const impId='imp_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,160);
-        if(Object.values(CC_LANCS).some(l=>l.importId===impId&&l.cartaoId===alvo)){dup++;return;}
-        const id='l'+Date.now()+Math.floor(Math.random()*99999)+'_'+n;
-        const lanc={cartaoId:alvo,descricao:mv.descricao||'Compra',valor:Math.round((Number(mv.valor)||0)*100)/100,dataCompra:mv.data||BC_hoje(),parcelas:1,competenciaInicio:IMP_faturaMesKey(mv),categoria:mv.categoria||'',responsavel:'',obs:(Number(mv.valor)<0?'Crédito/estorno importado':'Importado da fatura'),importId:impId,criadoEm:new Date().toISOString()};
-        CC_LANCS[id]=lanc;CC_fbSalvar(CC_COL_LANC,id,lanc);novos.push(id);n++;
-      }
-    });
-    for(const id of novos)await CC_reconciliarParcelasCompra(id);
-    if(n>0)CC_sincronizarFaturasPagar(alvo);
-    if(n>0&&typeof AUD_log==='function')AUD_log('importar','cartao_lancamentos',CC_CARTOES[alvo].nome,n+' compra(s) importada(s) da fatura',null,null);
-    try{localStorage.removeItem(IMP_rascKey('cartao',alvo));}catch(e){}
-    IMP_previa=[];IMP_filtro='todos';
-    if(IMP_ctx.onDone)IMP_ctx.onDone(n,dup,0);else{IMP_fechar();if(mainAtivo==='cartoes')CC_render();}
-    toast(`✅ ${n} compra(s) importada(s)${dup?' · '+dup+' já existiam':''}.`);
-  }else{
+  if(IMP_tipo==='cartao'){IMP_previa=[];IMP_destinoC=false;return;}else{
     if(!alvo||!BC_CONTAS[alvo]){toast('Escolha a conta de destino.','#ef4444');return;}
     let saidas=0;
     itens.forEach(mv=>{const chave='mov_ofx_'+alvo+'_'+String(mv.fitid).replace(/[^A-Za-z0-9_-]/g,'').slice(0,180);
