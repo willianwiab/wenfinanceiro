@@ -7207,27 +7207,40 @@ window.CONC_setTol=function(v){CONC_tol=parseInt(v)||0;CONC_render();};
 window.CONC_selMovF=function(id){CONC_selMov=(CONC_selMov===id?null:id);CONC_render();};
 window.CONC_selLancF=function(key){CONC_selLanc=(CONC_selLanc===key?null:key);CONC_render();};
 function CONC_conciliarSelecionados(){if(!CONC_selMov||!CONC_selLanc){toast('Selecione uma do extrato e uma do sistema.','#f59e0b');return;}CONC_conciliar(CONC_selMov,CONC_selLanc);}
-async function CONC_conciliar(movId,val){
+// `valorBaixa` (opcional) = quanto ESTA conciliação tira do lançamento. Omitido = baixa TOTAL,
+// que é o comportamento de sempre (a aba antiga chama sem ele e nada muda). Com valor menor que o
+// saldo devedor a baixa é PARCIAL: o lançamento continua aberto pelo resto, e por isso ele pode
+// receber baixa de VÁRIAS movimentações (N movs -> 1 lançamento). Espelha o B_settle do Nossa Semente.
+async function CONC_conciliar(movId,val,valorBaixa){
   if(!val){toast('Escolha o lançamento correspondente.','#f59e0b');return;}
+  const parcial=(valorBaixa!=null&&isFinite(valorBaixa));
   const parts=String(val).split('|');const tipo=parts[0],id=parts[1],mes=parts[2]||'';
   const mov=CONC_movs().find(m=>m.id===movId);if(!mov){toast('Movimentação não encontrada.','#ef4444');return;}
   if(CONC_movLinkado(movId)){toast('Essa movimentação já foi conciliada.','#f59e0b');return;}
   const chave='conc_'+movId;
   if(tipo==='pagar'){
     const r=(P_meses[mes]||[]).find(y=>String(y.id)===String(id));if(!r){toast('Lançamento não encontrado.','#ef4444');return;}
-    if(CONC_lancLinkado('pagar',id,mes)){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
-    CONC_LINKS[chave]={chave,status:'match',tipo:'pagar',id:r.id,mes,movId,label:r.nome||'',statusAntes:r.status,valorPagoAntes:(Number(r.valorPago)||0),ts:new Date().toISOString()};
+    // já conciliado só barra quando NÃO é parcial — numa parcial o que manda é ainda haver saldo em aberto
+    if(CONC_lancLinkado('pagar',id,mes)&&!parcial){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
+    const totalP=Number(r.valor)||0, pagoAntes=Number(r.valorPago)||0;
+    if(parcial&&pagoAntes>=totalP-0.005){toast('"'+(r.nome||'')+'" já está quitada.','#f59e0b');return;}
+    const alvoP=parcial?Math.round(Math.min(totalP,pagoAntes+valorBaixa)*100)/100:totalP;
+    CONC_LINKS[chave]={chave,status:'match',tipo:'pagar',id:r.id,mes,movId,label:r.nome||'',statusAntes:r.status,valorPagoAntes:pagoAntes,valorBaixa:alvoP-pagoAntes,parcial:alvoP<totalP-0.005,ts:new Date().toISOString()};
     await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);
-    r.status='PAGO';r.valorPago=Number(r.valor)||0;r.dataPagamento=mov.data||r.dataPagamento;r.contaBancariaId=mov.contaId;r.conciliadoMov=movId;P_salvarStorage();
+    r.status=(alvoP>=totalP-0.005)?'PAGO':r.status;r.valorPago=alvoP;r.dataPagamento=mov.data||r.dataPagamento;r.contaBancariaId=mov.contaId;r.conciliadoMov=movId;P_salvarStorage();
     mov.conciliadoPagar=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
     if(typeof AUD_log==='function')AUD_log('pagar','meses',r.nome,'Conciliado com o extrato',null,r.valorPago);
     toast('🔗 Conciliado: '+r.nome);
   }else{
     const r=(R_todosOsDados||[]).find(y=>String(y.id)===String(id));if(!r){toast('Lançamento não encontrado.','#ef4444');return;}
-    if(CONC_lancLinkado('receber',id)){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
-    CONC_LINKS[chave]={chave,status:'match',tipo:'receber',id:r.id,mes:r.mes||'',movId,label:r.cliente||r.desc||'',valorReservaAntes:(Number(r.valorReserva)||0),saldoAntes:(Number(r.saldo)||0),ts:new Date().toISOString()};
+    if(CONC_lancLinkado('receber',id)&&!parcial){toast('Esse lançamento já está conciliado.','#f59e0b');return;}
+    const saldoAntes=Number(r.saldo)||0, reservaAntes=Number(r.valorReserva)||0;
+    if(parcial&&saldoAntes<=0.005){toast('"'+(r.cliente||r.desc||'')+'" já está recebida.','#f59e0b');return;}
+    // no WEN o "recebido" é saldo -> valorReserva; a parcial move só o pedaço conciliado
+    const mover=parcial?Math.round(Math.min(saldoAntes,valorBaixa)*100)/100:saldoAntes;
+    CONC_LINKS[chave]={chave,status:'match',tipo:'receber',id:r.id,mes:r.mes||'',movId,label:r.cliente||r.desc||'',valorReservaAntes:reservaAntes,saldoAntes:saldoAntes,valorBaixa:mover,parcial:mover<saldoAntes-0.005,ts:new Date().toISOString()};
     await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);
-    r.valorReserva=Math.round(((Number(r.valorReserva)||0)+(Number(r.saldo)||0))*100)/100;r.saldo=0;r.conciliadoMov=movId;
+    r.valorReserva=Math.round((reservaAntes+mover)*100)/100;r.saldo=Math.round((saldoAntes-mover)*100)/100;r.conciliadoMov=movId;
     if(typeof R_fbSalvar==='function')R_fbSalvar(r);
     mov.conciliadoReceber=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
     if(typeof AUD_log==='function')AUD_log('editar','lancamentos',r.cliente||'recebimento','Conciliado com o extrato (recebido)',null,null);
@@ -7296,7 +7309,7 @@ IA_carregarChave();
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=7"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
-<script src="js/concil.js?v=1"></script>
+<script src="js/concil.js?v=2"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
