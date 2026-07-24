@@ -854,5 +854,3 @@ if (typeof document !== 'undefined') (function () {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CE_score, CE_nivel, CE_ranquear, CE_ambiguo, CE_buscar, CE_valorBaixa, CE_situacao, CE_aplicadoNo, CE_resumo, CE_norm, CX_mesNS, CX_mesWEN, CX_vencISO, CX_mesShift, CX_mesLabel, CX_fixasDoMes, CX_candidatos, CX_norm, CX_similar, CX_regraId, CX_regraSugerir, CX_criarMov, CX_conciliarFixa };
 }
-
-// verificação do selador automático
