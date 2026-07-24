@@ -536,8 +536,10 @@ if (typeof document !== 'undefined') (function () {
       // mostra o VALOR que sai de cada conta — menor que a conta = baixa PARCIAL, e a tela diz isso
       else if (np) {
         const nomes = it.pares.map(p => { const vb = CE_valorBaixa(p), parc = vb < (p.valor || 0) - 0.005, key = p.tipo + '|' + p.id + '|' + (p.mes || ''); return `${esc(p.nome)} <a onclick="event.stopPropagation();CX_ajustarBaixa('${it.id}','${key}')" style="opacity:.75;cursor:pointer;text-decoration:underline dotted">(${money(vb)}${parc ? ' de ' + money(p.valor) : ''})</a>`; }).join(' + ');
-        const ft = falta(it), mao = (np === 1 && it.pares[0].viaRegra) ? ' 🧠' : '', temParc = it.pares.some(p => CE_valorBaixa(p) < (p.valor || 0) - 0.005);
-        sub = (comp ? `<span style="color:#15803d">${temParc ? '🟢◐' : '🟢'} ${nomes}${mao}${temParc ? ' <i style="opacity:.8">· baixa parcial</i>' : ''}</span>` : `<span style="color:#a16207">➗ ${nomes} · faltam ${money(ft)}</span>`) + ` · <a onclick="event.stopPropagation();CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a>`;
+        // "parcial" é o estado FINAL da conta, contando TODAS as movimentações — duas parciais que
+        // somam o total quitam a conta, e aí o card não deve mais dizer que ficou parcial.
+        const ft = falta(it), mao = (np === 1 && it.pares[0].viaRegra) ? ' 🧠' : '', temParc = it.pares.some(p => CE_aplicadoNo(imp.itens, p) < (p.valor || 0) - 0.005);
+        sub = (comp ? `<span style="color:#15803d">${temParc ? '🟢◐' : '🟢'} ${nomes}${mao}${temParc ? ' <i style="opacity:.8">· baixa parcial — a conta segue aberta pelo resto</i>' : ''}</span>` : `<span style="color:#a16207">➗ ${nomes} · faltam ${money(ft)}</span>`) + ` · <a onclick="event.stopPropagation();CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a>`;
       }
       else if (livres.length >= 2 && CE_ambiguo(livres)) { const ops = livres.slice(0, 2).map(c => `<a onclick="event.stopPropagation();CX_aceitarSugestao('${it.id}','${esc(c.tipo + '|' + c.id + '|' + (c.mes || ''))}')" style="color:#3b82f6;cursor:pointer">${esc(c.nome)} (${money(c.valor)})</a>`).join(' &nbsp;ou&nbsp; '); sub = `<span style="color:#a16207">⚠️ dois candidatos parecidos:</span> ${ops}`; }
       else if (livres.length) { const c = livres[0], mao = c.viaRegra ? ' 🧠' : ''; sub = `${pill(c.nivel)} <span style="color:#94a3b8">${esc(c.nome)}${mao} <span style="opacity:.7">(${money(c.valor)})</span></span> · <a onclick="event.stopPropagation();CX_aceitarSugestao('${it.id}')" style="color:#15803d;cursor:pointer">conciliar</a>${porque(c)}`; }
@@ -796,6 +798,38 @@ if (typeof document !== 'undefined') (function () {
   window.CX_fechar = fechar;
   function fechar() { const m = el('cxModalBg'); if (m) m.style.display = 'none'; }
   window.CX_mudarConta = () => { const c = el('cxContaInfo'); if (c) { const s = contaSaldo(el('cxConta').value); c.textContent = 'saldo atual: ' + (s == null ? 'não informado' : money(s)); } };
+  // ── Leitura por IA: PDF, foto da galeria e foto da câmera (espelha o NS, que aceita as 4 formas).
+  // Reusa o que o WEN JÁ tem: IA_gerarConteudo (provedor configurado em Config → IA) e IMP_fileB64.
+  // O resultado sai no mesmo formato do OFX ({fitid,data,valor,descricao,tipo}) e cai no mesmo montar().
+  const PROMPT_EXTRATO = 'Você é a SophIA lendo um documento financeiro brasileiro que pode ter VÁRIAS páginas/imagens — leia TODAS as páginas. '
+    + 'É um EXTRATO BANCÁRIO. valor: número NEGATIVO para saídas/débitos; POSITIVO para entradas/créditos.\n'
+    + 'Extraia TODAS as transações, linha por linha, SEM PULAR NENHUMA e SEM INVENTAR. NÃO inclua linhas de total, subtotal, saldo anterior, limite ou cabeçalhos.\n'
+    + 'Para cada transação devolva: data ("YYYY-MM-DD"), descricao (como aparece), valor (número).\n'
+    + 'Responda SOMENTE JSON, sem texto fora do JSON: {"itens":[{"data":"","descricao":"","valor":0}]}';
+
+  async function lerPorIA(files, origem) {
+    if (!files || !files.length) return;
+    if (typeof IA_temChave !== 'function' || !IA_temChave()) {
+      return aviso('📸 Configure a chave da IA' + (typeof IA_provNome === 'function' ? ' (' + IA_provNome() + ')' : '') + ' em Config → Inteligência Artificial pra usar PDF ou foto.', '#f59e0b');
+    }
+    aviso('⏳ A SophIA está lendo ' + files.length + ' ' + (files.length === 1 ? 'arquivo' : 'páginas') + '…', '#0ea5e9');
+    try {
+      const imagens = [];
+      for (const f of files) imagens.push({ mime: f.type || 'image/jpeg', b64: await IMP_fileB64(f) });
+      const txt = await IA_gerarConteudo(PROMPT_EXTRATO, imagens, { json: true });
+      let dados = null; try { dados = JSON.parse(txt); } catch (e) {}
+      let arr = (dados && Array.isArray(dados.itens)) ? dados.itens : (Array.isArray(dados) ? dados : (typeof IMP_extrairJSON === 'function' ? IMP_extrairJSON(txt) : []));
+      const brutos = (Array.isArray(arr) ? arr : []).map((x, i) => {
+        const v = Number(x.valor) || 0;
+        return { fitid: 'ia_' + origem + '_' + i + '_' + (x.data || '') + '_' + Math.round(v * 100), data: x.data || '', valor: v, descricao: x.descricao || 'Item', tipo: v < 0 ? 'saida' : 'entrada' };
+      }).filter(b => b.data && b.valor);
+      if (!brutos.length) return aviso('Não consegui extrair transações — tente uma imagem mais nítida, ou o PDF/OFX.', '#f59e0b');
+      aviso('✅ ' + brutos.length + ' movimentação(ões) lida(s) pela SophIA. Revise antes de confirmar.', '#16a34a');
+      montar(brutos, null, origem);   // sem saldo final: só o OFX traz LEDGERBAL
+    } catch (e) { aviso('⚠️ Erro na leitura: ' + (e.message || e), '#ef4444'); }
+  }
+  window.CX_arquivoPdf = ev => { const fs = [...(ev.target.files || [])]; ev.target.value = ''; lerPorIA(fs, 'pdf'); };
+  window.CX_arquivoFoto = ev => { const fs = [...(ev.target.files || [])]; ev.target.value = ''; lerPorIA(fs, 'foto'); };
   window.CX_ofxArquivo = ev => {
     const f = ev.target.files[0]; if (!f) return; ev.target.value = '';
     const r = new FileReader();

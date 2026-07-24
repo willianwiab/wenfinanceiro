@@ -7309,7 +7309,7 @@ IA_carregarChave();
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=7"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
-<script src="js/concil.js?v=2"></script>
+<script src="js/concil.js?v=3"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -7349,8 +7349,16 @@ IA_carregarChave();
     </div>
     <div style="border:2px dashed #cbd5e1;border-radius:12px;padding:16px;text-align:center">
       <input type="file" id="cxOfxInput" accept=".ofx,application/x-ofx,text/plain" style="display:none" onchange="CX_ofxArquivo(event)">
-      <button class="cx-btn prim" onclick="document.getElementById('cxOfxInput').click()">📄 Escolher arquivo OFX</button>
-      <div style="font-size:.78rem;color:#94a3b8;margin-top:6px">Importe o extrato <b>.ofx</b> da conta. Gera uma revisão antes de qualquer coisa ser lançada.</div>
+      <input type="file" id="cxPdfInput" accept="application/pdf,.pdf" multiple style="display:none" onchange="CX_arquivoPdf(event)">
+      <input type="file" id="cxFotoInput" accept="image/*" multiple style="display:none" onchange="CX_arquivoFoto(event)">
+      <input type="file" id="cxCamInput" accept="image/*" capture="environment" style="display:none" onchange="CX_arquivoFoto(event)">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <button class="cx-btn prim" onclick="document.getElementById('cxOfxInput').click()">📄 Arquivo OFX</button>
+        <button class="cx-btn" onclick="document.getElementById('cxPdfInput').click()">📕 PDF do extrato</button>
+        <button class="cx-btn" onclick="document.getElementById('cxFotoInput').click()">🖼️ Foto da galeria</button>
+        <button class="cx-btn" onclick="document.getElementById('cxCamInput').click()">📸 Tirar foto</button>
+      </div>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:8px">O <b>.ofx</b> é o mais fiel (traz o saldo pra conferir). <b>PDF e foto</b> são lidos pela SophIA — dá pra mandar várias páginas de uma vez. Sempre gera uma revisão antes de lançar qualquer coisa.</div>
     </div>
     <div id="cxResultado"></div>
   </div>
