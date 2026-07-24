@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-755fcc1b';
+window.APP_VERSION='20260724-699bc490';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -828,6 +828,18 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 .ev-sof{background:#f8fafc;border-radius:10px;padding:10px 13px;margin-bottom:9px}
 .ev-sof-h{font-weight:800;font-size:.86rem;margin-bottom:2px}
 .ev-sof-t{font-size:.85rem;line-height:1.45}
+/* ── Tela de bloqueio (Face ID + PIN) ── */
+#lockOverlay{position:fixed;inset:0;z-index:99999;background:#0b0b0d;display:none;align-items:center;justify-content:center;padding:24px}
+.lock-card{width:100%;max-width:330px;text-align:center;color:#fff}
+.lock-logo{width:96px;height:96px;border-radius:22px;margin:0 auto 16px;display:block;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.lock-title{font-size:1.35rem;font-weight:800;letter-spacing:-.01em}
+.lock-sub{font-size:.9rem;color:#9aa0a6;margin:6px 0 22px}
+.lock-pin{width:100%;text-align:center;font-size:1.5rem;letter-spacing:.4em;padding:14px;border-radius:14px;border:1px solid #2a2a30;background:#17171b;color:#fff;outline:none;font-family:inherit}
+.lock-pin:focus{border-color:#3f8c5a}
+.lock-btn{width:100%;margin-top:12px;border:none;border-radius:14px;padding:14px;font-size:1rem;font-weight:800;background:linear-gradient(135deg,#14532d,#3f8c5a);color:#fff;cursor:pointer;font-family:inherit}
+.lock-faceid{width:100%;margin-top:12px;border:1px solid #2a2a30;border-radius:14px;padding:13px;font-size:.95rem;font-weight:700;background:#17171b;color:#fff;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px}
+.lock-faceid:hover{background:#1f1f25}
+.lock-erro{color:#f87171;font-size:.85rem;min-height:20px;margin-top:12px}
 </style>
   <!-- Firebase Auth SDK (Google Login) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -842,6 +854,30 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   </script>
 </head>
 <body>
+
+<!-- Tela de bloqueio (Face ID + PIN) — client-side, cadeado de privacidade -->
+<div id="lockOverlay">
+  <div class="lock-card">
+    <img class="lock-logo" src="assets/icon-192.png" alt="WEN"/>
+    <div class="lock-title">WEN Financeiro</div>
+    <div class="lock-sub" id="lockSub">Digite seu PIN para entrar</div>
+    <input class="lock-pin" id="lockPinInput" type="password" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="• • • •" onkeydown="if(event.key==='Enter')LOCK_enviarPin()"/>
+    <button class="lock-btn" onclick="LOCK_enviarPin()">Entrar</button>
+    <button class="lock-faceid" id="lockFaceIdBtn" style="display:none" onclick="LOCK_tentarFaceId()">🙂 Desbloquear com Face ID</button>
+    <div class="lock-erro" id="lockErro"></div>
+  </div>
+</div>
+<script>
+  // Mostra o cadeado SINCRONAMENTE (antes do app pintar dados) se estiver configurado e ainda não destravado nesta sessão.
+  (function(){ try {
+    if (localStorage.getItem('wen_lock_pin') && sessionStorage.getItem('wen_unlocked') !== '1') {
+      var lo = document.getElementById('lockOverlay'); if (lo) lo.style.display = 'flex';
+      document.documentElement.style.overflow = 'hidden';
+      if (localStorage.getItem('wen_lock_cred')) { var b = document.getElementById('lockFaceIdBtn'); if (b) b.style.display = 'flex'; }
+      setTimeout(function(){ var i = document.getElementById('lockPinInput'); if (i) i.focus(); }, 200);
+    }
+  } catch(e){} })();
+</script>
 
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
@@ -1829,6 +1865,10 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
      CONFIG / BACKUP
 ════════════════════════════════════════ -->
 <div class="page" id="page-config">
+  <div class="backup-box" style="border:1px solid #cbd5e1;background:#f8fafc">
+    <h3>🔒 Bloqueio do app (Face ID + PIN)</h3>
+    <div id="lockConfigBox"></div>
+  </div>
   <div class="backup-box" style="border:1px solid #ddd6fe;background:#faf5ff">
     <h3>🤖 Inteligência Artificial</h3>
     <p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Liga a <b>leitura de fatura/extrato por foto e PDF</b> e a <b>Sophia</b>. Escolha o provedor e cole a chave. A chave fica salva no banco da WEN; o documento vai do navegador direto pro provedor (não passa por servidor nosso). Use uma chave sua com limite de gasto. O OFX funciona sem chave.</p>
@@ -2691,7 +2731,7 @@ function showMain(id,btn){
   if(id==='categorias')CF_render();
   if(id==='sophia')SOPHIA_abrir();
   if(id==='relatorios')RPT_ativar();
-  if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();}
+  if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();if(typeof LOCK_renderConfig==='function')LOCK_renderConfig();}
 }
 
 function showSubR(id,btn){
@@ -7148,6 +7188,92 @@ function renderSemanaP(){
   });
 
   wrap.innerHTML=out;
+}
+
+// ══════════════════════════════════════════════════════
+// LOCK_ — Bloqueio do app (Face ID via WebAuthn + PIN de reserva). Cadeado de PRIVACIDADE, client-side:
+// protege contra alguém que pega o celular. NÃO é segurança contra quem tem a URL (dados no Firebase).
+// Guarda em localStorage: hash do PIN (SHA-256 c/ salt) + id da credencial Face ID. Destrava por sessão.
+// ══════════════════════════════════════════════════════
+const LOCK_ = {
+  KP:'wen_lock_pin', KS:'wen_lock_salt', KC:'wen_lock_cred',
+  configurado(){ try{ return !!localStorage.getItem(this.KP); }catch(e){ return false; } },
+  faceIdAtivo(){ try{ return !!localStorage.getItem(this.KC); }catch(e){ return false; } },
+  async _hash(pin, salt){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt+':'+pin)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(''); },
+  async definirPin(pin){ const salt=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join(''); localStorage.setItem(this.KS,salt); localStorage.setItem(this.KP, await this._hash(pin,salt)); },
+  async conferirPin(pin){ const salt=localStorage.getItem(this.KS)||''; return (await this._hash(pin,salt))===localStorage.getItem(this.KP); },
+  destravar(){ try{ sessionStorage.setItem('wen_unlocked','1'); }catch(e){} const lo=document.getElementById('lockOverlay'); if(lo)lo.style.display='none'; document.documentElement.style.overflow=''; },
+  erro(msg){ const e=document.getElementById('lockErro'); if(e)e.textContent=msg||''; },
+  async enrollFaceId(){
+    if(!window.PublicKeyCredential) throw new Error('Este aparelho/navegador não tem Face ID pela web.');
+    const cred = await navigator.credentials.create({ publicKey:{
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp:{ name:'WEN Financeiro', id: location.hostname },
+      user:{ id: crypto.getRandomValues(new Uint8Array(16)), name:'wen', displayName:'WEN Financeiro' },
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required', residentKey:'preferred' },
+      timeout:60000, attestation:'none'
+    }});
+    localStorage.setItem(this.KC, btoa(String.fromCharCode(...new Uint8Array(cred.rawId))));
+  }
+};
+window.LOCK_enviarPin = async function(){
+  const el=document.getElementById('lockPinInput'); const v=(el&&el.value||'').trim(); if(!v) return;
+  if(await LOCK_.conferirPin(v)){ LOCK_.destravar(); if(el)el.value=''; }
+  else { LOCK_.erro('PIN incorreto.'); if(el){ el.value=''; el.focus(); } }
+};
+window.LOCK_tentarFaceId = async function(){
+  const idB64=localStorage.getItem(LOCK_.KC); if(!idB64){ LOCK_.erro('Face ID não está ativo.'); return; }
+  LOCK_.erro('');
+  try{
+    const rawId=Uint8Array.from(atob(idB64), c=>c.charCodeAt(0));
+    await navigator.credentials.get({ publicKey:{
+      challenge: crypto.getRandomValues(new Uint8Array(32)), timeout:60000, rpId: location.hostname,
+      allowCredentials:[{ type:'public-key', id: rawId, transports:['internal'] }], userVerification:'required'
+    }});
+    LOCK_.destravar();   // Face ID confirmado no aparelho
+  }catch(e){ LOCK_.erro('Face ID não reconhecido — use o PIN.'); }
+};
+// Ativar/desativar pela Config
+window.LOCK_ativar = async function(){
+  const p1=(prompt('Crie um PIN de 4 a 8 dígitos para bloquear o app:')||'').trim();
+  if(!/^\d{4,8}$/.test(p1)){ if(p1) toast('PIN inválido — use de 4 a 8 dígitos.','#ef4444'); return; }
+  const p2=(prompt('Confirme o PIN:')||'').trim();
+  if(p1!==p2){ toast('Os PINs não conferem.','#ef4444'); return; }
+  await LOCK_.definirPin(p1);
+  // oferece Face ID
+  let msg='🔒 Bloqueio ativado com PIN.';
+  if(window.PublicKeyCredential && confirm('Quer também desbloquear com Face ID? (o iPhone vai pedir o rosto agora)')){
+    try{ await LOCK_.enrollFaceId(); msg='🔒 Bloqueio ativado com Face ID + PIN.'; }
+    catch(e){ toast('Face ID não ativou: '+(e.message||e)+' — o PIN segue valendo.','#f59e0b'); }
+  }
+  try{ sessionStorage.setItem('wen_unlocked','1'); }catch(e){}   // já está logado agora
+  toast(msg,'#16a34a'); if(typeof LOCK_renderConfig==='function')LOCK_renderConfig();
+};
+window.LOCK_desativar = async function(){
+  const v=(prompt('Digite seu PIN atual para desativar o bloqueio:')||'').trim();
+  if(!v) return;
+  if(!(await LOCK_.conferirPin(v))){ toast('PIN incorreto.','#ef4444'); return; }
+  [LOCK_.KP,LOCK_.KS,LOCK_.KC].forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
+  toast('🔓 Bloqueio desativado.','#6b7280'); if(typeof LOCK_renderConfig==='function')LOCK_renderConfig();
+};
+window.LOCK_addFaceId = async function(){
+  if(!LOCK_.configurado()){ toast('Ative o bloqueio com PIN primeiro.','#f59e0b'); return; }
+  try{ await LOCK_.enrollFaceId(); toast('🙂 Face ID ativado.','#16a34a'); if(typeof LOCK_renderConfig==='function')LOCK_renderConfig(); }
+  catch(e){ toast('Não consegui ativar o Face ID: '+(e.message||e),'#ef4444'); }
+};
+// Mostra o estado atual do bloqueio na Config
+function LOCK_renderConfig(){
+  const el=document.getElementById('lockConfigBox'); if(!el) return;
+  const on=LOCK_.configurado(), fid=LOCK_.faceIdAtivo();
+  el.innerHTML = !on
+    ? `<p style="font-size:.86rem;color:#6b7280;margin-bottom:12px">Proteja o app com um <b>PIN</b> e, se quiser, <b>Face ID</b>. É um cadeado de privacidade no seu aparelho — pedirá o desbloqueio toda vez que abrir. <span style="color:#94a3b8">(Não substitui um login: quem tiver o endereço ainda acessa os dados; isso protege contra alguém pegar seu celular.)</span></p>
+       <button class="btn btn-green" onclick="LOCK_ativar()">🔒 Ativar bloqueio</button>`
+    : `<p style="font-size:.9rem;margin-bottom:10px">✅ Bloqueio <b>ativado</b>${fid?' · 🙂 <b>Face ID</b> ligado':' · só PIN'}.</p>
+       <div style="display:flex;gap:8px;flex-wrap:wrap">
+         ${fid?'':'<button class="btn btn-outline-b" onclick="LOCK_addFaceId()">🙂 Ativar Face ID</button>'}
+         <button class="btn btn-outline-b" onclick="LOCK_desativar()">🔓 Desativar bloqueio</button>
+       </div>`;
 }
 
 async function init(){
