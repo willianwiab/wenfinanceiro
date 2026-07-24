@@ -492,5 +492,5 @@ function EV_cardRapido() {
   window.EV_cardRapidoWen=function(){ EV_rebuild(); return EV_cardRapido(); };
   // intercepta EV_abrir p/ funcionar mesmo sem modal (abre a sub-aba)
   const _abrir=window.EV_abrir;
-  window.EV_abrir=function(f){ EV_rebuild(); if(typeof showSubP==='function'){ try{ showSubP('p-evolucao'); const b=[...document.querySelectorAll('.sub-pagar')].find(x=>(x.getAttribute('onclick')||'').includes('p-evolucao')); if(b){document.querySelectorAll('.sub-pagar').forEach(z=>z.classList.remove('active'));b.classList.add('active');} }catch(e){} } const host=document.getElementById('evAbaConteudo'); if(host && !document.getElementById('evConteudo'))host.innerHTML='<div id="evConteudo"></div>'; if(typeof _abrir==='function'){ _abrir(f); } };
+  window.EV_abrir=function(f){ EV_rebuild(); if(typeof showMain==='function'){ try{ const b=[...document.querySelectorAll('.nav-main button')].find(x=>/Evolu/.test(x.textContent)); showMain('evolucao', b||null); }catch(e){} } const host=document.getElementById('evAbaConteudo'); if(host && !document.getElementById('evConteudo'))host.innerHTML='<div id="evConteudo"></div>'; if(typeof _abrir==='function'){ _abrir(f); } };
 })();

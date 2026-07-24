@@ -9,7 +9,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-e18cec04';
+window.APP_VERSION='20260724-378eaa4b';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -883,6 +883,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button class="active" onclick="showMain('fluxo',this)">💰 Fluxo de Caixa</button>
   <button onclick="showMain('receber',this)">📥 A Receber</button>
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
+  <button onclick="showMain('evolucao',this)">📈 Evolução</button>
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
@@ -916,11 +917,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-contas',this)">📋 Contas</button>
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
-    <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
-    <button class="sub-pagar" onclick="showSubP('p-conciliacao',this)">🔗 Conciliação</button>
-    <button class="sub-pagar" onclick="showSubP('p-evolucao',this);EV_montarNaAba()">📈 Evolução</button>
-    <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
-    <button class="sub-pagar" onclick="showSubP('p-rateio',this)">🧮 Rateio</button>
     <button class="sub-pagar" onclick="showSubP('p-auditoria',this)">🕵️ Auditoria</button>
     <button class="sub-pagar" onclick="showSubP('p-historico',this)">🗂 Histórico</button>
   </div>
@@ -1410,15 +1406,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="concLista"></div>
   </div>
 
-  <!-- p-evolucao: Evolução dos Gastos (espelho do Nossa Semente) -->
-  <div class="page" id="page-p-evolucao">
-    <div style="margin-bottom:12px">
-      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📈 Evolução dos gastos</h3>
-      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Compare seus gastos entre competências, veja onde melhorou ou piorou e o comprometimento futuro. Os números são calculados pelo sistema; a SophIA só interpreta.</p>
-    </div>
-    <div id="evAbaConteudo"></div>
-  </div>
-
   <!-- p-historico -->
   <div class="page" id="page-p-historico">
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
@@ -1436,6 +1423,15 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="hist-list-p" id="pHistList"></div>
   </div>
 </div><!-- /page-pagar -->
+
+<!-- Evolução dos Gastos — página principal (espelho do Nossa Semente) -->
+<div class="page" id="page-evolucao">
+  <div style="margin-bottom:12px">
+    <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📈 Evolução dos gastos</h3>
+    <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Compare seus gastos entre competências, veja onde melhorou ou piorou e o comprometimento futuro. Os números são calculados pelo sistema; a SophIA só interpreta.</p>
+  </div>
+  <div id="evAbaConteudo"></div>
+</div>
 
 <!-- ════════════════════════════════════════
      CONCILIAÇÃO BANCÁRIA
@@ -2678,6 +2674,7 @@ function showMain(id,btn){
   if(id==='fluxo'){renderFluxoCaixa();FCX_render();}
   if(id==='receber')renderSubPageR(subRAtivo);
   if(id==='pagar')renderSubPageP(subPAtivo);
+  if(id==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes')C_ativar();
@@ -7433,7 +7430,7 @@ IA_carregarChave();
 <script src="js/banco.js?v=4391db39"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
-<script src="js/evolucao.js?v=5aecd6e4"></script>
+<script src="js/evolucao.js?v=ee95b775"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
