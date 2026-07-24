@@ -1,0 +1,9 @@
+#!/bin/sh
+# Sela a versão automaticamente antes de cada commit: as tags ?v= dos js, o
+# APP_VERSION e o version.json são derivados do conteúdo. Se algo mudou, o
+# selador reescreve e o hook re-adiciona os arquivos ao commit.
+#
+# Vem do repositório (core.hooksPath = .githooks), então sobrevive a clone novo —
+# basta rodar uma vez:  git config core.hooksPath .githooks
+node bin/selar-versao.mjs || exit 1
+git add index.html version.json
