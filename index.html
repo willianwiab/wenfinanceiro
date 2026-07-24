@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-699bc490';
+window.APP_VERSION='20260724-7d658313';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -873,8 +873,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     if (localStorage.getItem('wen_lock_pin') && sessionStorage.getItem('wen_unlocked') !== '1') {
       var lo = document.getElementById('lockOverlay'); if (lo) lo.style.display = 'flex';
       document.documentElement.style.overflow = 'hidden';
-      if (localStorage.getItem('wen_lock_cred')) { var b = document.getElementById('lockFaceIdBtn'); if (b) b.style.display = 'flex'; }
-      setTimeout(function(){ var i = document.getElementById('lockPinInput'); if (i) i.focus(); }, 200);
+      if (localStorage.getItem('wen_lock_cred')) {
+        var b = document.getElementById('lockFaceIdBtn'); if (b) b.style.display = 'flex';
+        var sub = document.getElementById('lockSub'); if (sub) sub.textContent = 'Toque na tela para desbloquear com Face ID (ou use o PIN)';
+        // toque em QUALQUER lugar da tela dispara o Face ID (iPhone/Android exigem 1 toque)
+        if (lo) lo.addEventListener('click', function(e){
+          if (e.target && (e.target.id==='lockPinInput' || (e.target.closest && e.target.closest('.lock-btn')))) return;
+          if (window.LOCK_tentarFaceId) window.LOCK_tentarFaceId(false);
+        });
+      } else {
+        setTimeout(function(){ var i = document.getElementById('lockPinInput'); if (i) i.focus(); }, 200);
+      }
     }
   } catch(e){} })();
 </script>
@@ -7222,8 +7231,8 @@ window.LOCK_enviarPin = async function(){
   if(await LOCK_.conferirPin(v)){ LOCK_.destravar(); if(el)el.value=''; }
   else { LOCK_.erro('PIN incorreto.'); if(el){ el.value=''; el.focus(); } }
 };
-window.LOCK_tentarFaceId = async function(){
-  const idB64=localStorage.getItem(LOCK_.KC); if(!idB64){ LOCK_.erro('Face ID não está ativo.'); return; }
+window.LOCK_tentarFaceId = async function(auto){
+  const idB64=localStorage.getItem(LOCK_.KC); if(!idB64){ if(!auto)LOCK_.erro('Face ID não está ativo.'); return; }
   LOCK_.erro('');
   try{
     const rawId=Uint8Array.from(atob(idB64), c=>c.charCodeAt(0));
@@ -7232,8 +7241,20 @@ window.LOCK_tentarFaceId = async function(){
       allowCredentials:[{ type:'public-key', id: rawId, transports:['internal'] }], userVerification:'required'
     }});
     LOCK_.destravar();   // Face ID confirmado no aparelho
-  }catch(e){ LOCK_.erro('Face ID não reconhecido — use o PIN.'); }
+  }catch(e){
+    // auto = tentativa sem toque: iPhone/Android recusam por falta de gesto → não é erro, mostra a dica
+    if(auto){ LOCK_.erro(''); const s=document.getElementById('lockSub'); if(s)s.textContent='Toque na tela para desbloquear com Face ID (ou use o PIN)'; }
+    else LOCK_.erro('Face ID não reconhecido — tente de novo ou use o PIN.');
+  }
 };
+// Ao abrir o app: no Mac/Android costuma desbloquear sozinho; no iPhone aguarda o toque (1 gesto exigido).
+window.addEventListener('load', function(){
+  try{ var lo=document.getElementById('lockOverlay');
+    if(lo && lo.style.display!=='none' && localStorage.getItem(LOCK_.KC)){
+      setTimeout(function(){ if(window.LOCK_tentarFaceId) window.LOCK_tentarFaceId(true); }, 250);
+    }
+  }catch(e){}
+});
 // Ativar/desativar pela Config
 window.LOCK_ativar = async function(){
   const p1=(prompt('Crie um PIN de 4 a 8 dígitos para bloquear o app:')||'').trim();
