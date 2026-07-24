@@ -9,7 +9,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-7ea27749';
+window.APP_VERSION='20260724-e18cec04';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -4684,7 +4684,60 @@ function C_renderRegras(){
 }
 // CRUD de cartão: reaproveita o modal do WEN (coleção `cartoes` é a mesma) e re-renderiza
 window.C_abrirCartao=function(id){ if(typeof CC_abrirModalCartao==='function')CC_abrirModalCartao(id||null); };
-window.C_excluirCartao=async function(id){ if(typeof CC_excluirCartao==='function'){await CC_excluirCartao(id);} C_renderTudo(); };
+// Plano PURO da exclusão em cascata (espelha o Nossa Semente, adaptado ao WEN): apaga do mês `cutoff`
+// (iso 'AAAA-MM') EM DIANTE as faturas + contas a pagar geradas (faturaCartao) + parcelamentos, e lista
+// os pagamentos a estornar. PRESERVA faturas passadas já pagas. Mês do P_meses no WEN = 'JUL/2026' → converte.
+function C_planoExclusaoCartaoWen(id, cutoff){
+  const faturas=(C_faturas||[]).filter(f=>f.cartaoId===id && (f.mesFatura||'')>=cutoff).map(f=>f.id);
+  const parcelamentos=(C_parcelamentos||[]).filter(p=>p.cartaoId===id).map(p=>p.id);
+  const pref=id+'_', contas=[];
+  Object.keys(P_meses||{}).forEach(mk=>{
+    let iso=''; try{iso=C_ymFromWen(mk);}catch(e){}
+    if(iso && iso<cutoff) return;   // preserva o passado
+    (P_meses[mk]||[]).forEach(c=>{
+      const doCartao=(c.faturaCartao&&c.faturaCartao.cartaoId===id)||(c.faturaId&&String(c.faturaId).indexOf(pref)===0);
+      if(doCartao) contas.push({mk, id:c.id, valorPago:Number(c.valorPago)||0, contaBancariaId:c.contaBancariaId||null});
+    });
+  });
+  const movsReverter=[];
+  contas.forEach(c=>{ if(c.valorPago>0)(typeof BC_MOVS!=='undefined'?BC_MOVS:[]).forEach(m=>{ if(m.origemTipo==='pagar'&&m.origemId===c.id)movsReverter.push(m.id); }); });
+  return {faturas, parcelamentos, contas, movsReverter, cutoff};
+}
+window.C_excluirCartao=async function(id){
+  const c=(C_cartoes||[]).find(x=>x.id===id)||{nome:'cartão'};
+  let cutoff=''; try{cutoff=C_ymFromWen(mesAtualReal());}catch(e){cutoff=new Date().toISOString().slice(0,7);}
+  const plano=C_planoExclusaoCartaoWen(id, cutoff);
+  const mesTxt=(typeof mesAtualReal==='function')?mesAtualReal():cutoff;
+  const linhas=[];
+  if(plano.faturas.length)linhas.push(`• ${plano.faturas.length} fatura(s)`);
+  if(plano.contas.length)linhas.push(`• ${plano.contas.length} conta(s) a pagar gerada(s)`);
+  if(plano.parcelamentos.length)linhas.push(`• ${plano.parcelamentos.length} parcelamento(s) — e as parcelas futuras somem do Rateio e da Evolução`);
+  if(plano.movsReverter.length)linhas.push(`• ${plano.movsReverter.length} pagamento(s) já lançado(s) no banco serão estornados`);
+  const corpo=linhas.length?`\n\nIsto vai remover, de ${mesTxt} em diante:\n${linhas.join('\n')}\n\nAs faturas passadas já pagas serão preservadas.`:'';
+  if(!confirm(`Excluir o cartão "${c.nome}"?${corpo}\n\nEsta ação não pode ser desfeita.`))return;
+  try{
+    // 1) contas a pagar geradas: tira de cada mês e persiste
+    const mks=[...new Set(plano.contas.map(x=>x.mk))];
+    mks.forEach(mk=>{ const ids=new Set(plano.contas.filter(x=>x.mk===mk).map(x=>x.id)); P_meses[mk]=(P_meses[mk]||[]).filter(x=>!ids.has(x.id)); });
+    if(mks.length&&typeof P_salvarStorage==='function')P_salvarStorage();
+    // 2) estorna pagamentos já lançados no banco
+    for(const chave of plano.movsReverter){ if(typeof BC_MOVS!=='undefined')BC_MOVS=BC_MOVS.filter(m=>m.id!==chave); try{await BC_fbExcluir(BC_COL_MOV,chave);}catch(e){} }
+    // 3) faturas (atual + futuras)
+    for(const fid of plano.faturas){ C_faturas=(C_faturas||[]).filter(f=>f.id!==fid); try{await BC_fbExcluir(C_COL_FAT,fid);}catch(e){} }
+    // 4) parcelamentos (removem as projeções futuras)
+    for(const pid of plano.parcelamentos){ C_parcelamentos=(C_parcelamentos||[]).filter(p=>p.id!==pid); try{await BC_fbExcluir(C_COL_PARC,pid);}catch(e){} }
+    // 5) modelo antigo CC_ (código morto) — limpa se houver
+    try{ for(const[lid,l]of Object.entries(CC_LANCS||{})){if(l.cartaoId===id){delete CC_LANCS[lid];await CC_fbExcluir(CC_COL_LANC,lid);}} for(const[pid,p]of Object.entries(CC_PARCELAS||{})){if(p.cartaoId===id){delete CC_PARCELAS[pid];await CC_fbExcluir(CC_COL_PARC,pid);}} if(typeof CC_CARTOES!=='undefined')delete CC_CARTOES[id]; }catch(e){}
+    // 6) o cartão
+    C_cartoes=(C_cartoes||[]).filter(x=>x.id!==id);
+    try{await BC_fbExcluir(C_COL_CARD,id);}catch(e){}
+    if(typeof C_salvarCache==='function')C_salvarCache();
+    if(typeof C_renderTudo==='function')C_renderTudo();
+    try{ if(typeof renderTabelaP==='function')renderTabelaP(); }catch(e){}
+    try{ if(typeof BC_render==='function')BC_render(); }catch(e){}
+    toast('🗑️ Cartão excluído — faturas, contas e parcelas futuras removidas.','#16a34a');
+  }catch(e){ toast('Erro: '+(e.message||e),'#ef4444'); }
+};
 
 // ── Importar (Fase 3): reaproveita o MOTOR DE IA DO WEN, grava no modelo IMUTÁVEL ──
 window.C_impUpload=function(input,modo){
