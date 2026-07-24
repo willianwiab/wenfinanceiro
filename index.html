@@ -9,7 +9,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-90ff9011';
+window.APP_VERSION='20260724-7ea27749';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -758,6 +758,66 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 }
 .hdr-logo{height:40px;width:auto;display:block}
 
+
+/* ── Evolução dos Gastos (EV_) ── */
+.ev-card-rapido{background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #1e40af;border-radius:14px;padding:13px 15px;margin-bottom:12px}
+.ev-card-vazio{background:#f8fafc;border-style:dashed}
+.ev-cr-titulo{font-weight:800;font-size:1rem;margin-bottom:3px}
+.ev-cr-sub{font-size:.86rem;color:#0f172a;opacity:.9}
+.ev-cr-lista{margin:8px 0 4px;padding-left:18px;font-size:.84rem;line-height:1.55}
+.ev-cr-btn{margin-top:6px;border:none;background:#1e40af;color:#fff;border-radius:9px;padding:8px 14px;font-weight:800;font-size:.84rem;cursor:pointer}
+.ev-head{margin-bottom:10px}
+.ev-head-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ev-navmes{border:1px solid #e5e7eb;background:#f8fafc;border-radius:8px;width:34px;height:30px;font-size:1.1rem;cursor:pointer;color:#0f172a}
+.ev-modos{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.ev-modo{border:1px solid #e5e7eb;background:#f8fafc;border-radius:20px;padding:5px 12px;font-size:.8rem;font-weight:700;cursor:pointer;color:#0f172a}
+.ev-modo.on{border-color:#1e40af;background:#eff6ff;color:#1e40af}
+.ev-filtros{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ev-flabel{font-size:.76rem;color:#94a3b8}
+.ev-sel{border:1px solid #e5e7eb;background:#fff;color:#0f172a;border-radius:8px;padding:5px 8px;font-size:.8rem;max-width:100%}
+.ev-abas{display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:12px;overflow-x:auto}
+.ev-aba{border:none;background:none;padding:8px 10px;font-size:.84rem;font-weight:700;color:#94a3b8;cursor:pointer;border-bottom:2.5px solid transparent;white-space:nowrap}
+.ev-aba.on{color:#1e40af;border-bottom-color:#1e40af}
+.ev-vazio{background:#f8fafc;border:1px dashed #e5e7eb;border-radius:12px;padding:14px;font-size:.88rem;text-align:center;margin-bottom:12px;color:#0f172a}
+.ev-vazio-min{color:#94a3b8;font-size:.84rem;padding:8px 2px}
+.ev-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.ev-kpi{background:#f8fafc;border:1px solid #e5e7eb;border-radius:11px;padding:9px 11px}
+.ev-kpi-l{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.02em}
+.ev-kpi-v{font-size:1.08rem;font-weight:800;margin-top:2px}
+.ev-kpi-s{font-size:.74rem;color:#94a3b8}
+.ev-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:600px){.ev-2col{grid-template-columns:1fr}}
+.ev-bloco{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:11px 13px;margin-bottom:12px}
+.ev-bloco-h{font-weight:800;font-size:.82rem;margin-bottom:7px}
+.ev-rk-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e5e7eb;cursor:pointer;font-size:.85rem}
+.ev-rk-row:last-child{border-bottom:none}
+.ev-rk-nome{flex:1;font-weight:600}
+.ev-rk-val{font-weight:800;white-space:nowrap}
+.ev-rk-pct{font-size:.76rem;color:#94a3b8;min-width:56px;text-align:right}
+.ev-dot{width:9px;height:9px;border-radius:50%;flex:none}
+.ev-nota{font-size:.78rem;color:#94a3b8;margin-top:7px;line-height:1.4}
+.ev-catlist{display:flex;flex-direction:column;gap:6px}
+.ev-cat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:11px;overflow:hidden}
+.ev-cat.aberta{border-color:#1e40af}
+.ev-cat-h{display:flex;align-items:center;gap:8px;padding:9px 11px;cursor:pointer}
+.ev-cat-nome{flex:1;font-weight:700;font-size:.88rem}
+.ev-cat-vals{text-align:right}
+.ev-cat-car{color:#94a3b8;font-size:.8rem}
+.ev-cat-det{padding:0 12px 12px}
+.ev-cat-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:.83rem;padding:8px 0}
+.ev-cat-grid span{color:#94a3b8}
+.ev-cat-grid b{text-align:right}
+.ev-cat-resp{font-size:.82rem;background:#fff;border-radius:8px;padding:6px 9px;margin:4px 0}
+.ev-cat-itens{margin-top:6px}
+.ev-item{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #e5e7eb;font-size:.82rem}
+.ev-parc{background:#eff6ff;color:#1e40af;border-radius:6px;padding:0 5px;font-size:.7rem;font-weight:700}
+.ev-cat-sub{font-size:.78rem;color:#94a3b8;margin-top:6px}
+.ev-graf{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:11px 13px;margin-bottom:12px}
+.ev-graf canvas{max-height:240px}
+.ev-sof-intro{font-size:.84rem;color:#94a3b8;margin-bottom:10px;line-height:1.45}
+.ev-sof{background:#f8fafc;border-radius:10px;padding:10px 13px;margin-bottom:9px}
+.ev-sof-h{font-weight:800;font-size:.86rem;margin-bottom:2px}
+.ev-sof-t{font-size:.85rem;line-height:1.45}
 </style>
   <!-- Firebase Auth SDK (Google Login) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -858,6 +918,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-vencimentos',this)">🔔 Vencimentos</button>
     <button class="sub-pagar" onclick="showSubP('p-conciliacao',this)">🔗 Conciliação</button>
+    <button class="sub-pagar" onclick="showSubP('p-evolucao',this);EV_montarNaAba()">📈 Evolução</button>
     <button class="sub-pagar" onclick="showSubP('p-fixas',this)">📌 Fixas</button>
     <button class="sub-pagar" onclick="showSubP('p-rateio',this)">🧮 Rateio</button>
     <button class="sub-pagar" onclick="showSubP('p-auditoria',this)">🕵️ Auditoria</button>
@@ -1347,6 +1408,15 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     </div>
     <div id="concResumo" style="margin-bottom:14px"></div>
     <div id="concLista"></div>
+  </div>
+
+  <!-- p-evolucao: Evolução dos Gastos (espelho do Nossa Semente) -->
+  <div class="page" id="page-p-evolucao">
+    <div style="margin-bottom:12px">
+      <h3 style="font-size:1rem;font-weight:700;color:#0f172a">📈 Evolução dos gastos</h3>
+      <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Compare seus gastos entre competências, veja onde melhorou ou piorou e o comprometimento futuro. Os números são calculados pelo sistema; a SophIA só interpreta.</p>
+    </div>
+    <div id="evAbaConteudo"></div>
   </div>
 
   <!-- p-historico -->
@@ -7310,6 +7380,7 @@ IA_carregarChave();
 <script src="js/banco.js?v=4391db39"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
+<script src="js/evolucao.js?v=5aecd6e4"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
