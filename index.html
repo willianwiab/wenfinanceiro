@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-7d658313';
+window.APP_VERSION='20260730-bf271752';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -621,6 +621,19 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 /* Análise */
 .analise-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px}
+/* ── CONSOLIDADO PJ+PF (módulo CS_) ── */
+.cs-nota{background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:10px;padding:12px 15px;font-size:.82rem;color:#78350f;line-height:1.5;margin-bottom:18px}
+.cs-nota b{color:#92400e}
+.cs-destaque{background:white;border-radius:16px;padding:22px 24px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-top:5px solid #6366f1;margin-bottom:18px;text-align:center}
+.cs-destaque label{font-size:.72rem;text-transform:uppercase;color:#6b7280;font-weight:700;letter-spacing:.08em;display:block;margin-bottom:8px}
+.cs-destaque .v{font-size:2.1rem;font-weight:800;line-height:1.1}
+.cs-destaque .s{font-size:.82rem;color:#6b7280;margin-top:7px}
+.cs-ponte{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;background:#f0fdfa;border:1px dashed #14b8a6;border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:.86rem;color:#0f766e}
+.cs-ponte b{font-size:1.05rem;color:#0d9488}
+.cs-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+.cs-form label{font-size:.68rem;text-transform:uppercase;color:#6b7280;font-weight:700;letter-spacing:.06em;display:block;margin-bottom:5px}
+.cs-form input,.cs-form select{width:100%;padding:9px 11px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;font-family:inherit}
+.cs-sem-pf{background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #3b82f6;border-radius:10px;padding:12px 15px;font-size:.83rem;color:#1e3a8a;margin-bottom:18px}
 .an-card{background:white;border-radius:14px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);text-align:center}
 .an-card label{font-size:.68rem;text-transform:uppercase;color:#6b7280;font-weight:700;letter-spacing:.07em;display:block;margin-bottom:8px}
 .an-card .val{font-size:1.3rem;font-weight:700}
@@ -945,6 +958,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('sophia',this)">✨ Sophia</button>
   <button onclick="showMain('relatorios',this)">📈 Relatórios</button>
   <button onclick="showMain('analise',this)">📊 Análise</button>
+  <button onclick="showMain('consolidado',this)">🔗 Consolidado</button>
   <button onclick="showMain('config',this)">⚙️ Config</button>
 </div>
 
@@ -1871,6 +1885,56 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <!-- ════════════════════════════════════════
+     CONSOLIDADO PJ + PF (módulo CS_)
+     A retirada é ponte entre os dois lados, não despesa. Ver o bloco CS_ no JS.
+════════════════════════════════════════ -->
+<div class="page" id="page-consolidado">
+  <div class="cs-nota">
+    ⚠️ <b>Esta aba lê a retirada como transferência, não como despesa.</b> Por isso a margem aqui
+    é maior que o card <b>Resultado do mês</b> do Painel — lá a sua remuneração entra como custo.
+    Os dois números estão certos, só respondem perguntas diferentes: o Painel diz o que sobrou
+    <i>depois</i> de você se pagar; aqui você vê a empresa e a casa separadas, e o conjunto no fim.
+  </div>
+
+  <div id="csSemPF"></div>
+  <div class="cs-destaque" id="csDestaque"></div>
+  <div class="fc-sec">🏢 Empresa (PJ)</div>
+  <div class="analise-grid" id="csPJ"></div>
+  <div class="fc-sec">🔁 Ponte PJ → PF</div>
+  <div id="csPonte"></div>
+  <div class="fc-sec">🏠 Pessoal (PF)</div>
+  <div class="analise-grid" id="csPF"></div>
+  <div class="fc-sec">💵 Caixa e riscos</div>
+  <div class="analise-grid" id="csCaixa"></div>
+
+  <div class="fc-sec">📈 Evolução do consolidado</div>
+  <div class="chart-box"><canvas id="csChart" height="90"></canvas></div>
+
+  <div class="fc-sec">⚙️ Lado pessoal — mês a mês</div>
+  <div class="backup-box">
+    <p style="font-size:.85rem;color:#6b7280;margin-bottom:14px;line-height:1.5">
+      O custo de vida vem do <b>Nossa Semente</b> e é informado aqui por mês. A <b>retirada já entra
+      sozinha</b> como renda — em "renda extra" ponha só o que <b>não</b> vem da WEN (aluguel recebido,
+      freela por fora, salário de terceiro). Se lançar a retirada de novo, ela conta dobrado.
+    </p>
+    <div class="cs-form">
+      <div><label>Mês</label><select id="csMesSel" onchange="CS_setMes(this.value)"></select></div>
+      <div><label>Custo de vida (PF)</label><input type="number" id="csCusto" step="0.01" placeholder="0,00"></div>
+      <div><label>Renda extra (fora da WEN)</label><input type="number" id="csRenda" step="0.01" placeholder="0,00"></div>
+      <div><button class="btn btn-blue" onclick="CS_salvarPF()">💾 Salvar mês</button></div>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px">
+      <p style="font-size:.82rem;color:#6b7280;margin-bottom:10px">
+        Atalho: importe o <b>Pacote pra IA</b> gerado no Nossa Semente que eu preencho o custo do mês.
+        Só as <b>saídas</b> são importadas — as entradas do NS já incluem a retirada e contariam dobrado.
+      </p>
+      <input type="file" id="csImportNS" accept="application/json,.json" onchange="CS_importarNS(this)" style="font-size:.85rem">
+    </div>
+    <div id="csPFLista" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
      CONFIG / BACKUP
 ════════════════════════════════════════ -->
 <div class="page" id="page-config">
@@ -2628,6 +2692,8 @@ if (SIMULACAO_LOCAL){
     {id:'p1',nome:'Aluguel estúdio',valor:3800,valorPago:0,dia:5,mes:'JUL/2026',categoria:'aluguel',fixa:true,status:'PENDENTE',cod:'',obs:''},
     {id:'p2',nome:'Energia',valor:640,valorPago:0,dia:12,mes:'JUL/2026',categoria:'consumo',fixa:true,status:'PENDENTE',cod:'',obs:''},
     {id:'p3',nome:'Freela edição',valor:1200,valorPago:0,dia:20,mes:'JUL/2026',categoria:'servicos',fixa:false,status:'PENDENTE',cod:'',obs:''},
+    // Retirada do dono: no Painel conta como despesa, no Consolidado (CS_) é transferência PJ→PF
+    {id:'p4',nome:'Retirada mensal',valor:2500,valorPago:2500,dia:5,mes:'JUL/2026',categoria:'retirada',fixa:true,status:'PAGO',cod:'',obs:''},
   ];
   seedFV('meses','JUL%2F2026',{mes:'JUL/2026',contas:P_SEED_JUL});
   // Cenário competência≠caixa (Fase 4): energia de JUNHO, paga em JULHO
@@ -2735,6 +2801,7 @@ function showMain(id,btn){
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();
   if(id==='analise')renderAnalise();
+  if(id==='consolidado')CS_render();
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes')C_ativar();
   if(id==='categorias')CF_render();
@@ -7026,6 +7093,208 @@ function renderAnalise(){
   }).join('');
 }
 
+// ══════════════════════════════════════════════════════
+// CONSOLIDADO PJ + PF (módulo CS_)
+//
+// O resto do app trata `retirada` como despesa comum dentro de P_meses — então o
+// "Resultado do mês" do Painel já vem com a remuneração do dono descontada, e a
+// margem da empresa aparece pior do que é. E olhando os dois sistemas juntos (WEN
+// e Nossa Semente) o mesmo dinheiro é contado duas vezes: sai como despesa aqui e
+// entra como renda lá. Somar os dois "resultados" dá um número que não existe.
+//
+// Aqui a leitura é outra, de propósito:
+//   margem operacional = receita − despesas SEM retirada   (o que a empresa gera)
+//   retirada           = transferência PJ → PF             (troca de bolso)
+//   consolidado        = margem operacional + renda extra PF − custo de vida PF
+//
+// A retirada se cancela no consolidado, e é isso que faz o número fechar:
+//   (margemOper − retirada) + (retirada + rendaExtra − custoPF)
+// Dinheiro trocando de bolso não cria nem destrói riqueza.
+//
+// O lado PF vive no Nossa Semente; aqui ele é informado por mês (CS_CFG.pf), com
+// atalho de importação do "Pacote pra IA" do NS.
+// ══════════════════════════════════════════════════════
+const CS_COL='config_consolidado', CS_DOC='geral', CS_LS='wen_cs_cfg';
+let CS_CFG={pf:{}};
+let CS_mesSel=null, CS_chartObj=null;
+
+function CS_pf(mes){const p=(CS_CFG.pf||{})[mes]||{};return{custo:Number(p.custo)||0,renda:Number(p.renda)||0};}
+function CS_temPF(mes){return Object.prototype.hasOwnProperty.call(CS_CFG.pf||{},mes);}
+function CS_mesesComDados(){
+  const mR=(typeof R_todosOsDados!=='undefined'?R_todosOsDados:[]).map(r=>r.mes);
+  const mP=Object.keys((typeof P_meses!=='undefined'?P_meses:{})||{});
+  return [...new Set([...mR,...mP,...Object.keys(CS_CFG.pf||{})])].filter(Boolean).sort((a,b)=>{
+    const[ma,ya]=a.split('/'),[mb,yb]=b.split('/');
+    if(ya!==yb)return parseInt(ya)-parseInt(yb);
+    return MESES_ABREV.indexOf(ma)-MESES_ABREV.indexOf(mb);
+  });
+}
+
+// Núcleo do consolidado — puro sobre os dados do mês (provado em test/consolidado.test.mjs)
+function CS_calcMes(mes){
+  const recs=(typeof R_todosOsDados!=='undefined'?R_todosOsDados:[]).filter(r=>r.mes===mes);
+  const receita=recs.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  const aReceber=recs.reduce((a,r)=>a+Math.max(0,Number(r.saldo||0)),0);
+  const recebido=receita-aReceber;
+  const lancs=((typeof P_meses!=='undefined'?P_meses:{})||{})[mes]||[];
+  const retirada=lancs.filter(r=>r.categoria==='retirada').reduce((a,r)=>a+(Number(r.valor)||0),0);
+  const despOper=lancs.filter(r=>r.categoria!=='retirada').reduce((a,r)=>a+(Number(r.valor)||0),0);
+  const aPagar=lancs.filter(r=>String(r.status).toUpperCase()!=='PAGO').reduce((a,r)=>a+((Number(r.valor)||0)-(Number(r.valorPago)||0)),0);
+  const pf=CS_pf(mes);
+  const margemOper=receita-despOper;          // a empresa, antes de te pagar
+  const sobraEmpresa=margemOper-retirada;      // o que fica na PJ
+  const rendaPF=retirada+pf.renda;             // a retirada É a renda da casa
+  const sobraPF=rendaPF-pf.custo;              // o que fica na PF
+  const consolidado=sobraEmpresa+sobraPF;      // a retirada se cancela aqui
+  const baseReceita=receita+pf.renda;
+  return {mes,receita,recebido,aReceber,despOper,retirada,aPagar,pf,
+    margemOper,sobraEmpresa,rendaPF,sobraPF,consolidado,baseReceita,
+    custoConjunto:despOper+pf.custo,
+    margemOperPct:receita>0?margemOper/receita*100:0,
+    consolidadoPct:baseReceita>0?consolidado/baseReceita*100:0,
+    temPF:CS_temPF(mes)};
+}
+
+// Fôlego: quantos meses o caixa aguenta na queima atual (média dos últimos 3 meses fechados)
+function CS_folego(){
+  const caixa=(typeof BC_contasAtivas==='function')
+    ? BC_contasAtivas().filter(id=>BC_CONTAS[id]&&BC_CONTAS[id].saldoConfigurado).reduce((a,id)=>a+(BC_saldoConta(id)||0),0)
+    : 0;
+  const ult=CS_mesesComDados().slice(-3);
+  const media=ult.length?ult.reduce((a,m)=>a+CS_calcMes(m).consolidado,0)/ult.length:0;
+  return {caixa,media,meses:media<0?caixa/Math.abs(media):null};
+}
+
+// ── Persistência (localStorage na frente, Firestore por cima — igual ao IA_) ──
+async function CS_carregar(){
+  try{const c=JSON.parse(localStorage.getItem(CS_LS)||'null');if(c&&c.pf)CS_CFG=c;}catch(e){}
+  try{
+    const res=await fetch(`${FS_URL}/${CS_COL}?key=${FB_API_KEY}`);const j=await res.json();
+    if(j.documents){
+      const d=j.documents.find(x=>x.name.endsWith('/'+CS_DOC));
+      if(d&&d.fields){const raw=fromFV(d.fields.dados);if(raw){const o=JSON.parse(raw);if(o&&o.pf)CS_CFG=o;}}
+    }
+  }catch(e){}
+  if(mainAtivo==='consolidado')CS_render();
+}
+async function CS_persistir(){
+  try{localStorage.setItem(CS_LS,JSON.stringify(CS_CFG));}catch(e){}
+  try{await fetch(`${FS_URL}/${CS_COL}/${CS_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fields:{dados:toFV(JSON.stringify(CS_CFG))}})});}catch(e){}
+}
+
+function CS_setMes(m){CS_mesSel=m;CS_render();}
+async function CS_salvarPF(){
+  const mes=CS_mesSel||mesAtualReal();
+  const custo=parseFloat(document.getElementById('csCusto').value)||0;
+  const renda=parseFloat(document.getElementById('csRenda').value)||0;
+  if(!CS_CFG.pf)CS_CFG.pf={};
+  CS_CFG.pf[mes]={custo,renda};
+  await CS_persistir();CS_render();toast('✅ Lado pessoal salvo — '+mes);
+}
+async function CS_apagarPF(mes){
+  if(!confirm('Apagar o lado pessoal de '+mes+'? O consolidado desse mês volta a ficar incompleto.'))return;
+  delete (CS_CFG.pf||{})[mes];await CS_persistir();CS_render();toast('🗑️ '+mes+' removido.','#6b7280');
+}
+
+// Importa o "Pacote pra IA" do Nossa Semente. Só as SAÍDAS entram: as entradas do NS
+// já incluem a retirada vinda da WEN e contariam dobrado no consolidado.
+function CS_importarNS(input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=async()=>{
+    try{
+      const j=JSON.parse(rd.result);
+      const r=j.resumo||j;
+      const mes=r.periodo||r.mes||CS_mesSel||mesAtualReal();
+      const custo=Number(r.saidas);
+      if(!isFinite(custo)){toast('Não achei "saidas" nesse arquivo.','#ef4444');return;}
+      if(!CS_CFG.pf)CS_CFG.pf={};
+      CS_CFG.pf[mes]={custo,renda:(CS_CFG.pf[mes]||{}).renda||0};
+      CS_mesSel=mes;await CS_persistir();CS_render();
+      toast('✅ Custo de vida de '+mes+' importado: '+fmt(custo));
+    }catch(e){toast('Arquivo inválido: '+e.message,'#ef4444');}
+    finally{input.value='';}
+  };
+  rd.readAsText(f);
+}
+
+function CS_render(){
+  const meses=CS_mesesComDados();
+  if(!meses.length){document.getElementById('csDestaque').innerHTML='<label>Consolidado</label><div class="v" style="color:#9ca3af">—</div><div class="s">Sem dados ainda.</div>';return;}
+  if(!CS_mesSel||!meses.includes(CS_mesSel))CS_mesSel=meses.includes(mesAtualReal())?mesAtualReal():meses[meses.length-1];
+  const mes=CS_mesSel, c=CS_calcMes(mes), cor=v=>v>=0?'#16a34a':'#ef4444';
+
+  // Aviso quando o lado pessoal ainda não foi informado — o consolidado fica só com a PJ
+  document.getElementById('csSemPF').innerHTML=c.temPF?'':
+    `<div class="cs-sem-pf">ℹ️ <b>${mes} ainda não tem o lado pessoal preenchido.</b> Sem o custo de vida,
+     o número abaixo é só a empresa — não é o consolidado de verdade. Preencha lá embaixo, em "Lado pessoal".</div>`;
+
+  document.getElementById('csDestaque').innerHTML=`
+    <label>🔗 Resultado consolidado — ${mes}</label>
+    <div class="v" style="color:${cor(c.consolidado)}">${fmt(c.consolidado)}</div>
+    <div class="s">${c.consolidadoPct.toFixed(1).replace('.',',')}% da receita do conjunto · empresa + casa, com a retirada neutralizada</div>`;
+
+  document.getElementById('csPJ').innerHTML=`
+    <div class="an-card"><label>💰 Receita</label><div class="val" style="color:#16a34a">${fmt(c.receita)}</div><div class="sub">competência</div></div>
+    <div class="an-card"><label>📥 Recebido</label><div class="val" style="color:#15803d">${fmt(c.recebido)}</div><div class="sub">caixa de verdade</div></div>
+    <div class="an-card"><label>📤 Despesa operacional</label><div class="val" style="color:#1e40af">${fmt(c.despOper)}</div><div class="sub">sem a retirada</div></div>
+    <div class="an-card"><label>📊 Margem operacional</label><div class="val" style="color:${cor(c.margemOper)}">${fmt(c.margemOper)}</div><div class="sub">${c.margemOperPct.toFixed(1).replace('.',',')}% — antes de você se pagar</div></div>`;
+
+  document.getElementById('csPonte').innerHTML=`
+    <div class="cs-ponte">
+      <span>🏢 Empresa gera <b>${fmt(c.margemOper)}</b></span>
+      <span>→ você retira <b>${fmt(c.retirada)}</b> →</span>
+      <span>🏠 Casa recebe <b>${fmt(c.rendaPF)}</b></span>
+      <span style="width:100%;text-align:center;font-size:.78rem;opacity:.85">Fica na empresa: <b>${fmt(c.sobraEmpresa)}</b> · a retirada não é despesa, é transferência</span>
+    </div>`;
+
+  document.getElementById('csPF').innerHTML=`
+    <div class="an-card"><label>💵 Renda pessoal</label><div class="val" style="color:#0d9488">${fmt(c.rendaPF)}</div><div class="sub">retirada ${fmt(c.retirada)}${c.pf.renda?' + extra '+fmt(c.pf.renda):''}</div></div>
+    <div class="an-card"><label>🏠 Custo de vida</label><div class="val" style="color:#1e40af">${c.temPF?fmt(c.pf.custo):'—'}</div><div class="sub">${c.temPF?'do Nossa Semente':'não informado'}</div></div>
+    <div class="an-card"><label>📊 Sobra pessoal</label><div class="val" style="color:${cor(c.sobraPF)}">${c.temPF?fmt(c.sobraPF):'—'}</div><div class="sub">renda − custo de vida</div></div>
+    <div class="an-card"><label>🧮 Custo do conjunto</label><div class="val" style="color:#6366f1">${fmt(c.custoConjunto)}</div><div class="sub">operacional + casa</div></div>`;
+
+  const fol=CS_folego(), fat=(typeof PN_faturasAberto==='function')?PN_faturasAberto():0;
+  document.getElementById('csCaixa').innerHTML=`
+    <div class="an-card"><label>🏦 Caixa hoje</label><div class="val" style="color:${cor(fol.caixa)}">${fmt(fol.caixa)}</div><div class="sub">contas com saldo configurado</div></div>
+    <div class="an-card"><label>⏳ Fôlego</label><div class="val" style="color:${fol.meses===null?'#16a34a':(fol.meses<3?'#ef4444':'#f59e0b')}">${fol.meses===null?'positivo':fol.meses.toFixed(1).replace('.',',')+' meses'}</div><div class="sub">${fol.meses===null?'o conjunto não está queimando caixa':'queima média '+fmt(Math.abs(fol.media))+'/mês'}</div></div>
+    <div class="an-card"><label>📥 A receber em aberto</label><div class="val" style="color:#b91c1c">${fmt(c.aReceber)}</div><div class="sub">já faturado, não recebido</div></div>
+    <div class="an-card"><label>💳 Faturas + a pagar</label><div class="val" style="color:#be185d">${fmt(fat+c.aPagar)}</div><div class="sub">cartão ${fmt(fat)} · contas ${fmt(c.aPagar)}</div></div>`;
+
+  // Selector + inputs do lado pessoal
+  const sel=document.getElementById('csMesSel');
+  if(sel){sel.innerHTML=meses.map(m=>`<option value="${m}"${m===mes?' selected':''}>${m}${CS_temPF(m)?' ✓':''}</option>`).join('');}
+  const ic=document.getElementById('csCusto'),ir=document.getElementById('csRenda');
+  if(ic)ic.value=c.temPF?c.pf.custo:'';
+  if(ir)ir.value=c.temPF&&c.pf.renda?c.pf.renda:'';
+
+  const pfMeses=Object.keys(CS_CFG.pf||{}).sort((a,b)=>meses.indexOf(a)-meses.indexOf(b));
+  document.getElementById('csPFLista').innerHTML=pfMeses.length
+    ? `<table class="mc-table"><thead><tr><th>Mês</th><th class="right">Custo de vida</th><th class="right">Renda extra</th><th class="right">Consolidado</th><th></th></tr></thead><tbody>${
+        pfMeses.map(m=>{const x=CS_calcMes(m);return `<tr><td><span class="mes-chip-r">${m}</span></td><td class="right">${fmt(x.pf.custo)}</td><td class="right">${fmt(x.pf.renda)}</td><td class="right" style="color:${cor(x.consolidado)};font-weight:700">${fmt(x.consolidado)}</td><td class="right"><button class="btn btn-outline" style="padding:4px 10px;font-size:.75rem" onclick="CS_apagarPF('${m}')">🗑️</button></td></tr>`;}).join('')
+      }</tbody></table>`
+    : '<div style="font-size:.85rem;color:#9ca3af">Nenhum mês do lado pessoal preenchido ainda.</div>';
+
+  CS_renderChart(meses.slice(-12));
+}
+
+function CS_renderChart(meses){
+  const el=document.getElementById('csChart');if(!el||typeof Chart==='undefined')return;
+  const dados=meses.map(CS_calcMes);
+  if(CS_chartObj)CS_chartObj.destroy();
+  CS_chartObj=new Chart(el,{
+    data:{labels:meses,datasets:[
+      {type:'bar',label:'💰 Receita',data:dados.map(d=>d.receita),backgroundColor:'rgba(22,163,74,.75)',borderRadius:4},
+      {type:'bar',label:'📤 Despesa operacional',data:dados.map(d=>d.despOper),backgroundColor:'rgba(59,130,246,.75)',borderRadius:4},
+      {type:'bar',label:'🏠 Custo de vida',data:dados.map(d=>d.pf.custo),backgroundColor:'rgba(20,184,166,.75)',borderRadius:4},
+      {type:'line',label:'🔗 Consolidado',data:dados.map(d=>d.consolidado),borderColor:'#6366f1',backgroundColor:'transparent',tension:.35,borderDash:[5,3],pointBackgroundColor:'#6366f1',pointRadius:3},
+    ]},
+    options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},
+      scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}},responsive:true}
+  });
+}
+
 // ── EVENT LISTENERS ──
 
 // Receber
@@ -7582,6 +7851,7 @@ FX_inicializar();
 AUD_inicializar();
 CONC_inicializar();
 IA_carregarChave();
+CS_carregar();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=4391db39"></script>
