@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260811-8967f171';
+window.APP_VERSION='20260811-e3f5b942';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -6501,7 +6501,7 @@ function renderDashboardP(){
   P_barObj=new Chart(document.getElementById('pBarChart'),{type:'bar',data:{labels:dias.map(d=>'Dia '+d),datasets:[{label:'Total',data:dias.map(d=>data.filter(r=>r.dia===d).reduce((a,r)=>a+r.valor,0)),backgroundColor:'#3b82f6',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
 
   // Comparativo
-  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>P_meses[m].reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>P_meses[m].filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0));const pendentes=totais.map((t,i)=>t-pagos[i]);
+  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>(P_meses[m]||[]).filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0));const pendentes=totais.map((t,i)=>t-pagos[i]);
   if(P_lineObj)P_lineObj.destroy();
   P_lineObj=new Chart(document.getElementById('pLineChart'),{type:'bar',data:{labels:mesesOrdP,datasets:[{label:'✅ Pago',data:pagos,backgroundColor:'#22c55e',borderRadius:3,stack:'s'},{label:'🔴 Pendente',data:pendentes,backgroundColor:'#ef4444',borderRadius:3,stack:'s'}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}},responsive:true}});
 
@@ -6851,7 +6851,7 @@ function renderCategoriasP(){
 // Histórico Pagar
 function renderHistoricoP(){
   document.getElementById('pHistList').innerHTML=P_getMesesOrdenados().reverse().map(m=>{
-    const data=P_meses[m];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
+    const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
     return`<div class="hist-card-p" style="${atual?'border:2px solid #3b82f6':''}" onclick="P_trocarMesHist('${m}')"><div><div class="mes-nome-p">📅 ${m}${atual?' <span style="font-size:.73rem;background:#eff6ff;color:#1e40af;padding:2px 7px;border-radius:99px;margin-left:5px">ATUAL</span>':''}</div><div class="mes-info-p">${data.length} contas · ${pct}% pago · ${fmt(pago)}</div></div><div style="text-align:right"><div class="mes-total-p">${fmt(total)}</div><button class="btn btn-outline-b btn-sm" style="margin-top:5px" onclick="event.stopPropagation();exportarMesP('${m}')">⬇ Excel</button></div></div>`;
   }).join('');
 }
@@ -6866,7 +6866,7 @@ function exportarMesP(m){
   ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));XLSX.writeFile(wb,'Pagar_'+m.replace('/','_')+'.xlsx');
 }
-function exportarTodosExcelP(){const wb=XLSX.utils.book_new();P_getMesesOrdenados().forEach(m=>{const data=P_meses[m].slice().sort((a,b)=>(a.dia||99)-(b.dia||99));const ws=XLSX.utils.aoa_to_sheet([['CONTAS A PAGAR — '+m],[],['Descrição','Dia','Valor','Já Pago','Saldo','Status','Obs','Código'],...data.map(r=>[r.nome,r.dia||'',r.valor,r.valorPago||0,(r.valor-(r.valorPago||0)),r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE',r.obs,r.cod])]);ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));});XLSX.writeFile(wb,'Historico_Pagar_WEN.xlsx');}
+function exportarTodosExcelP(){const wb=XLSX.utils.book_new();P_getMesesOrdenados().forEach(m=>{const data=(P_meses[m]||[]).slice().sort((a,b)=>(a.dia||99)-(b.dia||99));const ws=XLSX.utils.aoa_to_sheet([['CONTAS A PAGAR — '+m],[],['Descrição','Dia','Valor','Já Pago','Saldo','Status','Obs','Código'],...data.map(r=>[r.nome,r.dia||'',r.valor,r.valorPago||0,(r.valor-(r.valorPago||0)),r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE',r.obs,r.cod])]);ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));});XLSX.writeFile(wb,'Historico_Pagar_WEN.xlsx');}
 
 // Backup Pagar
 function exportarBackupP(){const payload={versao:'wen-v3',exportadoEm:new Date().toISOString(),meses:P_meses};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='WEN_Pagar_Backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);toast('✅ Backup Pagar exportado!');}

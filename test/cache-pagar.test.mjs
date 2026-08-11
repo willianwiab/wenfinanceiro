@@ -84,6 +84,9 @@ try{
   ok('erro de leitura mantém cache local',!estadoOffline.hidratado&&!estadoOffline.confiavel&&estadoOffline.jul===1,JSON.stringify(estadoOffline));
   ok('erro de leitura nunca faz upload do cache',offline.patches.length===0,'patches='+offline.patches.length);
   ok('interface informa uso do cache local',/cache local|nada foi enviado/i.test(estadoOffline.status),estadoOffline.status);
+  await offline.page.getByRole('button',{name:'📤 A Pagar'}).click();await offline.page.waitForTimeout(300);
+  await offline.page.getByRole('button',{name:'🗂 Histórico'}).click();await offline.page.waitForTimeout(300);
+  ok('Pagar e Histórico abrem sem erro quando o mês atual ainda não existe',offline.erros.length===0,offline.erros.join(' | '));
   await offline.context.close();
 
   // 3) Só o mês alterado é gravado; em seguida um 412 preserva a cópia local.
