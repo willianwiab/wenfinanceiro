@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260724-7d658313';
+window.APP_VERSION='20260811-ee2efadd';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -6234,73 +6234,131 @@ function FCX_renderBlocos(){
 }
 
 // Estado Pagar
-let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false,P_syncErroAvisado=false; // declarado antes: P_salvarStorage() abaixo pode rodar no load com localStorage vazio (evita TDZ)
-let P_meses=JSON.parse(localStorage.getItem('wen_meses6')||'null');
-if(!P_meses){P_meses={};const ma=mesAtualReal();P_meses[ma]=[];P_salvarStorage();}
-// Migração
-Object.keys(P_meses).forEach(m=>{P_meses[m].forEach(r=>{if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';if(typeof r.id==='number')r.id='w'+Math.round(r.id);else if(typeof r.id==='string'&&r.id.includes('.'))r.id='w'+r.id.replace('.','x');});});
-(function autoMesP(){const ma=mesAtualReal();if(!P_meses[ma]){const keys=P_getMesesOrdenados();P_meses[ma]=(P_meses[keys[keys.length-1]]||[]).map(r=>({...r,id:gerarId(),status:'PENDENTE',valorPago:0}));P_salvarStorage();}})();
+// A nuvem é a fonte principal. O cache só acelera a abertura e guarda alterações ainda não
+// confirmadas. Nenhuma escrita é permitida antes da primeira leitura confiável do Firestore.
+const P_CACHE_KEY='wen_meses6',P_CACHE_META_KEY='wen_meses6_meta_v2';
+function P_lerCacheLocal(){try{const x=JSON.parse(localStorage.getItem(P_CACHE_KEY)||'null');return x&&typeof x==='object'&&!Array.isArray(x)?x:{};}catch(e){return{};}}
+function P_lerCacheMeta(){try{const x=JSON.parse(localStorage.getItem(P_CACHE_META_KEY)||'{}');return x&&typeof x==='object'?x:{};}catch(e){return{};}}
+function P_clonar(v){return JSON.parse(JSON.stringify(v==null?null:v));}
+function P_normalizarMeses(meses){
+  Object.keys(meses||{}).forEach(m=>{if(!Array.isArray(meses[m]))meses[m]=[];meses[m].forEach(r=>{if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';if(typeof r.id==='number')r.id='w'+Math.round(r.id);else if(typeof r.id==='string'&&r.id.includes('.'))r.id='w'+r.id.replace('.','x');});});
+  return meses||{};
+}
+function P_serializarMes(mes){return JSON.stringify((P_meses&&P_meses[mes])||[]);}
 
-let P_mesAtual=(()=>{const ma=mesAtualReal();return P_meses[ma]?ma:P_getMesesOrdenados().reverse()[0];})();
+const P_cacheInicial=P_normalizarMeses(P_lerCacheLocal()),P_cacheMetaInicial=P_lerCacheMeta();
+let P_meses=P_cacheInicial;
+let P_hidratado=false,P_nuvemConfiavel=false;
+let P_syncTimeout=null,P_syncEmAndamento=false,P_syncPendente=false,P_syncErroAvisado=false;
+let P_snapshotNuvem={},P_updateTimes={...(P_cacheMetaInicial.updateTimes||{})};
+const P_dirtyMeses=new Set(Array.isArray(P_cacheMetaInicial.dirty)?P_cacheMetaInicial.dirty:[]);
+const P_conflitos=new Set(Array.isArray(P_cacheMetaInicial.conflitos)?P_cacheMetaInicial.conflitos:[]);
+
+let P_mesAtual=mesAtualReal();
 let P_filtroAtual='TODOS',P_editandoId=null,P_editandoMes=null;
 let P_pieObj=null,P_barObj=null,P_lineObj=null,P_catChartObj=null;
 let P_pendingEdit=null,P_pendingExcluir=null,P_baixaId=null;
 let P_periodoMode='dias',P_lastPeriodoData=[];
 let P_sortCol=null,P_sortDir=1;
 
-function P_getMesesOrdenados(){return[...Object.keys(P_meses)].sort((a,b)=>{const[ma,ya]=a.split('/');const[mb,yb]=b.split('/');if(ya!==yb)return parseInt(ya)-parseInt(yb);return(MESES_IDX[ma]??0)-(MESES_IDX[mb]??0);});}
+function P_getMesesOrdenados(){const s=new Set(Object.keys(P_meses));s.add(mesAtualReal());return[...s].sort((a,b)=>{const[ma,ya]=a.split('/');const[mb,yb]=b.split('/');if(ya!==yb)return parseInt(ya)-parseInt(yb);return(MESES_IDX[ma]??0)-(MESES_IDX[mb]??0);});}
 function P_getData(){return P_meses[P_mesAtual]||[];}
-function P_salvarStorage(){localStorage.setItem('wen_meses6',JSON.stringify(P_meses));clearTimeout(P_syncTimeout);P_syncTimeout=setTimeout(syncToSheetsP,1500);}
+function P_salvarCacheMeta(){try{localStorage.setItem(P_CACHE_META_KEY,JSON.stringify({dirty:[...P_dirtyMeses],conflitos:[...P_conflitos],updateTimes:P_updateTimes,salvoEm:new Date().toISOString()}));}catch(e){}}
+function P_marcarMesesAlterados(){
+  const todos=new Set([...Object.keys(P_meses||{}),...Object.keys(P_snapshotNuvem||{})]);
+  todos.forEach(m=>{const atual=P_serializarMes(m),nuvem=P_snapshotNuvem[m]??'[]';if(atual!==nuvem)P_dirtyMeses.add(m);else{P_dirtyMeses.delete(m);P_conflitos.delete(m);}});
+}
+function P_salvarStorage(){
+  try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}
+  P_marcarMesesAlterados();P_salvarCacheMeta();
+  clearTimeout(P_syncTimeout);
+  if(!P_hidratado||!P_nuvemConfiavel){setSyncStatus('error','offline — nada foi enviado');return false;}
+  if(P_conflitos.size){setSyncStatus('error',P_conflitos.size+' conflito(s) — preservado');return false;}
+  if(!P_dirtyMeses.size){setSyncStatus('ok');return true;}
+  P_syncTimeout=setTimeout(syncToSheetsP,1500);return true;
+}
 
 // Firebase Pagar
 async function syncToSheetsP(){
-  if(P_syncEmAndamento){P_syncPendente=true;return;}
+  if(!P_hidratado||!P_nuvemConfiavel){setSyncStatus('error','nuvem não carregada');return false;}
+  P_marcarMesesAlterados();
+  const pendentes=[...P_dirtyMeses].filter(m=>!P_conflitos.has(m));
+  if(!pendentes.length){if(P_conflitos.size)setSyncStatus('error',P_conflitos.size+' conflito(s) — preservado');else setSyncStatus('ok');return P_conflitos.size===0;}
+  if(P_syncEmAndamento){P_syncPendente=true;return false;}
   P_syncEmAndamento=true;P_syncPendente=false;setSyncStatus('saving');
+  let falhou=false,conflitou=false;
   try{
-    // Checa CADA resposta: fetch() NÃO lança em 429/403, então antes o app dizia "salvo" sem salvar.
-    const results=await Promise.all(Object.keys(P_meses).map(async mes=>{
+    // Grava só os meses realmente alterados. A precondição de updateTime impede que um
+    // aparelho com cache antigo sobrescreva silenciosamente outro aparelho.
+    for(const mes of pendentes){
       const fields={contas:toFV(P_meses[mes]),mes:{stringValue:mes}};
-      const url=`${FS_URL}/meses/${encodeURIComponent(mes)}?key=${FB_API_KEY}`;
+      const conhecido=P_updateTimes[mes];
+      const precond=conhecido?'&currentDocument.updateTime='+encodeURIComponent(conhecido):'&currentDocument.exists=false';
+      const url=`${FS_URL}/meses/${encodeURIComponent(mes)}?key=${FB_API_KEY}${precond}`;
       const res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
-      return {mes,ok:res.ok,status:res.status};
-    }));
-    const falhou=results.filter(r=>!r.ok);
-    if(falhou.length){const s=falhou[0].status;throw new Error(s===429?'Nuvem sem cota (429)':'Nuvem recusou ('+s+')');}
-    await P_atualizarCaderninho();setSyncStatus('ok');P_syncErroAvisado=false;
+      if(res.status===409||res.status===412){P_conflitos.add(mes);conflitou=true;continue;}
+      if(!res.ok){falhou=true;continue;}
+      const salvo=await res.json().catch(()=>({}));
+      P_snapshotNuvem[mes]=P_serializarMes(mes);
+      if(salvo.updateTime)P_updateTimes[mes]=salvo.updateTime;
+      P_dirtyMeses.delete(mes);P_conflitos.delete(mes);
+    }
+    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}P_salvarCacheMeta();
+    if(conflitou){setSyncStatus('error',P_conflitos.size+' conflito(s) — não enviado');if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Outro aparelho alterou o mesmo mês. Mantive sua cópia local e não sobrescrevi a nuvem. Exporte um backup antes de resolver o conflito.','#ef4444',9000);}}
+    else if(falhou){setSyncStatus('error','falha de rede — cache preservado');if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Não consegui salvar na nuvem. Sua alteração ficou neste aparelho e será tentada novamente depois.','#ef4444',8000);}}
+    else{await P_atualizarCaderninho();setSyncStatus('ok');P_syncErroAvisado=false;}
   }catch(e){
+    falhou=true;
     setSyncStatus('error',(e.message||'erro')+' — salvo só neste aparelho');
     if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Não consegui salvar na nuvem ('+(e.message||'erro')+'). Seus dados estão guardados só NESTE navegador — não troque de aparelho nem limpe o cache até a nuvem voltar. Tentarei de novo no próximo salvamento.','#ef4444',8000);}
   }
-  finally{P_syncEmAndamento=false;if(P_syncPendente){P_syncPendente=false;setTimeout(syncToSheetsP,1000);}}
+  finally{const repetir=P_syncPendente&&!P_conflitos.size;P_syncEmAndamento=false;P_syncPendente=false;if(repetir)setTimeout(syncToSheetsP,1000);}
+  return !falhou&&!conflitou&&!P_conflitos.size;
 }
 async function P_atualizarCaderninho(){
   try{
     const resumo={};Object.keys(P_meses).forEach(m=>{const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);resumo[m]={total,pago,pendente:total-pago,qtd:data.length,qtdPago:data.filter(r=>r.status.toUpperCase()==='PAGO').length};});
     const fields={resumo:toFV(resumo),atualizadoEm:{stringValue:new Date().toISOString()}};
-    await fetch(`${FS_URL}/resumo_mensal/contas_pagar?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+    const res=await fetch(`${FS_URL}/resumo_mensal/contas_pagar?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+    if(!res.ok)throw new Error('Resumo recusado ('+res.status+')');
   }catch(e){console.warn('Caderninho:',e.message);}
 }
 async function carregarDeSheetsP(){
   setSyncStatus('saving');
   try{
-    const res=await fetch(`${FS_URL}/meses?key=${FB_API_KEY}`);const json=await res.json();
-    if(!json.documents||json.documents.length===0){setSyncStatus('ok');return false;}
-    const novosMeses={};
-    json.documents.forEach(doc=>{
+    const res=await fetch(`${FS_URL}/meses?key=${FB_API_KEY}`);
+    if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Leitura recusada ('+res.status+')');
+    const json=await res.json();const documentos=json.documents||[];
+    const novosMeses={},novosTimes={},snapshot={};
+    documentos.forEach(doc=>{
       const fields=doc.fields||{};const mes=fields.mes?.stringValue;if(!mes)return;
       const contas=fromFV(fields.contas)||[];
-      contas.forEach(r=>{if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';if(typeof r.id==='number')r.id='w'+Math.round(r.id);else if(typeof r.id==='string'&&r.id.includes('.'))r.id='w'+r.id.replace('.','x');});
-      novosMeses[mes]=contas;
+      novosMeses[mes]=P_normalizarMeses({[mes]:contas})[mes];snapshot[mes]=JSON.stringify(novosMeses[mes]);if(doc.updateTime)novosTimes[mes]=doc.updateTime;
     });
-    if(Object.keys(novosMeses).length>0){P_meses=novosMeses;localStorage.setItem('wen_meses6',JSON.stringify(P_meses));setSyncStatus('ok');return true;}
-    setSyncStatus('ok');return false;
-  }catch(e){setSyncStatus('error',e.message);return false;}
+    const pendentesAnteriores=new Set(P_dirtyMeses),conflitosNovos=new Set();
+    if(!documentos.length&&Object.keys(P_meses).length){Object.keys(P_meses).forEach(m=>{pendentesAnteriores.add(m);conflitosNovos.add(m);});}
+    const mesclados=P_clonar(novosMeses)||{};
+    pendentesAnteriores.forEach(m=>{
+      const base=P_updateTimes[m]||null,atual=novosTimes[m]||null;
+      if(base===atual&&Object.prototype.hasOwnProperty.call(P_meses,m))mesclados[m]=P_clonar(P_meses[m]);
+      else if(base!==atual){if(Object.prototype.hasOwnProperty.call(P_meses,m))mesclados[m]=P_clonar(P_meses[m]);conflitosNovos.add(m);}
+    });
+    P_meses=P_normalizarMeses(mesclados);P_snapshotNuvem=snapshot;P_updateTimes=novosTimes;
+    P_dirtyMeses.clear();pendentesAnteriores.forEach(m=>P_dirtyMeses.add(m));
+    P_conflitos.clear();conflitosNovos.forEach(m=>P_conflitos.add(m));
+    P_hidratado=true;P_nuvemConfiavel=true;P_mesAtual=mesAtualReal();
+    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}P_salvarCacheMeta();
+    if(P_conflitos.size)setSyncStatus('error',P_conflitos.size+' conflito(s) — preservado');
+    else{setSyncStatus('ok');if(P_dirtyMeses.size){clearTimeout(P_syncTimeout);P_syncTimeout=setTimeout(syncToSheetsP,800);}}
+    return true;
+  }catch(e){P_hidratado=false;P_nuvemConfiavel=false;setSyncStatus('error',e.message+' — cache local');return false;}
 }
 async function sincronizarAgoraP(){
   toast('⏳ Sincronizando Pagar...');
+  if(P_hidratado&&P_nuvemConfiavel&&P_dirtyMeses.size){const salvo=await syncToSheetsP();if(salvo)toast('✅ Alterações enviadas!');return salvo;}
   const ok=await carregarDeSheetsP();
-  if(ok){P_atualizarNavMes();renderDashboardP();renderTabelaP();toast('✅ Pagar atualizado!');}
-  else{await syncToSheetsP();toast('✅ Pagar enviado!');}
+  if(ok){P_atualizarNavMes();renderDashboardP();renderTabelaP();if(P_conflitos.size)toast('⚠️ Conflito detectado. A cópia local foi preservada e nada foi sobrescrito.','#ef4444',8000);else toast('✅ Pagar atualizado!');return P_conflitos.size===0;}
+  toast('⚠️ A nuvem não respondeu. Nada foi enviado; mantive o cache local.','#ef4444',7000);return false;
 }
 
 // Nav mês Pagar
@@ -7298,22 +7356,24 @@ function LOCK_renderConfig(){
 }
 
 async function init(){
-  // 1. Carrega Pagar do Firebase primeiro (rápido, já tem localStorage como fallback)
+  // 1. Carrega Pagar do Firebase antes de liberar qualquer escrita. Em falha de leitura,
+  // mantém o cache somente local e NUNCA tenta enviá-lo como fallback.
   const okP=await carregarDeSheetsP();
   if(okP){P_atualizarNavMes();popularCatFiltroTabelaP();}
 
   // 2. Carrega Receber do Firebase
   await R_carregarTodos();
   renderMesSelectR();
+  // O Receber também usa o indicador global e pode ter colocado um ✅ por cima do erro
+  // do Pagar. Reafirma o estado seguro depois que os dois módulos terminaram.
+  if(!okP)setSyncStatus('error','Pagar offline — cache local');
 
-  // 3. Sincroniza Pagar se necessário
-  if(!okP)await syncToSheetsP();
-
-  // 4. Renderiza tela inicial
+  // 3. Renderiza tela inicial. Se Pagar ficou offline, a tarja de sincronização explica
+  // que o cache foi preservado e nenhuma escrita foi feita na nuvem.
   renderFluxoCaixa();
   atualizarHeaderContexto();
 
-  // 5. Agenda — carrega após 2s para não bloquear UI
+  // 4. Agenda — carrega após 2s para não bloquear UI
   setTimeout(()=>{
     const url=getProxyUrl();
     const inp=document.getElementById('agendaProxyUrl');if(inp&&url)inp.value=url;
@@ -7321,7 +7381,7 @@ async function init(){
     recarregarAgenda();
   },2000);
 
-  // 6. Lembrete de backup diário — 1x por dia, assim que os dados terminarem de carregar
+  // 5. Lembrete de backup diário — 1x por dia, assim que os dados terminarem de carregar
   verificarLembreteBackup();
 }
 
