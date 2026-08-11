@@ -743,11 +743,19 @@ function renderBanco(){
   }).join('') : '<div class="concil-vazio">Nada aqui por enquanto.</div>';
 }
 
-// Carrega conciliações e regras persistidas assim que o módulo sobe
-Promise.all([BK_carregarConciliados(), BK_carregarRegras()]).then(() => {
+// Carrega somente quando a área de conciliação é aberta. Quando o chamador já
+// buscou banco_conciliados, reutiliza os dados e evita a segunda leitura.
+let BK_inicializado = false;
+async function BK_inicializar(conciliadosJaCarregados){
+  if (BK_inicializado) return true;
+  const tarefas = [BK_carregarRegras()];
+  if (!conciliadosJaCarregados) tarefas.push(BK_carregarConciliados());
+  await Promise.all(tarefas);
+  BK_inicializado = true;
   if (BK_extratos.length) BK_executarMatching();
   if (mainAtivo === 'banco') renderBanco();
   // Atualiza o selo 🏦/⚪ em Receber e Pagar caso já estejam na tela (dados chegaram depois do render inicial)
   if (mainAtivo === 'receber' && subRAtivo === 'r-lancamentos') renderTabelaR();
   if (mainAtivo === 'pagar' && subPAtivo === 'p-contas') renderTabelaP();
-});
+  return true;
+}

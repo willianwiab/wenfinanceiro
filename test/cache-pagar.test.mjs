@@ -36,13 +36,14 @@ const browser=await chromium.launch();
 async function paginaComFirestore({documentos=[],atrasoMeses=0,falhaMeses=0,cache=null,onPatchMes=null}){
   const context=await browser.newContext();
   if(cache)await context.addInitScript(d=>localStorage.setItem('wen_meses6',JSON.stringify(d)),cache);
-  const page=await context.newPage();const erros=[],patches=[];
+  const page=await context.newPage();const erros=[],patches=[],leituras=[];
   page.on('pageerror',e=>erros.push(e.message));
   await page.route('**/xlsx.full.min.js',r=>r.fulfill({status:200,contentType:'text/javascript',body:'window.XLSX={utils:{},writeFile:function(){}};'}));
   await page.route('**/chart.umd.min.js',r=>r.fulfill({status:200,contentType:'text/javascript',body:'window.Chart=function(){this.destroy=function(){}};'}));
   await page.route('**/firebase-app-compat.js',r=>r.fulfill({status:200,contentType:'text/javascript',body:'window.firebase={apps:[],initializeApp:function(){this.apps.push({})}};'}));
   await page.route('https://firestore.googleapis.com/**',async route=>{
     const req=route.request(),url=req.url(),method=req.method();
+    if(method==='GET'||method==='POST')leituras.push(method+' '+url);
     if(method==='OPTIONS'){await route.fulfill({status:204,headers:jsonHeaders,body:''});return;}
     const listaMeses=method==='GET'&&/\/documents\/meses\?/.test(url);
     if(listaMeses){
@@ -58,7 +59,7 @@ async function paginaComFirestore({documentos=[],atrasoMeses=0,falhaMeses=0,cach
     await route.fulfill({status:200,headers:jsonHeaders,body:method==='GET'?'{"documents":[]}':'{}'});
   });
   await page.goto(base,{waitUntil:'domcontentloaded',timeout:30000});
-  return{context,page,erros,patches};
+  return{context,page,erros,patches,leituras};
 }
 
 try{
@@ -70,6 +71,8 @@ try{
   const estadoLento=await lento.page.evaluate(()=>({hidratado:eval('P_hidratado'),jul:eval("P_meses['JUL/2026'].length"),temAgo:Object.prototype.hasOwnProperty.call(eval('P_meses'),'AGO/2026')}));
   ok('dados remotos entram depois da espera',estadoLento.hidratado&&estadoLento.jul===1,JSON.stringify(estadoLento));
   ok('mês atual vazio não é criado nem persistido automaticamente',!estadoLento.temAgo&&lento.patches.length===0,JSON.stringify({estadoLento,patches:lento.patches}));
+  const pesadas=/categorias_pagar|contas_financeiras|movimentacoes_contas|transferencias_contas|cartoes|centros_custo|projetos|contas_fixas|auditoria|banco_conciliados|banco_regras|config_ia/;
+  ok('abertura não consulta módulos auxiliares pesados',!lento.leituras.some(x=>pesadas.test(x)),lento.leituras.join(' | '));
   ok('cenário lento sem erro de página',lento.erros.length===0,lento.erros.join(' | '));
   await lento.context.close();
 
