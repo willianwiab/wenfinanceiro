@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260811-ee2efadd';
+window.APP_VERSION='20260811-e3f5b942';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2736,11 +2736,12 @@ function showMain(id,btn){
   if(id==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
-  if(id==='cartoes')C_ativar();
+  if(id==='cartoes'){C_popularSelects();C_renderTudo();}
   if(id==='categorias')CF_render();
   if(id==='sophia')SOPHIA_abrir();
   if(id==='relatorios')RPT_ativar();
   if(id==='config'){const u=getProxyUrl();const i=document.getElementById('configAgendaUrl');if(i)i.value=u;if(typeof IA_refreshStatus==='function')IA_refreshStatus();if(typeof LOCK_renderConfig==='function')LOCK_renderConfig();}
+  MOD_hidratarMain(id);
 }
 
 function showSubR(id,btn){
@@ -2759,6 +2760,7 @@ function showSubP(id,btn){
   document.getElementById('page-'+id)?.classList.add('active');
   if(btn)btn.classList.add('active');
   renderSubPageP(id);
+  MOD_hidratarSubP(id);
 }
 
 function renderSubPageR(id){
@@ -2876,7 +2878,9 @@ async function R_fbCarregarTodos(){
   do{
     let url=`${FS_URL}/lancamentos?key=${FB_API_KEY}&pageSize=300`;
     if(pt)url+='&pageToken='+pt;
-    const res=await fetch(url);const json=await res.json();
+    const res=await fetch(url);
+    if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Receber recusado ('+res.status+')');
+    const json=await res.json();
     if(json.documents){json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));todos.push(obj);});}
     pt=json.nextPageToken||null;
   }while(pt);
@@ -2896,6 +2900,7 @@ async function R_fbBuscarAlterados(desde){
   if (!desde) return R_fbCarregarTodos().then(todos=>({todos,parcial:false}));
   const body={structuredQuery:{from:[{collectionId:'lancamentos'}],where:{fieldFilter:{field:{fieldPath:'atualizadoEm'},op:'GREATER_THAN',value:{stringValue:desde}}}}};
   const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Receber recusado ('+res.status+')');
   const json=await res.json();
   const todos=[];
   (Array.isArray(json)?json:[]).forEach(item=>{
@@ -3980,19 +3985,21 @@ async function CAT_fbExcluir(id){
 }
 async function CAT_fbCarregarTodas(){
   const out={};
-  try{
-    let pt=null;
-    do{
-      let url=`${FS_URL}/${CAT_COL}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
-      const res=await fetch(url);const json=await res.json();
-      if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));const id=doc.name.split('/').pop();out[id]=obj;});
-      pt=json.nextPageToken||null;
-    }while(pt);
-  }catch(e){console.warn('Categorias:',e.message);}
+  let pt=null;
+  do{
+    let url=`${FS_URL}/${CAT_COL}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+    const res=await fetch(url);
+    if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Categorias recusadas ('+res.status+')');
+    const json=await res.json();
+    if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));const id=doc.name.split('/').pop();out[id]=obj;});
+    pt=json.nextPageToken||null;
+  }while(pt);
   return out;
 }
 async function CAT_inicializar(){
-  const remoto=await CAT_fbCarregarTodas();
+  let remoto;
+  try{remoto=await CAT_fbCarregarTodas();}
+  catch(e){console.warn('Categorias:',e.message);return false;}
   if(Object.keys(remoto).length){
     Object.keys(CATS_P).forEach(k=>delete CATS_P[k]);
     Object.assign(CATS_P,remoto);
@@ -4001,6 +4008,7 @@ async function CAT_inicializar(){
   }
   CAT_popularSelectP();CAT_renderGerenciar();
   if(mainAtivo==='pagar'){popularCatFiltroTabelaP();if(subPAtivo==='p-categorias')renderCategoriasP();if(subPAtivo==='p-contas')renderTabelaP();}
+  return true;
 }
 function CAT_popularSelectP(){
   const sel=document.getElementById('pFCategoria');if(!sel)return;
@@ -4091,20 +4099,37 @@ function BC_carregarCache(){try{const c=JSON.parse(localStorage.getItem('wen_bc'
 // ── Persistência REST genérica (grava no cache local ANTES da nuvem) ──
 async function BC_fbUpsert(col,id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
 async function BC_fbExcluir(col,id){BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
-async function BC_fbCarregar(col){const out=[];try{let pt=null;do{let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;const res=await fetch(url);const json=await res.json();if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={id:doc.name.split('/').pop()};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out.push(o);});pt=json.nextPageToken||null;}while(pt);}catch(e){console.warn('Contas('+col+'):',e.message);}return out;}
-async function BC_inicializar(){
+async function BC_fbCarregar(col){const out=[];let pt=null;do{let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;const res=await fetch(url);if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':col+' recusada ('+res.status+')');const json=await res.json();if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={id:doc.name.split('/').pop()};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out.push(o);});pt=json.nextPageToken||null;}while(pt);return out;}
+async function BC_inicializarContas(){
   BC_carregarCache(); // 1) instantâneo, do cache local
+  let ok=true;
   try{
-    const [contas,movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL),BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
-    // 2) só substitui se a nuvem RESPONDEU com dados; se veio vazia (429/quota), mantém o cache local
+    const contas=await BC_fbCarregar(BC_COL);
     if(contas&&contas.length){Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);contas.forEach(c=>BC_CONTAS[c.id]=c);}
-    if(movs&&movs.length)BC_MOVS=movs;
-    if(transfs&&transfs.length)BC_TRANSFS=transfs;
-  }catch(e){console.warn('BC_inicializar',e.message);}
+  }catch(e){ok=false;console.warn('BC_inicializarContas',e.message);}
   BC_salvarCache();
   BC_popularSelectBaixa();
   if(mainAtivo==='contas')BC_renderPainel();
   if(mainAtivo==='fluxo'&&typeof FCX_render==='function')FCX_render();
+  return ok;
+}
+async function BC_inicializarMovimentos(){
+  BC_carregarCache();
+  let ok=true;
+  try{
+    const [movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
+    // Histórico pesado: só é consultado quando Contas ou Conciliação é realmente aberta.
+    if(movs&&movs.length)BC_MOVS=movs;
+    if(transfs&&transfs.length)BC_TRANSFS=transfs;
+  }catch(e){ok=false;console.warn('BC_inicializarMovimentos',e.message);}
+  BC_salvarCache();
+  if(mainAtivo==='contas')BC_renderPainel();
+  return ok;
+}
+async function BC_inicializar(){
+  await BC_inicializarContas();
+  await BC_inicializarMovimentos();
+  return true;
 }
 
 // ── Livro-razão ──
@@ -4347,13 +4372,12 @@ async function CC_fbSalvar(col,id,dados){
 async function CC_fbExcluir(col,id){ try{await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}catch(e){} CC_salvarCache(); }
 async function CC_fbCarregar(col){
   const out={};
-  try{ let pt=null;
-    do{ let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
-      const res=await fetch(url);const json=await res.json();
-      if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out[doc.name.split('/').pop()]=o;});
-      pt=json.nextPageToken||null;
-    }while(pt);
-  }catch(e){console.warn('Cartões('+col+'):',e.message);}
+  let pt=null;
+  do{ let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+    const res=await fetch(url);if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':col+' recusada ('+res.status+')');const json=await res.json();
+    if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out[doc.name.split('/').pop()]=o;});
+    pt=json.nextPageToken||null;
+  }while(pt);
   return out;
 }
 async function CC_inicializar(){
@@ -4468,15 +4492,16 @@ function C_salvarCache(){try{localStorage.setItem('wen_c_dados',JSON.stringify({
 function C_carregarCache(){try{const c=JSON.parse(localStorage.getItem('wen_c_dados')||'{}');if(Array.isArray(c.faturas))C_faturas=c.faturas;if(Array.isArray(c.parcelamentos))C_parcelamentos=c.parcelamentos;if(Array.isArray(c.regras))C_regras=c.regras;}catch(e){}}
 async function C_carregarTudo(){
   C_carregarCache(); // 1) instantâneo, do cache local
+  let ok=true;
   try{
     const [cs,fs,ps,rs]=await Promise.all([BC_fbCarregar(C_COL_CARD),BC_fbCarregar(C_COL_FAT),BC_fbCarregar(C_COL_PARC),BC_fbCarregar(C_COL_REGRA)]);
-    if(cs&&cs.length)C_cartoes=cs;
+    if(cs&&cs.length){C_cartoes=cs;Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);cs.forEach(c=>CC_CARTOES[c.id]=c);}
     // 2) só substitui se a nuvem RESPONDEU com dados; se veio vazia (429/quota), mantém o cache local
     if(fs&&fs.length)C_faturas=fs;
     if(ps&&ps.length)C_parcelamentos=ps;
     if(rs&&rs.length)C_regras=rs;
-  }catch(e){console.warn('C_carregarTudo',e.message);}
-  C_carregado=true; C_salvarCache();
+  }catch(e){ok=false;console.warn('C_carregarTudo',e.message);}
+  C_carregado=ok; C_salvarCache();return ok;
 }
 function C_fbSet(col,id,obj){try{return BC_fbUpsert(col,id,obj);}catch(e){}}
 
@@ -4608,8 +4633,10 @@ function C_card(id){const o=(typeof CC_CARTOES!=='undefined'&&CC_CARTOES)||{};re
 let C_faturaAberta=null, C_previaAberta=null, C_catFiltro=null, C_pizza=null, C_aprenderCat=true;
 
 async function C_ativar(){
-  if(!C_carregado){try{await C_carregarTudo();C_migrarFaturasAntigas();C_sincronizarTodasPrevias();C_carregado=true;}catch(e){console.warn('C_ativar',e.message);}}
+  let ok=true;
+  if(!C_carregado){try{ok=await C_carregarTudo();if(ok){C_migrarFaturasAntigas();C_sincronizarTodasPrevias();C_carregado=true;}}catch(e){ok=false;console.warn('C_ativar',e.message);}}
   C_popularSelects(); C_renderTudo();
+  return ok;
 }
 window.C_aba=function(aba,btn){
   document.querySelectorAll('#page-cartoes .sub-page').forEach(p=>p.classList.remove('active'));
@@ -5379,12 +5406,14 @@ async function IA_carregarChave(){
   // 1) localStorage (instantâneo, sobrevive ao refresh mesmo sem Firestore)
   try{const c=JSON.parse(localStorage.getItem('wen_ia_cfg')||'{}');IA_gemKey=c.geminiKey||'';IA_claudeKey=c.claudeKey||'';IA_prov=c.provedor==='claude'?'claude':'gemini';}catch(e){}
   // 2) Firestore por cima (se tiver e conseguir ler — mantém multi-dispositivo)
-  try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);const j=await res.json();
+  let remotoOk=true;
+  try{const res=await fetch(`${FS_URL}/${IA_COL}?key=${FB_API_KEY}`);if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Configuração IA recusada ('+res.status+')');const j=await res.json();
     if(j.documents){const d=j.documents.find(x=>x.name.endsWith('/'+IA_DOC));if(d&&d.fields){const g=(fromFV(d.fields.geminiKey)||'').trim(),cl=(fromFV(d.fields.claudeKey)||'').trim(),pv=fromFV(d.fields.provedor);if(g)IA_gemKey=g;if(cl)IA_claudeKey=cl;if(pv)IA_prov=pv==='claude'?'claude':'gemini';}}
-  }catch(e){}
+  }catch(e){remotoOk=false;console.warn('Configuração IA:',e.message);}
   if(IA_claudeKey&&!IA_claudeOk(IA_claudeKey))IA_claudeKey=''; // ignora chave Claude corrompida (ex.: texto colado por engano)
   if(IA_prov==='claude'&&!IA_claudeKey&&IA_gemKey)IA_prov='gemini';
   IA_refreshStatus();
+  return remotoOk;
 }
 async function IA_persistir(){
   try{localStorage.setItem('wen_ia_cfg',JSON.stringify({geminiKey:IA_gemKey,claudeKey:IA_claudeKey,provedor:IA_prov}));}catch(e){}
@@ -5559,7 +5588,15 @@ function AUD_log(acao,colecao,alvo,descricao,ant,novo){
   try{const fields={};Object.keys(rec).forEach(k=>{if(k!=='id')fields[k]=toFV(rec[k]);});fetch(`${FS_URL}/${AUD_COL}/${id}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}catch(e){}
   if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();
 }
-async function AUD_inicializar(){try{const l=await BC_fbCarregar(AUD_COL);AUD_LOGS=l.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));}catch(e){}if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();}
+async function AUD_fbCarregarRecentes(){
+  const body={structuredQuery:{from:[{collectionId:AUD_COL}],orderBy:[{field:{fieldPath:'ts'},direction:'DESCENDING'}],limit:100}};
+  const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Auditoria recusada ('+res.status+')');
+  const json=await res.json();const out=[];
+  (Array.isArray(json)?json:[]).forEach(item=>{if(!item.document)return;const doc=item.document,f=doc.fields||{},o={id:doc.name.split('/').pop()};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out.push(o);});
+  return out;
+}
+async function AUD_inicializar(){try{const l=await AUD_fbCarregarRecentes();AUD_LOGS=l.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));}catch(e){console.warn('Auditoria:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();return true;}
 function AUD_dataHora(iso){try{return new Date(iso).toLocaleString('pt-BR');}catch(e){return iso;}}
 function AUD_render(){
   const el=document.getElementById('audLista');if(!el)return;
@@ -6464,7 +6501,7 @@ function renderDashboardP(){
   P_barObj=new Chart(document.getElementById('pBarChart'),{type:'bar',data:{labels:dias.map(d=>'Dia '+d),datasets:[{label:'Total',data:dias.map(d=>data.filter(r=>r.dia===d).reduce((a,r)=>a+r.valor,0)),backgroundColor:'#3b82f6',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
 
   // Comparativo
-  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>P_meses[m].reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>P_meses[m].filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0));const pendentes=totais.map((t,i)=>t-pagos[i]);
+  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>(P_meses[m]||[]).filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0));const pendentes=totais.map((t,i)=>t-pagos[i]);
   if(P_lineObj)P_lineObj.destroy();
   P_lineObj=new Chart(document.getElementById('pLineChart'),{type:'bar',data:{labels:mesesOrdP,datasets:[{label:'✅ Pago',data:pagos,backgroundColor:'#22c55e',borderRadius:3,stack:'s'},{label:'🔴 Pendente',data:pendentes,backgroundColor:'#ef4444',borderRadius:3,stack:'s'}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}},responsive:true}});
 
@@ -6814,7 +6851,7 @@ function renderCategoriasP(){
 // Histórico Pagar
 function renderHistoricoP(){
   document.getElementById('pHistList').innerHTML=P_getMesesOrdenados().reverse().map(m=>{
-    const data=P_meses[m];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
+    const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
     return`<div class="hist-card-p" style="${atual?'border:2px solid #3b82f6':''}" onclick="P_trocarMesHist('${m}')"><div><div class="mes-nome-p">📅 ${m}${atual?' <span style="font-size:.73rem;background:#eff6ff;color:#1e40af;padding:2px 7px;border-radius:99px;margin-left:5px">ATUAL</span>':''}</div><div class="mes-info-p">${data.length} contas · ${pct}% pago · ${fmt(pago)}</div></div><div style="text-align:right"><div class="mes-total-p">${fmt(total)}</div><button class="btn btn-outline-b btn-sm" style="margin-top:5px" onclick="event.stopPropagation();exportarMesP('${m}')">⬇ Excel</button></div></div>`;
   }).join('');
 }
@@ -6829,7 +6866,7 @@ function exportarMesP(m){
   ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));XLSX.writeFile(wb,'Pagar_'+m.replace('/','_')+'.xlsx');
 }
-function exportarTodosExcelP(){const wb=XLSX.utils.book_new();P_getMesesOrdenados().forEach(m=>{const data=P_meses[m].slice().sort((a,b)=>(a.dia||99)-(b.dia||99));const ws=XLSX.utils.aoa_to_sheet([['CONTAS A PAGAR — '+m],[],['Descrição','Dia','Valor','Já Pago','Saldo','Status','Obs','Código'],...data.map(r=>[r.nome,r.dia||'',r.valor,r.valorPago||0,(r.valor-(r.valorPago||0)),r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE',r.obs,r.cod])]);ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));});XLSX.writeFile(wb,'Historico_Pagar_WEN.xlsx');}
+function exportarTodosExcelP(){const wb=XLSX.utils.book_new();P_getMesesOrdenados().forEach(m=>{const data=(P_meses[m]||[]).slice().sort((a,b)=>(a.dia||99)-(b.dia||99));const ws=XLSX.utils.aoa_to_sheet([['CONTAS A PAGAR — '+m],[],['Descrição','Dia','Valor','Já Pago','Saldo','Status','Obs','Código'],...data.map(r=>[r.nome,r.dia||'',r.valor,r.valorPago||0,(r.valor-(r.valorPago||0)),r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE',r.obs,r.cod])]);ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));});XLSX.writeFile(wb,'Historico_Pagar_WEN.xlsx');}
 
 // Backup Pagar
 function exportarBackupP(){const payload={versao:'wen-v3',exportadoEm:new Date().toISOString(),meses:P_meses};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='WEN_Pagar_Backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);toast('✅ Backup Pagar exportado!');}
@@ -7355,6 +7392,40 @@ function LOCK_renderConfig(){
        </div>`;
 }
 
+// ── Hidratação sob demanda ────────────────────────────────────────────────
+// A abertura normal carrega apenas Pagar e Receber. Coleções auxiliares e
+// históricos pesados só consultam o Firestore quando a área correspondente é
+// aberta. A mesma promessa é reutilizada para impedir leituras duplicadas.
+const MOD_carregamentos={};
+function MOD_umaVez(chave,tarefa){
+  if(MOD_carregamentos[chave])return MOD_carregamentos[chave];
+  const p=Promise.resolve().then(tarefa).then(ok=>{if(ok===false)delete MOD_carregamentos[chave];return ok;}).catch(e=>{delete MOD_carregamentos[chave];console.warn('Módulo '+chave+':',e.message||e);return false;});
+  MOD_carregamentos[chave]=p;return p;
+}
+function MOD_prepararCachesLocais(){
+  try{BC_carregarCache();}catch(e){}
+  try{C_carregarCache();}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem('wen_cc')||'{}');if(c.cartoes)Object.assign(CC_CARTOES,c.cartoes);}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem('wen_ia_cfg')||'{}');IA_gemKey=c.geminiKey||'';IA_claudeKey=c.claudeKey||'';IA_prov=c.provedor==='claude'?'claude':'gemini';}catch(e){}
+}
+function MOD_contasBasico(){return MOD_umaVez('contas-basico',BC_inicializarContas);}
+async function MOD_contasCompleto(){const ok=await MOD_contasBasico();if(ok===false)return false;return MOD_umaVez('contas-historico',BC_inicializarMovimentos);}
+function MOD_cartoes(){return MOD_umaVez('cartoes',async()=>{await MOD_umaVez('categorias-pagar',CAT_inicializar);const ok=await C_ativar();if(mainAtivo==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();return ok;});}
+function MOD_hidratarMain(id){
+  if(id==='pagar')MOD_umaVez('categorias-pagar',CAT_inicializar);
+  else if(id==='contas')MOD_contasCompleto();
+  else if(id==='cartoes'||id==='evolucao')MOD_cartoes();
+  else if(id==='categorias')MOD_umaVez('centros-projetos',CF_inicializar);
+  else if(id==='sophia'||id==='config')MOD_umaVez('config-ia',IA_carregarChave);
+}
+function MOD_hidratarSubP(id){
+  if(id==='p-contas')MOD_contasBasico();
+  else if(id==='p-categorias')MOD_umaVez('categorias-pagar',CAT_inicializar);
+  else if(id==='p-auditoria')MOD_umaVez('auditoria',AUD_inicializar);
+  else if(id==='p-fixas')MOD_umaVez('contas-fixas',FX_inicializar);
+  else if(id==='p-conciliacao')MOD_contasCompleto().then(()=>MOD_umaVez('conciliacao',async()=>{const ok=await CONC_inicializar();if(ok!==false&&typeof BK_inicializar==='function')await BK_inicializar(true);return ok;}));
+}
+
 async function init(){
   // 1. Carrega Pagar do Firebase antes de liberar qualquer escrita. Em falha de leitura,
   // mantém o cache somente local e NUNCA tenta enviá-lo como fallback.
@@ -7418,7 +7489,7 @@ function dispensarLembreteBackup(){
 const CONC_COL='banco_conciliados';
 const CONC_LINKS={}; // chave -> {chave,status:'match'|'ignorado',tipo:'pagar'|'receber',id,mes,movId,label,statusAntes,valorPagoAntes,valorReservaAntes,saldoAntes,ts}
 let CONC_tol=7, CONC_busca='', CONC_filtroTipo='todos', CONC_selMov=null, CONC_selLanc=null;
-async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);}catch(e){}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();}
+async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);if(typeof BK_conciliados!=='undefined'){Object.keys(BK_conciliados).forEach(k=>delete BK_conciliados[k]);Object.assign(BK_conciliados,l);}}catch(e){console.warn('Conciliação:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();return true;}
 function CONC_movLinkado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.movId===id);}
 function CONC_movIgnorado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='ignorado'&&x.movId===id);}
 function CONC_lancLinkado(tipo,id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.tipo===tipo&&String(x.id)===String(id)&&(tipo==='pagar'?x.mes===mes:true));}
@@ -7633,18 +7704,11 @@ async function CONC_desfazer(chave){
   toast('↩️ Conciliação desfeita.','#6b7280');
 }
 
+MOD_prepararCachesLocais();
 init();
-CAT_inicializar();
-BC_inicializar();
-CC_inicializar();
-CF_inicializar();
-FX_inicializar();
-AUD_inicializar();
-CONC_inicializar();
-IA_carregarChave();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
-<script src="js/banco.js?v=4391db39"></script>
+<script src="js/banco.js?v=a7c240a4"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
 <script src="js/evolucao.js?v=ee95b775"></script>
