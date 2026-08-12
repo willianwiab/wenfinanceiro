@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260811-e3f5b942';
+window.APP_VERSION='20260812-eef53513';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -3773,15 +3773,35 @@ function ignorarEvento(eventoId){
   renderAgendaWidget();
 }
 
+function R_agendaStatusTemporario(status){return status===404||status===408||status===429||status>=500;}
+function R_agendaAguardar(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+function R_agendaUrlSemCache(url,tentativa){const separador=url.includes('?')?'&':'?';return url+separador+'_wen_agenda='+Date.now()+'-'+tentativa;}
 async function fetchICS(){
   const proxyUrl=getProxyUrl();if(!proxyUrl)throw new Error('URL_NAO_CONFIGURADA');
-  const res=await fetch(proxyUrl,{method:'GET',redirect:'follow',credentials:'omit',headers:{'Accept':'application/json'}});
-  if(!res.ok)throw new Error('HTTP '+res.status);
-  let json;try{json=await res.json();}catch(e){throw new Error('Resposta inválida (não é JSON)');}
-  if(!json.ok)throw new Error(json.error||'Erro no proxy');
-  if(!json.ics)throw new Error('Campo ICS ausente');
-  if(!json.ics.includes('BEGIN:VCALENDAR'))throw new Error('ICS corrompido');
-  return json.ics;
+  let ultimoErro=null;
+  for(let tentativa=1;tentativa<=3;tentativa++){
+    if(tentativa>1)await R_agendaAguardar(700*(tentativa-1));
+    let res;
+    try{
+      res=await fetch(R_agendaUrlSemCache(proxyUrl,tentativa),{method:'GET',redirect:'follow',credentials:'omit',cache:'no-store',headers:{'Accept':'application/json'}});
+    }catch(e){
+      ultimoErro=e instanceof Error?e:new Error('Falha de rede');
+      if(tentativa<3)continue;
+      throw new Error(ultimoErro.message+' após 3 tentativas');
+    }
+    if(!res.ok){
+      ultimoErro=new Error('HTTP '+res.status);
+      if(R_agendaStatusTemporario(res.status)&&tentativa<3)continue;
+      if(R_agendaStatusTemporario(res.status))throw new Error(ultimoErro.message+' após 3 tentativas');
+      throw ultimoErro;
+    }
+    let json;try{json=await res.json();}catch(e){throw new Error('Resposta inválida (não é JSON)');}
+    if(!json.ok)throw new Error(json.error||'Erro no proxy');
+    if(!json.ics)throw new Error('Campo ICS ausente');
+    if(!json.ics.includes('BEGIN:VCALENDAR'))throw new Error('ICS corrompido');
+    return json.ics;
+  }
+  throw ultimoErro||new Error('Falha ao carregar Agenda');
 }
 function R_mesApartirDeAbril2026(mes){
   const[m,a]=mes.split('/');const mIdx=MESES_ABREV.indexOf(m);
