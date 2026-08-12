@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260812-eef53513';
+window.APP_VERSION='20260812-87a35fca';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -4476,12 +4476,21 @@ const C_COL_FAT='cartao_faturas', C_COL_PARC='cartao_parcelamentos', C_COL_REGRA
 let C_cartoes=[], C_faturas=[], C_parcelamentos=[], C_regras=[], C_carregado=false;
 
 function C_norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
-// Remove o "X/N" da descrição p/ o ID do parcelamento casar entre meses (mês 5/6 e 6/6 = MESMA compra).
+// Remove o "X/N" da descrição para conciliação e exibição; não é mais usado como identidade.
 function C_descSemParc(s){return String(s||'').replace(/\d{1,2}\s*(?:\/|de)\s*\d{1,2}/g,' ').replace(/\s+/g,' ').trim();}
-function C_gidParcela(cartaoId,descricao,total){return ('p_'+cartaoId+'_'+C_norm(C_descSemParc(descricao)).replace(/[^a-z0-9]+/g,'_')+'_'+total).slice(0,140);}
+// V2: a descrição muda entre faturas (especialmente PIX parcelado) e duas compras podem ter o
+// mesmo nome/valor. A série passa a ser identificada por cartão + data original + mês inicial +
+// quantidade de parcelas. Um ordinal preserva duas compras realmente idênticas no mesmo dia.
+function C_gidSerieParcela(cartaoId,dataCompra,mesInicio,total,valor,ordinal){
+  const data=String(dataCompra||'sem_data').replace(/[^0-9a-z]/gi,'');
+  const inicio=String(mesInicio||'').replace(/[^0-9]/g,'');
+  const cents=Math.round(Math.abs(Number(valor)||0)*100);
+  return ('p2_'+cartaoId+'_'+data+'_'+inicio+'_'+total+'_'+cents+'_'+ordinal).slice(0,140);
+}
 function C_ymAdd(ym,n){const p=String(ym||'').split('-').map(Number);const d=new Date(p[0],(p[1]||1)-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function C_ymToWen(ym){return CC_ymToKey(ym);} // "2026-07" -> "JUL/2026"
 function C_ymFromWen(wenKey){const ma=CC_mesAnoDaKey(wenKey);return ma.ano+'-'+String(ma.mes+1).padStart(2,'0');} // "JUL/2026" -> "2026-07"
+function C_temFaturaReal(cartaoId,mes){return (C_faturas||[]).some(f=>f.cartaoId===cartaoId&&f.mesFatura===mes);}
 // Itens de cartão de um mês WEN, por categoria (modelo NOVO): usa a fatura IMUTÁVEL se importada,
 // senão as parcelas projetadas (prévia). Substitui o antigo CC_faturasDoCartao no rateio/relatórios.
 function C_itensCartaoMesWen(wenKey){
@@ -4533,21 +4542,65 @@ async function C_salvarFatura(fatura){
   await C_fbSet(C_COL_FAT,fatura.id,fatura);
 }
 
-// Projeta grupos de parcelamento (idempotente por grupoId; avança parcelaAtual no reimport)
-function C_projetarParcelamentos(fatura){
-  (fatura.itens||[]).forEach(it=>{
-    if(!it.parcela||!(Number(it.parcela.total)>1))return;
-    const N=Number(it.parcela.total),X=Number(it.parcela.atual)||1;
-    const descNorm=C_norm(C_descSemParc(it.descricao));
-    const gid=C_gidParcela(fatura.cartaoId,it.descricao,N);
-    const mesInicio=C_ymAdd(fatura.mesFatura,-(X-1)), mesFim=C_ymAdd(mesInicio,N-1);
-    const ex=C_parcelamentos.find(p=>p.id===gid);
-    const parcelaAtual=Math.max(ex?Number(ex.parcelaAtual)||0:0, X);
-    const dados={id:gid,descricao:it.descricao,descricaoNormalizada:descNorm,categoria:it.categoria||(ex&&ex.categoria)||'',cartaoId:fatura.cartaoId,valorParcela:Math.abs(Number(it.valor))||0,parcelaAtual,totalParcelas:N,mesInicio,mesFim,ativo:parcelaAtual<N};
-    if(ex)Object.assign(ex,dados); else C_parcelamentos.push(dados);
-    C_fbSet(C_COL_PARC,gid,dados);
+// Reconstrói as séries a partir das faturas imutáveis. É deliberadamente uma função pura para
+// podermos provar por teste que: (1) reimportar não duplica; (2) descrição pode mudar; e
+// (3) duas compras iguais em datas diferentes continuam sendo duas séries.
+function C_montarParcelamentos(faturas){
+  const series=[],contadores={};
+  (faturas||[]).slice().sort((a,b)=>(a.mesFatura||'').localeCompare(b.mesFatura||'')).forEach(f=>{
+    const usados=new Set();
+    (f.itens||[]).forEach(it=>{
+      if(!it.parcela||!(Number(it.parcela.total)>1))return;
+      const N=Number(it.parcela.total),X=Math.max(1,Number(it.parcela.atual)||1);
+      const valor=Math.abs(Number(it.valor))||0, dataCompra=String(it.dataCompra||'');
+      const mesInicio=C_ymAdd(f.mesFatura,-(X-1)), mesFim=C_ymAdd(mesInicio,N-1);
+      // Primeiro casa pela data original. O valor só desempata quando houver duas compras no
+      // mesmo dia. Sem data, exige valor quase idêntico e usa a descrição apenas como fallback.
+      let candidatos=series.filter(s=>s.cartaoId===f.cartaoId&&s.totalParcelas===N&&s.mesInicio===mesInicio&&!usados.has(s.id));
+      if(dataCompra){
+        const mesmaData=candidatos.filter(s=>s.dataCompraOrigem===dataCompra);
+        candidatos=mesmaData.length?mesmaData:[];
+      }else{
+        const dn=C_norm(C_descSemParc(it.descricao));
+        candidatos=candidatos.filter(s=>Math.abs((Number(s.valorParcela)||0)-valor)<=0.02&&(s.descricaoNormalizada===dn||!s.dataCompraOrigem));
+      }
+      candidatos.sort((a,b)=>Math.abs((Number(a.valorParcela)||0)-valor)-Math.abs((Number(b.valorParcela)||0)-valor));
+      let serie=candidatos[0]||null;
+      if(!serie){
+        const base=[f.cartaoId,dataCompra||'sem_data',mesInicio,N,Math.round(valor*100)].join('|');
+        const ordinal=(contadores[base]||0)+1;contadores[base]=ordinal;
+        const id=C_gidSerieParcela(f.cartaoId,dataCompra,mesInicio,N,valor,ordinal);
+        serie={id,serieVersao:2,cartaoId:f.cartaoId,dataCompraOrigem:dataCompra,origemFitid:it.fitid||'',mesInicio,mesFim,totalParcelas:N,parcelaAtual:0,valorParcela:valor,descricao:it.descricao||'Parcela',descricaoNormalizada:C_norm(C_descSemParc(it.descricao)),categoria:it.categoria||'',ativo:true};
+        series.push(serie);
+      }
+      usados.add(serie.id);
+      serie.serieVersao=2;serie.parcelaAtual=Math.max(Number(serie.parcelaAtual)||0,X);
+      serie.mesFim=mesFim;serie.valorParcela=valor;serie.descricao=it.descricao||serie.descricao;
+      serie.descricaoNormalizada=C_norm(C_descSemParc(it.descricao));
+      if(it.categoria)serie.categoria=it.categoria;
+      if(dataCompra)serie.dataCompraOrigem=dataCompra;
+      serie.ativo=serie.parcelaAtual<N;
+    });
   });
-  C_salvarCache();
+  return series.sort((a,b)=>a.id.localeCompare(b.id));
+}
+function C_mesInicioDoItem(fatura,it){return C_ymAdd(fatura.mesFatura,-((Number(it?.parcela?.atual)||1)-1));}
+function C_serieDoItem(fatura,it){
+  if(!fatura||!it||!it.parcela)return null;
+  const N=Number(it.parcela.total),inicio=C_mesInicioDoItem(fatura,it),data=String(it.dataCompra||''),valor=Math.abs(Number(it.valor))||0;
+  const cand=(C_parcelamentos||[]).filter(p=>p.cartaoId===fatura.cartaoId&&Number(p.totalParcelas)===N&&p.mesInicio===inicio&&(!data||p.dataCompraOrigem===data));
+  return cand.sort((a,b)=>Math.abs((Number(a.valorParcela)||0)-valor)-Math.abs((Number(b.valorParcela)||0)-valor))[0]||null;
+}
+async function C_reconstruirParcelamentos(){
+  if(!(C_faturas||[]).length)return false;
+  const novos=C_montarParcelamentos(C_faturas), antigos=C_parcelamentos||[];
+  const canon=a=>JSON.stringify((a||[]).slice().sort((x,y)=>x.id.localeCompare(y.id)));
+  if(canon(novos)===canon(antigos))return false;
+  const novosIds=new Set(novos.map(p=>p.id));
+  C_parcelamentos=novos;C_salvarCache();
+  await Promise.all(antigos.filter(p=>!novosIds.has(p.id)).map(p=>BC_fbExcluir(C_COL_PARC,p.id)));
+  await Promise.all(novos.map(p=>C_fbSet(C_COL_PARC,p.id,p)));
+  return true;
 }
 
 // Posta 1 conta agregada IMUTÁVEL da fatura no Pagar (dedup por faturaId; preserva pagamento no reimport)
@@ -4584,6 +4637,7 @@ function C_sincronizarFaturasPrevias(cartaoId){
   });
   // 2) meses que já têm fatura REAL importada desse cartão → prévia nunca pode coexistir
   const mesesComReal=new Set();
+  (C_faturas||[]).filter(f=>f.cartaoId===cartaoId).forEach(f=>{if(f.mesFatura)mesesComReal.add(f.mesFatura);});
   Object.keys(P_meses||{}).forEach(wk=>{(P_meses[wk]||[]).forEach(c=>{
     if(c.faturaCartao&&c.faturaCartao.cartaoId===cartaoId&&!c.previa){const ym=C_ymFromWen(wk);if(ym)mesesComReal.add(ym);}
   });});
@@ -4629,7 +4683,7 @@ async function C_confirmarImportacaoDados(fatura){
   const c0=(typeof C_card==='function')?C_card(fatura.cartaoId):null; // store VIVO (CC_CARTOES), robusto ao 429
   const cartao=(c0&&c0.nome)?c0:(C_cartoes.find(c=>c.id===fatura.cartaoId)||{nome:'Cartão',diaVencimento:null});
   await C_salvarFatura(fatura);
-  C_projetarParcelamentos(fatura);
+  await C_reconstruirParcelamentos();
   C_lancarFaturaEmPagar(fatura,cartao);
   C_sincronizarFaturasPrevias(fatura.cartaoId);
   return {mesLancado:C_ymToWen(fatura.mesFatura), total:fatura.totalItens};
@@ -4654,7 +4708,7 @@ let C_faturaAberta=null, C_previaAberta=null, C_catFiltro=null, C_pizza=null, C_
 
 async function C_ativar(){
   let ok=true;
-  if(!C_carregado){try{ok=await C_carregarTudo();if(ok){C_migrarFaturasAntigas();C_sincronizarTodasPrevias();C_carregado=true;}}catch(e){ok=false;console.warn('C_ativar',e.message);}}
+  if(!C_carregado){try{ok=await C_carregarTudo();if(ok){C_migrarFaturasAntigas();await C_reconstruirParcelamentos();C_sincronizarTodasPrevias();C_carregado=true;}}catch(e){ok=false;console.warn('C_ativar',e.message);}}
   C_popularSelects(); C_renderTudo();
   return ok;
 }
@@ -4700,6 +4754,7 @@ window.C_selFatura=function(id){C_faturaAberta=id;C_previaAberta=null;C_catFiltr
 window.C_selPrevia=function(cid,mes){C_previaAberta=cid+'|'+mes;C_faturaAberta=null;C_catFiltro=null;C_renderFaturas();};
 window.C_filtrarCat=function(cat){C_catFiltro=(C_catFiltro===cat?null:cat);C_renderDetalhe();};
 function C_parcelasDaPrevia(cid,mes){
+  if(C_temFaturaReal(cid,mes))return []; // fatura real sempre substitui a projeção do mesmo cartão/mês
   const itens=[];
   C_parcelamentos.filter(p=>p.ativo&&p.cartaoId===cid).forEach(p=>{
     const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
@@ -4715,7 +4770,7 @@ window.C_renderFaturas=function(){
   const prev={};
   C_parcelamentos.filter(p=>p.ativo&&(!filtro||p.cartaoId===filtro)).forEach(p=>{
     const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
-    for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');const key=p.cartaoId+'|'+k;prev[key]=prev[key]||{total:0,itens:0};prev[key].total+=Number(p.valorParcela)||0;prev[key].itens+=1;}
+    for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');if(C_temFaturaReal(p.cartaoId,k))continue;const key=p.cartaoId+'|'+k;prev[key]=prev[key]||{total:0,itens:0};prev[key].total+=Number(p.valorParcela)||0;prev[key].itens+=1;}
   });
   const prevArr=Object.entries(prev).map(([key,v])=>{const parts=key.split('|');return {cid:parts[0],mes:parts[1],total:v.total,itens:v.itens};}).sort((a,b)=>a.mes.localeCompare(b.mes));
   if(!lista.length&&!prevArr.length){el.innerHTML='<p class="r-vazio">Nenhuma fatura importada ainda.</p>';C_renderDetalhe();return;}
@@ -4774,7 +4829,7 @@ async function C_mudarCatItem(fitid,novaCat){
   it.categoria=novaCat;
   C_salvarCache();
   await C_fbSet(C_COL_FAT,f.id,f);
-  if(it.parcela){const gid=C_gidParcela(f.cartaoId,it.descricao,it.parcela.total);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,gid,pex);}}
+  if(it.parcela){const pex=C_serieDoItem(f,it);if(pex){pex.categoria=novaCat;C_fbSet(C_COL_PARC,pex.id,pex);}}
   C_renderDetalhe();
   if(typeof toast==='function')toast('Categoria atualizada 💚');
 }
@@ -6157,7 +6212,7 @@ let FCX_recatPend=null;
 window.FCX_recategorizar=function(tipo,id,mes,novo){
   if(tipo==='cartao'){ // item de fatura imutável: acha pela fitid e re-salva a fatura (modelo novo)
     let achou=false;
-    (C_faturas||[]).forEach(f=>{(f.itens||[]).forEach(it=>{if(it.fitid===id){it.categoria=novo;achou=true;C_fbSet(C_COL_FAT,f.id,f);if(it.parcela){const gid=C_gidParcela(f.cartaoId,it.descricao,it.parcela.total);const pex=C_parcelamentos.find(p=>p.id===gid);if(pex){pex.categoria=novo;C_fbSet(C_COL_PARC,gid,pex);}}}});});
+    (C_faturas||[]).forEach(f=>{(f.itens||[]).forEach(it=>{if(it.fitid===id){it.categoria=novo;achou=true;C_fbSet(C_COL_FAT,f.id,f);if(it.parcela){const pex=C_serieDoItem(f,it);if(pex){pex.categoria=novo;C_fbSet(C_COL_PARC,pex.id,pex);}}}});});
     FCX_recatFinalizar(achou?'o item do cartão':null);return;
   }
   // conta a pagar pode repetir em vários meses → pergunta o escopo
