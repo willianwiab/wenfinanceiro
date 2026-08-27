@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260827-39036d3e';
+window.APP_VERSION='20260827-b78b395d';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -5922,9 +5922,17 @@ function IMP_parseOFX(text){
 // convenção é "compra negativa" → invertemos todos os sinais, deixando o total da fatura positivo.
 // Sem isto, Math.max(0,total) no lançamento ZERAVA a fatura (incidente 27/08 — Nubank Will/AGO).
 function IMP_normalizarCartaoOFX(movs){
-  const soma=(movs||[]).reduce((a,m)=>a+(Number(m.valor)||0),0);
-  if(soma>0)return movs||[];                  // net claramente positivo (convenção já certa) → não inverte
-  return (movs||[]).map(m=>{const v=-(Number(m.valor)||0);return {...m,valor:v,tipo:v<0?'saida':'entrada'};});
+  const arr=movs||[];
+  const neg=arr.filter(m=>(Number(m.valor)||0)<0).length;
+  const pos=arr.filter(m=>(Number(m.valor)||0)>0).length;
+  const soma=arr.reduce((a,m)=>a+(Number(m.valor)||0),0);
+  // Convenção "compras negativas" (Nubank etc.): numa fatura as COMPRAS (muitas, negativas)
+  // predominam por contagem sobre o pagamento (1 linha positiva). Se as negativas são maioria
+  // — ou empatam e a soma é <= 0 — invertemos tudo: compras positivas, pagamentos/estornos
+  // negativos (mesma convenção da IA). Robusto mesmo quando o "pagamento recebido" é grande e
+  // deixaria a soma positiva. Se as positivas predominam, o arquivo já usa compras positivas.
+  if(!(neg>pos || (neg===pos && soma<=0)))return arr;
+  return arr.map(m=>{const v=-(Number(m.valor)||0);return {...m,valor:v,tipo:v<0?'saida':'entrada'};});
 }
 async function IMP_ofxArquivo(input){const f=input.files[0];if(!f)return;input.value='';
   try{const txt=await IMP_fileText(f);let previa=IMP_parseOFX(txt);if(IMP_tipo==='cartao')previa=IMP_normalizarCartaoOFX(previa);IMP_previa=previa;IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
