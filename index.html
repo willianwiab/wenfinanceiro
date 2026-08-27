@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260827-fabaa73b';
+window.APP_VERSION='20260827-0c70ea51';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2780,7 +2780,7 @@ function AUTH_montarTela(){
       <div id="authErro" style="display:none;font-size:.82rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div>
       <button id="authBtn" type="submit"
         style="margin-top:4px;padding:12px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer">Entrar</button>
-      <div style="font-size:.72rem;color:#9ca3af;text-align:center;line-height:1.5">Acesso restrito à equipe da WEN.<br>Esqueceu a senha? Fale com o administrador.</div>
+      <div style="font-size:.72rem;color:#9ca3af;text-align:center;line-height:1.5">Acesso restrito — WEN Produtora.</div>
     </form>`;
   document.body.appendChild(ov);
   const form=ov.querySelector('#authForm'), erro=ov.querySelector('#authErro'), btn=ov.querySelector('#authBtn');
