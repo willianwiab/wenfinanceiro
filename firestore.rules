@@ -2,22 +2,27 @@ rules_version = '2';
 // ══════════════════════════════════════════════════════════════════════════════
 // WEN Financeiro — projeto Firebase `wencontasapagar`
 //
-// Uma empresa só (WEN Produtora), sem multi-inquilino: quem tem login vê tudo.
-// A regra é simples de propósito — o isolamento por família do Nossa Semente
-// (boasemente) NÃO se aplica aqui. O que importa é fechar o banco: HOJE ele
-// aceita leitura/escrita SEM login (testado em 2026-08-27), e a chave da API
-// vive no HTML público. Isto exige apenas que o pedido venha autenticado.
+// Acesso de UM usuário só: o Will (wenprodutora@gmail.com). NÃO basta "estar
+// logado": com e-mail/senha ligado e a API key pública, qualquer um poderia
+// AUTO-CRIAR uma conta e passar por `request.auth != null`. Por isso a regra
+// exige o e-mail específico. Para liberar outra pessoa no futuro, some o e-mail
+// à lista `AUTORIZADOS` abaixo (e crie a conta no Console).
 //
-// ⚠️ ORDEM DE PUBLICAÇÃO (senão trava todo mundo para fora):
-//   1º) o app WEN já tem login funcionando e as contas já existem no Auth;
-//   2º) SÓ ENTÃO publicar estas regras no Console.
+// ⚠️ ORDEM DE PUBLICAÇÃO (senão trava o acesso):
+//   1º) a conta wenprodutora@gmail.com já existe no Authentication e o app já
+//       faz login com ela; 2º) SÓ ENTÃO publicar estas regras.
 // Rollback: reabrir temporariamente com `allow read, write: if true;`.
 // ══════════════════════════════════════════════════════════════════════════════
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Precisa estar logado (e-mail/senha) para qualquer leitura ou escrita.
+    function autorizado() {
+      return request.auth != null
+        && request.auth.token.email in [
+             'wenprodutora@gmail.com'
+           ];
+    }
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if autorizado();
     }
   }
 }
