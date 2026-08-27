@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260812-87a35fca';
+window.APP_VERSION='20260827-78c13e0a';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2544,6 +2544,21 @@ const FB_PROJECT = 'wencontasapagar';
 const FB_API_KEY = 'AIzaSyC7hYN3__Q_4MNAu6VCTXbTdvVSW37IneI';
 const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
+// ── Escrita blindada ── fetch NÃO lança em 429/403: sem conferir a resposta, o app dizia
+// "salvo" com a nuvem recusando, e o aparelho ficava com uma verdade própria (auditoria 27/08).
+// Em falha: avisa (badge + toast, 1x) e devolve null — o dado permanece no cache local.
+let FB_gravarAvisou=false;
+async function FB_gravar(url,opts,oQue){
+  let res=null;
+  try{res=await fetch(url,opts);}catch(e){}
+  if(res&&res.ok){FB_gravarAvisou=false;return res;}
+  const st=res?res.status:0;
+  const msg=st===429?'nuvem sem cota (429)':(st?'nuvem recusou '+st:'sem rede');
+  try{if(typeof setSyncStatus==='function')setSyncStatus('error',(oQue||'gravação')+' — '+msg);}catch(e){}
+  try{if(!FB_gravarAvisou){FB_gravarAvisou=true;toast('⚠️ '+(oQue||'A gravação')+' NÃO chegou à nuvem ('+msg+'). Ficou só neste navegador — repita quando a nuvem voltar.','#ef4444',8000);}}catch(e){}
+  return null;
+}
+
 function toFV(v){
   if(v===null||v===undefined)return{nullValue:null};
   if(typeof v==='boolean')return{booleanValue:v};
@@ -2871,7 +2886,7 @@ async function R_fbSalvar(reg){
 async function R_fbExcluir(id){
   const url=`${FS_URL}/lancamentos/${id}?key=${FB_API_KEY}`;
   const fields={excluido:toFV(true),atualizadoEm:toFV(new Date().toISOString())};
-  await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+  await FB_gravar(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Exclusão no Receber');
 }
 async function R_fbCarregarTodos(){
   let todos=[],pt=null;
@@ -2891,9 +2906,11 @@ async function R_fbCarregarTodos(){
 // o que mudou desde a última sincronização (campo atualizadoEm), não a coleção inteira.
 const R_CACHE_KEY='wen_lancamentos_cache';
 const R_CACHE_SYNC_KEY='wen_lancamentos_last_sync';
+const R_CACHE_FULL_KEY='wen_lancamentos_last_full'; // última releitura COMPLETA (reconciliação diária)
 function R_carregarCacheLocal(){ try{ return JSON.parse(localStorage.getItem(R_CACHE_KEY)||'[]'); }catch(e){ return []; } }
-function R_salvarCacheLocal(){ localStorage.setItem(R_CACHE_KEY, JSON.stringify(R_todosOsDados)); }
-function R_limparCacheLocal(){ localStorage.removeItem(R_CACHE_KEY); localStorage.removeItem(R_CACHE_SYNC_KEY); toast('🗑️ Cache local limpo — próxima carga vai buscar tudo de novo.','#6b7280'); }
+// Devolve true só se persistiu de verdade — quota estourada falha em silêncio sem isso.
+function R_salvarCacheLocal(){ try{ localStorage.setItem(R_CACHE_KEY, JSON.stringify(R_todosOsDados)); return true; }catch(e){ return false; } }
+function R_limparCacheLocal(){ localStorage.removeItem(R_CACHE_KEY); localStorage.removeItem(R_CACHE_SYNC_KEY); localStorage.removeItem(R_CACHE_FULL_KEY); toast('🗑️ Cache local limpo — próxima carga vai buscar tudo de novo.','#6b7280'); }
 // Busca só os lançamentos alterados/criados/excluídos desde "desde" (ISO string).
 // Sem "desde", cai pro fetch completo de sempre (bootstrap do cache).
 async function R_fbBuscarAlterados(desde){
@@ -2915,10 +2932,10 @@ async function R_fbSalvarConciliado(eventoId,dados){
   const fields={};const obj={id:eventoId,...dados,ts:new Date().toISOString()};
   Object.keys(obj).forEach(k=>fields[k]=toFV(obj[k]));
   const url=`${FS_URL}/${R_CONCIL_COL}/${encodeURIComponent(eventoId)}?key=${FB_API_KEY}`;
-  await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+  await FB_gravar(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Conciliação da agenda');
 }
 async function R_fbRemoverConciliado(eventoId){
-  await fetch(`${FS_URL}/${R_CONCIL_COL}/${encodeURIComponent(eventoId)}?key=${FB_API_KEY}`,{method:'DELETE'});
+  await FB_gravar(`${FS_URL}/${R_CONCIL_COL}/${encodeURIComponent(eventoId)}?key=${FB_API_KEY}`,{method:'DELETE'},'Desfazer conciliação');
 }
 async function R_carregarConciliados(){
   try{
@@ -2954,7 +2971,11 @@ async function R_carregarTodos(forcarCompleto){
   loading(true,'Carregando Receber...');setSyncStatus('saving');
   try{
     const cacheLocal=R_carregarCacheLocal();
-    const ultimoSync=(!forcarCompleto&&cacheLocal.length>0)?localStorage.getItem(R_CACHE_SYNC_KEY):null;
+    // Reconciliação diária: 1x a cada 24h ignora o marcador e relê a coleção inteira.
+    // Cura um aparelho que derivou (cache parcial, docs sem atualizadoEm) sem ninguém perceber.
+    const ultimoFull=localStorage.getItem(R_CACHE_FULL_KEY);
+    const fullVencido=!ultimoFull||(Date.now()-new Date(ultimoFull).getTime())>86400000;
+    const ultimoSync=(!forcarCompleto&&!fullVencido&&cacheLocal.length>0)?localStorage.getItem(R_CACHE_SYNC_KEY):null;
     const [{todos:alterados,parcial},_conc]=await Promise.all([R_fbBuscarAlterados(ultimoSync),R_carregarConciliados()]);
     if(parcial){
       const porId={};cacheLocal.forEach(r=>{if(!r.excluido)porId[r.id]=r;});
@@ -2963,8 +2984,16 @@ async function R_carregarTodos(forcarCompleto){
     }else{
       R_todosOsDados=alterados; // fetch completo já vem sem excluídos
     }
-    localStorage.setItem(R_CACHE_SYNC_KEY,new Date().toISOString());
-    R_salvarCacheLocal();
+    // O marcador só avança se o cache persistiu; senão é APAGADO — o próximo sync vem completo.
+    try{
+      if(R_salvarCacheLocal()){
+        localStorage.setItem(R_CACHE_SYNC_KEY,new Date().toISOString());
+        if(!parcial)localStorage.setItem(R_CACHE_FULL_KEY,new Date().toISOString());
+      }else{
+        localStorage.removeItem(R_CACHE_SYNC_KEY);localStorage.removeItem(R_CACHE_FULL_KEY);
+        console.warn('Receber: cache local não persistiu (quota?) — marcador de sync apagado.');
+      }
+    }catch(e){}
     setSyncStatus('ok');
     toast(parcial?`☁️ ${R_todosOsDados.length} gravações (${alterados.length} atualizada(s) agora)`:`☁️ ${R_todosOsDados.length} gravações carregadas!`);
     if(window._ultimosConfirmados)atualizarNotificacoes(window._ultimosCancelados||[],window._ultimosConfirmados);
@@ -4001,7 +4030,7 @@ async function CAT_fbSalvar(id,dados){
   }
 }
 async function CAT_fbExcluir(id){
-  await fetch(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});
+  await FB_gravar(`${FS_URL}/${CAT_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'},'Exclusão de categoria');
 }
 async function CAT_fbCarregarTodas(){
   const out={};
@@ -4117,15 +4146,17 @@ function BC_carregarCache(){try{const c=JSON.parse(localStorage.getItem('wen_bc'
 }catch(e){}}
 
 // ── Persistência REST genérica (grava no cache local ANTES da nuvem) ──
-async function BC_fbUpsert(col,id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
-async function BC_fbExcluir(col,id){BC_salvarCache();await fetch(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
+async function BC_fbUpsert(col,id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});BC_salvarCache();await FB_gravar(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Contas bancárias');}
+async function BC_fbExcluir(col,id){BC_salvarCache();await FB_gravar(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'},'Contas bancárias');}
 async function BC_fbCarregar(col){const out=[];let pt=null;do{let url=`${FS_URL}/${col}?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;const res=await fetch(url);if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':col+' recusada ('+res.status+')');const json=await res.json();if(json.documents)json.documents.forEach(doc=>{const f=doc.fields||{};const o={id:doc.name.split('/').pop()};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));out.push(o);});pt=json.nextPageToken||null;}while(pt);return out;}
 async function BC_inicializarContas(){
   BC_carregarCache(); // 1) instantâneo, do cache local
   let ok=true;
   try{
     const contas=await BC_fbCarregar(BC_COL);
-    if(contas&&contas.length){Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);contas.forEach(c=>BC_CONTAS[c.id]=c);}
+    // BC_fbCarregar LANÇA em erro/429 (cai no catch e preserva o cache). Se chegou aqui, a
+    // resposta é a verdade — inclusive vazia. "Só substitui se veio algo" deixava fantasma eterno.
+    if(Array.isArray(contas)){Object.keys(BC_CONTAS).forEach(k=>delete BC_CONTAS[k]);contas.forEach(c=>BC_CONTAS[c.id]=c);}
   }catch(e){ok=false;console.warn('BC_inicializarContas',e.message);}
   BC_salvarCache();
   BC_popularSelectBaixa();
@@ -4139,8 +4170,8 @@ async function BC_inicializarMovimentos(){
   try{
     const [movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
     // Histórico pesado: só é consultado quando Contas ou Conciliação é realmente aberta.
-    if(movs&&movs.length)BC_MOVS=movs;
-    if(transfs&&transfs.length)BC_TRANSFS=transfs;
+    if(Array.isArray(movs))BC_MOVS=movs;
+    if(Array.isArray(transfs))BC_TRANSFS=transfs;
   }catch(e){ok=false;console.warn('BC_inicializarMovimentos',e.message);}
   BC_salvarCache();
   if(mainAtivo==='contas')BC_renderPainel();
@@ -4524,11 +4555,12 @@ async function C_carregarTudo(){
   let ok=true;
   try{
     const [cs,fs,ps,rs]=await Promise.all([BC_fbCarregar(C_COL_CARD),BC_fbCarregar(C_COL_FAT),BC_fbCarregar(C_COL_PARC),BC_fbCarregar(C_COL_REGRA)]);
-    if(cs&&cs.length){C_cartoes=cs;Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);cs.forEach(c=>CC_CARTOES[c.id]=c);}
-    // 2) só substitui se a nuvem RESPONDEU com dados; se veio vazia (429/quota), mantém o cache local
-    if(fs&&fs.length)C_faturas=fs;
-    if(ps&&ps.length)C_parcelamentos=ps;
-    if(rs&&rs.length)C_regras=rs;
+    // 2) BC_fbCarregar LANÇA em erro/429 (cai no catch e preserva o cache). Resposta OK —
+    // mesmo vazia — é a verdade da nuvem; "só substitui se veio algo" deixava fatura fantasma.
+    if(Array.isArray(cs)){C_cartoes=cs;Object.keys(CC_CARTOES).forEach(k=>delete CC_CARTOES[k]);cs.forEach(c=>CC_CARTOES[c.id]=c);}
+    if(Array.isArray(fs))C_faturas=fs;
+    if(Array.isArray(ps))C_parcelamentos=ps;
+    if(Array.isArray(rs))C_regras=rs;
   }catch(e){ok=false;console.warn('C_carregarTudo',e.message);}
   C_carregado=ok; C_salvarCache();return ok;
 }
@@ -5296,8 +5328,8 @@ function RT_render(){
 // ══════════════════════════════════════════════════════
 const FX_COL='contas_fixas'; const FX_FIXAS={}; let FX_editandoId=null;
 const FX_RECOR_LABEL={mensal:'Mensal',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual',personalizada:'Personalizada'};
-async function FX_fbSalvar(id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});await fetch(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}
-async function FX_fbExcluir(id){await fetch(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'});}
+async function FX_fbSalvar(id,dados){const fields={};Object.keys(dados).forEach(k=>{if(k!=='id')fields[k]=toFV(dados[k]);});await FB_gravar(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Conta fixa');}
+async function FX_fbExcluir(id){await FB_gravar(`${FS_URL}/${FX_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,{method:'DELETE'},'Conta fixa');}
 async function FX_inicializar(){const l=await BC_fbCarregar(FX_COL);Object.keys(FX_FIXAS).forEach(k=>delete FX_FIXAS[k]);l.forEach(f=>FX_FIXAS[f.id]=f);if(mainAtivo==='pagar'&&subPAtivo==='p-fixas')FX_render();}
 function FX_intervalo(f){const m={mensal:1,trimestral:3,semestral:6,anual:12};return f.recorrencia==='personalizada'?(parseInt(f.intervaloMeses)||1):(m[f.recorrencia]||1);}
 function FX_idx(ano,mes){return ano*12+mes;}
@@ -5492,7 +5524,7 @@ async function IA_carregarChave(){
 }
 async function IA_persistir(){
   try{localStorage.setItem('wen_ia_cfg',JSON.stringify({geminiKey:IA_gemKey,claudeKey:IA_claudeKey,provedor:IA_prov}));}catch(e){}
-  try{await fetch(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_gemKey),claudeKey:toFV(IA_claudeKey),provedor:toFV(IA_prov)}})});}catch(e){}
+  try{await FB_gravar(`${FS_URL}/${IA_COL}/${IA_DOC}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{geminiKey:toFV(IA_gemKey),claudeKey:toFV(IA_claudeKey),provedor:toFV(IA_prov)}})},'Chave de IA');}catch(e){}
 }
 function IA_refreshStatus(){
   const provSel=document.getElementById('iaProvSel');if(provSel)provSel.value=IA_prov;
@@ -5660,7 +5692,7 @@ function AUD_log(acao,colecao,alvo,descricao,ant,novo){
   const id='a'+Date.now()+Math.floor(Math.random()*9999);
   const rec={id,ts:new Date().toISOString(),acao,colecao:colecao||'',alvo:alvo||'',descricao:descricao||'',valorAnterior:(ant!=null?ant:null),valorNovo:(novo!=null?novo:null)};
   AUD_LOGS.unshift(rec);
-  try{const fields={};Object.keys(rec).forEach(k=>{if(k!=='id')fields[k]=toFV(rec[k]);});fetch(`${FS_URL}/${AUD_COL}/${id}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}catch(e){}
+  try{const fields={};Object.keys(rec).forEach(k=>{if(k!=='id')fields[k]=toFV(rec[k]);});FB_gravar(`${FS_URL}/${AUD_COL}/${id}?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Log de auditoria');}catch(e){}
   if(mainAtivo==='pagar'&&subPAtivo==='p-auditoria')AUD_render();
 }
 async function AUD_fbCarregarRecentes(){
@@ -6381,7 +6413,7 @@ function P_marcarMesesAlterados(){
   todos.forEach(m=>{const atual=P_serializarMes(m),nuvem=P_snapshotNuvem[m]??'[]';if(atual!==nuvem)P_dirtyMeses.add(m);else{P_dirtyMeses.delete(m);P_conflitos.delete(m);}});
 }
 function P_salvarStorage(){
-  try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}
+  try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){console.warn('Pagar: cache local não persistiu (quota?)');}
   P_marcarMesesAlterados();P_salvarCacheMeta();
   clearTimeout(P_syncTimeout);
   if(!P_hidratado||!P_nuvemConfiavel){setSyncStatus('error','offline — nada foi enviado');return false;}
@@ -6415,7 +6447,7 @@ async function syncToSheetsP(){
       if(salvo.updateTime)P_updateTimes[mes]=salvo.updateTime;
       P_dirtyMeses.delete(mes);P_conflitos.delete(mes);
     }
-    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}P_salvarCacheMeta();
+    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){console.warn('Pagar: cache local não persistiu (quota?)');}P_salvarCacheMeta();
     if(conflitou){setSyncStatus('error',P_conflitos.size+' conflito(s) — não enviado');if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Outro aparelho alterou o mesmo mês. Mantive sua cópia local e não sobrescrevi a nuvem. Exporte um backup antes de resolver o conflito.','#ef4444',9000);}}
     else if(falhou){setSyncStatus('error','falha de rede — cache preservado');if(!P_syncErroAvisado){P_syncErroAvisado=true;toast('⚠️ Não consegui salvar na nuvem. Sua alteração ficou neste aparelho e será tentada novamente depois.','#ef4444',8000);}}
     else{await P_atualizarCaderninho();setSyncStatus('ok');P_syncErroAvisado=false;}
@@ -6438,9 +6470,14 @@ async function P_atualizarCaderninho(){
 async function carregarDeSheetsP(){
   setSyncStatus('saving');
   try{
-    const res=await fetch(`${FS_URL}/meses?key=${FB_API_KEY}`);
-    if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Leitura recusada ('+res.status+')');
-    const json=await res.json();const documentos=json.documents||[];
+    // Paginado: sem pageSize a REST devolve 20 docs — no 20º mês, meses sumiriam em silêncio.
+    let documentos=[],pt=null;
+    do{
+      let url=`${FS_URL}/meses?key=${FB_API_KEY}&pageSize=300`;if(pt)url+='&pageToken='+pt;
+      const res=await fetch(url);
+      if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Leitura recusada ('+res.status+')');
+      const json=await res.json();if(json.documents)documentos=documentos.concat(json.documents);pt=json.nextPageToken||null;
+    }while(pt);
     const novosMeses={},novosTimes={},snapshot={};
     documentos.forEach(doc=>{
       const fields=doc.fields||{};const mes=fields.mes?.stringValue;if(!mes)return;
@@ -6459,7 +6496,7 @@ async function carregarDeSheetsP(){
     P_dirtyMeses.clear();pendentesAnteriores.forEach(m=>P_dirtyMeses.add(m));
     P_conflitos.clear();conflitosNovos.forEach(m=>P_conflitos.add(m));
     P_hidratado=true;P_nuvemConfiavel=true;P_mesAtual=mesAtualReal();
-    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){}P_salvarCacheMeta();
+    try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){console.warn('Pagar: cache local não persistiu (quota?)');}P_salvarCacheMeta();
     if(P_conflitos.size)setSyncStatus('error',P_conflitos.size+' conflito(s) — preservado');
     else{setSyncStatus('ok');if(P_dirtyMeses.size){clearTimeout(P_syncTimeout);P_syncTimeout=setTimeout(syncToSheetsP,800);}}
     return true;
@@ -7089,9 +7126,14 @@ function renderFluxoCaixa(){
   const cliMap={};recData.forEach(r=>{cliMap[r.cliente]=(cliMap[r.cliente]||0)+Number(r.saldo||0);});
   const topCli=Object.entries(cliMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
   if(FC_clientesObj)FC_clientesObj.destroy();
-  if(topCli.length){
-    FC_clientesObj=new Chart(document.getElementById('fcClientesChart'),{type:'bar',data:{labels:topCli.map(([n])=>n),datasets:[{data:topCli.map(([,v])=>v),backgroundColor:'#ef4444',borderRadius:5,label:'A Receber'}]},options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
-  }else{document.getElementById('fcClientesChart').parentElement.innerHTML='<h3 style="font-size:.8rem;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.05em">📋 A Receber por Cliente</h3><div style="text-align:center;padding:30px;color:#6b7280;font-size:.85rem">✅ Nenhum saldo a receber!</div>';}
+  // O canvas NUNCA é destruído (o innerHTML antigo matava o gráfico e a 2ª visita à aba
+  // quebrava showMain inteiro — inclusive a hidratação do Fluxo). Vazio = esconde + mensagem.
+  const fcCliCv=document.getElementById('fcClientesChart');
+  const fcCliVazio=(txt)=>{let m=document.getElementById('fcClientesVazio');if(!m&&fcCliCv){m=document.createElement('div');m.id='fcClientesVazio';m.style.cssText='text-align:center;padding:30px;color:#6b7280;font-size:.85rem';fcCliCv.parentElement.appendChild(m);}if(m){m.textContent=txt;m.style.display=txt?'':'none';}};
+  if(topCli.length&&fcCliCv){
+    fcCliCv.style.display='';fcCliVazio('');
+    FC_clientesObj=new Chart(fcCliCv,{type:'bar',data:{labels:topCli.map(([n])=>n),datasets:[{data:topCli.map(([,v])=>v),backgroundColor:'#ef4444',borderRadius:5,label:'A Receber'}]},options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+  }else if(fcCliCv){fcCliCv.style.display='none';fcCliVazio('✅ Nenhum saldo a receber!');}
 }
 
 function renderCalendarioUnif(mesRef,recData,pagData){
@@ -7489,6 +7531,8 @@ function MOD_cartoes(){return MOD_umaVez('cartoes',async()=>{await MOD_umaVez('c
 function MOD_hidratarMain(id){
   if(id==='pagar')MOD_umaVez('categorias-pagar',CAT_inicializar);
   else if(id==='contas')MOD_contasCompleto();
+  // Fluxo de Caixa usa BC_CONTAS/BC_MOVS/C_faturas — sem isto, saldo saía só do cache local.
+  else if(id==='fluxo'){MOD_contasCompleto();MOD_cartoes();}
   else if(id==='cartoes'||id==='evolucao')MOD_cartoes();
   else if(id==='categorias')MOD_umaVez('centros-projetos',CF_inicializar);
   else if(id==='sophia'||id==='config')MOD_umaVez('config-ia',IA_carregarChave);
@@ -7783,7 +7827,7 @@ MOD_prepararCachesLocais();
 init();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
-<script src="js/banco.js?v=a7c240a4"></script>
+<script src="js/banco.js?v=6cd5eb4b"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
 <script src="js/evolucao.js?v=ee95b775"></script>

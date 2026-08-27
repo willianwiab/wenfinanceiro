@@ -23,10 +23,10 @@ async function BK_fbSalvarConciliado(chave, dados){
   const obj = { chave, ...dados, ts: new Date().toISOString() };
   const fields = {}; Object.keys(obj).forEach(k => fields[k] = toFV(obj[k]));
   const url = `${FS_URL}/${BK_COL}/${encodeURIComponent(chave)}?key=${FB_API_KEY}`;
-  await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+  await FB_gravar(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) }, 'Conciliação bancária');
 }
 async function BK_fbRemoverConciliado(chave){
-  await fetch(`${FS_URL}/${BK_COL}/${encodeURIComponent(chave)}?key=${FB_API_KEY}`, { method: 'DELETE' });
+  await FB_gravar(`${FS_URL}/${BK_COL}/${encodeURIComponent(chave)}?key=${FB_API_KEY}`, { method: 'DELETE' }, 'Conciliação bancária');
 }
 async function BK_carregarConciliados(){
   try{
@@ -48,7 +48,7 @@ async function BK_carregarConciliados(){
 // ── Persistência Firestore — regras aprendidas (recorrência por nome) ──
 async function BK_fbSalvarRegra(chaveRegra, regra){
   const fields = {}; Object.keys(regra).forEach(k => fields[k] = toFV(regra[k]));
-  await fetch(`${FS_URL}/${BK_COL_REGRAS}/${encodeURIComponent(chaveRegra)}?key=${FB_API_KEY}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fields }) }).catch(()=>{});
+  await FB_gravar(`${FS_URL}/${BK_COL_REGRAS}/${encodeURIComponent(chaveRegra)}?key=${FB_API_KEY}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fields }) }, 'Regra de conciliação');
 }
 async function BK_carregarRegras(){
   try{
