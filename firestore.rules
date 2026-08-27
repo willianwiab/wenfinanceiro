@@ -1,0 +1,23 @@
+rules_version = '2';
+// ══════════════════════════════════════════════════════════════════════════════
+// WEN Financeiro — projeto Firebase `wencontasapagar`
+//
+// Uma empresa só (WEN Produtora), sem multi-inquilino: quem tem login vê tudo.
+// A regra é simples de propósito — o isolamento por família do Nossa Semente
+// (boasemente) NÃO se aplica aqui. O que importa é fechar o banco: HOJE ele
+// aceita leitura/escrita SEM login (testado em 2026-08-27), e a chave da API
+// vive no HTML público. Isto exige apenas que o pedido venha autenticado.
+//
+// ⚠️ ORDEM DE PUBLICAÇÃO (senão trava todo mundo para fora):
+//   1º) o app WEN já tem login funcionando e as contas já existem no Auth;
+//   2º) SÓ ENTÃO publicar estas regras no Console.
+// Rollback: reabrir temporariamente com `allow read, write: if true;`.
+// ══════════════════════════════════════════════════════════════════════════════
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Precisa estar logado (e-mail/senha) para qualquer leitura ou escrita.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
