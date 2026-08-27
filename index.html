@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260827-0c70ea51';
+window.APP_VERSION='20260827-39036d3e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -5083,6 +5083,9 @@ window.C_importarDaPrevia=async function(){
     categoria:m.categoria||'', memo:m.memo||''
   }));
   const totalItens=Math.round(itens.reduce((a,x)=>a+x.valor,0)*100)/100;
+  // Trava de segurança: uma fatura zerada/negativa NÃO pode substituir uma boa (a id é fixa por
+  // cartão+mês, então gravar por cima apaga o valor anterior). Foi o que zerou o AGO em 27/08.
+  if(totalItens<=0){toast('⚠️ Os itens somam '+fmt(totalItens)+' — não vou gravar uma fatura zerada/negativa por cima da atual. Confira os valores (OFX de cartão pode vir com sinais invertidos).','#ef4444',9000);return;}
   const fatura={id:cid+'_'+anoMes,cartaoId:cid,mesFatura:anoMes,totalItens,totalDeclarado:IMP_totalLido||null,fechada:true,itens};
   await C_confirmarImportacaoDados(fatura); // já grava em memória + cache local (não recarrega do Firestore, que pode estar 429)
   IMP_previa=[];IMP_destinoC=false;
@@ -5914,8 +5917,17 @@ function IMP_parseOFX(text){
     movs.push({fitid,data,valor:val,descricao:memo,tipo:val<0?'saida':'entrada'});}
   return movs;
 }
+// OFX de CARTÃO: bancos (Nubank inclusive) exportam COMPRAS como valor NEGATIVO, mas o módulo de
+// cartão espera compras POSITIVAS (mesma convenção da leitura por IA). Se a soma vier negativa, a
+// convenção é "compra negativa" → invertemos todos os sinais, deixando o total da fatura positivo.
+// Sem isto, Math.max(0,total) no lançamento ZERAVA a fatura (incidente 27/08 — Nubank Will/AGO).
+function IMP_normalizarCartaoOFX(movs){
+  const soma=(movs||[]).reduce((a,m)=>a+(Number(m.valor)||0),0);
+  if(soma>0)return movs||[];                  // net claramente positivo (convenção já certa) → não inverte
+  return (movs||[]).map(m=>{const v=-(Number(m.valor)||0);return {...m,valor:v,tipo:v<0?'saida':'entrada'};});
+}
 async function IMP_ofxArquivo(input){const f=input.files[0];if(!f)return;input.value='';
-  try{const txt=await IMP_fileText(f);IMP_previa=IMP_parseOFX(txt);IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
+  try{const txt=await IMP_fileText(f);let previa=IMP_parseOFX(txt);if(IMP_tipo==='cartao')previa=IMP_normalizarCartaoOFX(previa);IMP_previa=previa;IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
   catch(e){IMP_setAviso('⚠️ Erro ao ler OFX: '+e.message);}
 }
 function IMP_extrairJSON(txt){try{return JSON.parse(txt);}catch(e){}const i=txt.indexOf('['),j=txt.lastIndexOf(']');if(i>=0&&j>i){try{return JSON.parse(txt.slice(i,j+1));}catch(e){}}return [];}

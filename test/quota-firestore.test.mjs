@@ -8,11 +8,14 @@ const html=fs.readFileSync(raiz+'/index.html','utf8');
 const banco=fs.readFileSync(raiz+'/js/banco.js','utf8');
 
 test('inicialização não dispara módulos auxiliares do Firestore',()=>{
-  const cauda=html.slice(html.lastIndexOf('MOD_prepararCachesLocais();'));
+  const ini=html.indexOf('async function init(){');
+  const initBody=html.slice(ini,html.indexOf('// ── Lembrete de backup diário',ini));
   for(const chamada of ['CAT_inicializar();','BC_inicializar();','CC_inicializar();','CF_inicializar();','FX_inicializar();','AUD_inicializar();','CONC_inicializar();','IA_carregarChave();']){
-    assert.equal(cauda.includes(chamada),false,'chamada automática encontrada: '+chamada);
+    assert.equal(initBody.includes(chamada),false,'chamada automática encontrada: '+chamada);
   }
-  assert.match(cauda,/MOD_prepararCachesLocais\(\);\s*init\(\);/);
+  // O arranque passa pelo porteiro de login (Fase 1); ao autenticar, AUTH_iniciarApp roda o boot enxuto.
+  assert.match(html,/AUTH_appIniciado=true;\s*MOD_prepararCachesLocais\(\);\s*init\(\);/);
+  assert.match(html,/AUTH_bootstrap\(\);/);
 });
 
 test('auditoria busca somente os 100 registros mais recentes',()=>{
@@ -41,6 +44,7 @@ test('conciliação bancária não carrega duas vezes ao iniciar a página',()=>
 test('histórico bancário é carregado apenas sob demanda',()=>{
   assert.match(html,/function MOD_hidratarMain\(id\)/);
   assert.match(html,/id==='contas'\)MOD_contasCompleto\(\)/);
-  const cauda=html.slice(html.lastIndexOf('MOD_prepararCachesLocais();'));
-  assert.doesNotMatch(cauda,/BC_inicializarMovimentos\(\)/);
+  const ini=html.indexOf('async function init(){');
+  const initBody=html.slice(ini,html.indexOf('// ── Lembrete de backup diário',ini));
+  assert.doesNotMatch(initBody,/BC_inicializarMovimentos\(\)/);
 });
