@@ -35,8 +35,13 @@ const browser=await chromium.launch();
 
 async function paginaComFirestore({documentos=[],atrasoMeses=0,falhaMeses=0,cache=null,onPatchMes=null}){
   const context=await browser.newContext();
+  // Fase 1: o app real exige login. Semeia um refresh token e stuba os endpoints de auth
+  // para o AUTH_bootstrap autenticar em silêncio e liberar o init() (sem tocar produção).
+  await context.addInitScript(()=>{try{localStorage.setItem('wen_auth_rt','test-rt');localStorage.setItem('wen_auth_email','teste@wen');}catch(e){}});
   if(cache)await context.addInitScript(d=>localStorage.setItem('wen_meses6',JSON.stringify(d)),cache);
   const page=await context.newPage();const erros=[],patches=[],leituras=[];
+  await page.route('**/securetoken.googleapis.com/**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({id_token:'IDT',refresh_token:'RT',expires_in:'3600'})}));
+  await page.route('**/identitytoolkit.googleapis.com/**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({idToken:'IDT',refreshToken:'RT',expiresIn:'3600',email:'teste@wen'})}));
   page.on('pageerror',e=>erros.push(e.message));
   await page.route('**/xlsx.full.min.js',r=>r.fulfill({status:200,contentType:'text/javascript',body:'window.XLSX={utils:{},writeFile:function(){}};'}));
   await page.route('**/chart.umd.min.js',r=>r.fulfill({status:200,contentType:'text/javascript',body:'window.Chart=function(){this.destroy=function(){}};'}));
