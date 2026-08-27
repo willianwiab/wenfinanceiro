@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260827-78c13e0a';
+window.APP_VERSION='20260827-0c70ea51';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2544,42 +2544,6 @@ const FB_PROJECT = 'wencontasapagar';
 const FB_API_KEY = 'AIzaSyC7hYN3__Q_4MNAu6VCTXbTdvVSW37IneI';
 const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
-// ── Escrita blindada ── fetch NÃO lança em 429/403: sem conferir a resposta, o app dizia
-// "salvo" com a nuvem recusando, e o aparelho ficava com uma verdade própria (auditoria 27/08).
-// Em falha: avisa (badge + toast, 1x) e devolve null — o dado permanece no cache local.
-let FB_gravarAvisou=false;
-async function FB_gravar(url,opts,oQue){
-  let res=null;
-  try{res=await fetch(url,opts);}catch(e){}
-  if(res&&res.ok){FB_gravarAvisou=false;return res;}
-  const st=res?res.status:0;
-  const msg=st===429?'nuvem sem cota (429)':(st?'nuvem recusou '+st:'sem rede');
-  try{if(typeof setSyncStatus==='function')setSyncStatus('error',(oQue||'gravação')+' — '+msg);}catch(e){}
-  try{if(!FB_gravarAvisou){FB_gravarAvisou=true;toast('⚠️ '+(oQue||'A gravação')+' NÃO chegou à nuvem ('+msg+'). Ficou só neste navegador — repita quando a nuvem voltar.','#ef4444',8000);}}catch(e){}
-  return null;
-}
-
-function toFV(v){
-  if(v===null||v===undefined)return{nullValue:null};
-  if(typeof v==='boolean')return{booleanValue:v};
-  if(typeof v==='number')return{doubleValue:v};
-  if(typeof v==='string')return{stringValue:v};
-  if(Array.isArray(v))return{arrayValue:{values:v.map(toFV)}};
-  if(typeof v==='object'){const f={};Object.keys(v).forEach(k=>f[k]=toFV(v[k]));return{mapValue:{fields:f}};}
-  return{stringValue:String(v)};
-}
-function fromFV(fv){
-  if(!fv)return null;
-  if('nullValue' in fv)return null;
-  if('booleanValue' in fv)return fv.booleanValue;
-  if('integerValue' in fv)return Number(fv.integerValue);
-  if('doubleValue' in fv)return fv.doubleValue;
-  if('stringValue' in fv)return fv.stringValue;
-  if('arrayValue' in fv)return(fv.arrayValue.values||[]).map(fromFV);
-  if('mapValue' in fv){const o={};Object.keys(fv.mapValue.fields||{}).forEach(k=>o[k]=fromFV(fv.mapValue.fields[k]));return o;}
-  return null;
-}
-
 // ── UTILITÁRIOS GLOBAIS ──
 const MESES_ABREV=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const MESES_NOMES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -2716,6 +2680,172 @@ if (SIMULACAO_LOCAL){
     document.body.prepend(banner);
     document.body.style.paddingTop = '30px';
   });
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTH_ — login por e-mail/senha (Firebase Auth via REST, porque o WEN fala REST).
+// Fecha o banco: com as regras novas (firestore.rules), todo acesso exige um token.
+// Um único ponto de intercepção anexa o token a TODA chamada ao Firestore — sem
+// tocar nos ~30 fetch espalhados. Em ?mock a autenticação é dispensada (o mock já
+// não toca no Firestore real). Detalhe em financeiro/_auditoria/plano-nuvem.html.
+// ══════════════════════════════════════════════════════════════════════════════
+const AUTH_ATIVO = !SIMULACAO_LOCAL;               // em simulação, não exige login
+const AUTH_IDT_EP  = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB_API_KEY}`;
+const AUTH_TOK_EP  = `https://securetoken.googleapis.com/v1/token?key=${FB_API_KEY}`;
+const AUTH_RT_KEY  = 'wen_auth_rt';                 // refresh token (persiste o login entre aberturas)
+const AUTH_EMAIL_KEY = 'wen_auth_email';
+const AUTH_ = {
+  idToken:null, refreshToken:null, exp:0, email:null,
+  logado(){ return !!this.idToken; },
+  _guardar(j){
+    this.idToken=j.id_token||j.idToken;
+    this.refreshToken=j.refresh_token||j.refreshToken;
+    const secs=parseInt(j.expires_in||j.expiresIn||'3600',10);
+    this.exp=Date.now()+(secs-60)*1000;            // renova 1min antes de expirar
+    try{ localStorage.setItem(AUTH_RT_KEY,this.refreshToken); }catch(e){}
+  },
+  async entrar(email,senha){
+    const res=await fetch(AUTH_IDT_EP,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:email.trim(),password:senha,returnSecureToken:true})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){ const c=(j.error&&j.error.message)||'ERRO'; throw new Error(
+      c==='INVALID_LOGIN_CREDENTIALS'||c==='INVALID_PASSWORD'||c==='EMAIL_NOT_FOUND'
+        ? 'E-mail ou senha incorretos.'
+        : c==='USER_DISABLED' ? 'Este acesso foi desativado.'
+        : 'Não consegui entrar ('+c+').'); }
+    this.email=email.trim(); try{ localStorage.setItem(AUTH_EMAIL_KEY,this.email); }catch(e){}
+    this._guardar(j);
+  },
+  async _renovar(){
+    if(!this.refreshToken) throw new Error('sem sessão');
+    const res=await fetch(AUTH_TOK_EP,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({grant_type:'refresh_token',refresh_token:this.refreshToken})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error('sessão expirada');
+    this._guardar(j);
+  },
+  // Devolve um idToken válido (renova se estiver perto de expirar). null se não dá.
+  async token(){
+    if(!AUTH_ATIVO) return null;
+    if(this.idToken && Date.now()<this.exp) return this.idToken;
+    if(this.refreshToken){ try{ await this._renovar(); return this.idToken; }catch(e){ this.sair(false); return null; } }
+    return null;
+  },
+  sair(recarregar=true){
+    this.idToken=this.refreshToken=null; this.exp=0;
+    try{ localStorage.removeItem(AUTH_RT_KEY); }catch(e){}
+    if(recarregar) location.reload();
+  },
+};
+window.AUTH_ = AUTH_;
+window.fazerLogoutWEN = ()=>AUTH_.sair(true);
+
+// ── Intercepta o fetch: anexa Authorization: Bearer <idToken> em toda chamada ao
+//    Firestore. Coexiste com o interceptor do mock (que só existe em ?mock). ──
+if (AUTH_ATIVO){
+  const _fetchBase = window.fetch.bind(window);
+  window.fetch = async function(url, opts){
+    if (typeof url==='string' && url.startsWith(FS_URL)){
+      const t = await AUTH_.token();
+      if (t){
+        opts = Object.assign({}, opts);
+        opts.headers = Object.assign({}, opts.headers, {'Authorization':'Bearer '+t});
+      }
+    }
+    return _fetchBase(url, opts);
+  };
+}
+
+// ── Tela de login (overlay). Bloqueia o app até autenticar. ──
+function AUTH_montarTela(){
+  if(document.getElementById('authOverlay')) return;
+  const ov=document.createElement('div');
+  ov.id='authOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#14532d 0%,#166534 40%,#1e3a8a 100%);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`
+    <form id="authForm" style="background:#fff;border-radius:18px;padding:30px 26px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:14px">
+      <div style="text-align:center;margin-bottom:4px">
+        <div style="font-size:1.5rem;font-weight:800;color:#14532d;letter-spacing:-.02em">WEN Financeiro</div>
+        <div style="font-size:.82rem;color:#6b7280;margin-top:2px">Entre para acessar</div>
+      </div>
+      <label style="font-size:.78rem;font-weight:600;color:#374151">E-mail
+        <input id="authEmail" type="email" autocomplete="username" required
+          style="width:100%;margin-top:4px;padding:11px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:.95rem">
+      </label>
+      <label style="font-size:.78rem;font-weight:600;color:#374151">Senha
+        <input id="authSenha" type="password" autocomplete="current-password" required
+          style="width:100%;margin-top:4px;padding:11px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:.95rem">
+      </label>
+      <div id="authErro" style="display:none;font-size:.82rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div>
+      <button id="authBtn" type="submit"
+        style="margin-top:4px;padding:12px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer">Entrar</button>
+      <div style="font-size:.72rem;color:#9ca3af;text-align:center;line-height:1.5">Acesso restrito — WEN Produtora.</div>
+    </form>`;
+  document.body.appendChild(ov);
+  const form=ov.querySelector('#authForm'), erro=ov.querySelector('#authErro'), btn=ov.querySelector('#authBtn');
+  const em=ov.querySelector('#authEmail'); if(AUTH_.email||localStorage.getItem(AUTH_EMAIL_KEY)) em.value=AUTH_.email||localStorage.getItem(AUTH_EMAIL_KEY);
+  form.addEventListener('submit', async(e)=>{
+    e.preventDefault(); erro.style.display='none'; btn.disabled=true; btn.textContent='Entrando…';
+    try{
+      await AUTH_.entrar(ov.querySelector('#authEmail').value, ov.querySelector('#authSenha').value);
+      ov.remove(); AUTH_iniciarApp();
+    }catch(err){
+      erro.textContent=err.message||'Não consegui entrar.'; erro.style.display='';
+      btn.disabled=false; btn.textContent='Entrar';
+    }
+  });
+  setTimeout(()=>{ (em.value?ov.querySelector('#authSenha'):em).focus(); },50);
+}
+
+// ── Porteiro: decide entre abrir o app ou pedir login. Chamado no lugar de init(). ──
+let AUTH_appIniciado=false;
+function AUTH_iniciarApp(){ if(AUTH_appIniciado) return; AUTH_appIniciado=true; MOD_prepararCachesLocais(); init(); }
+async function AUTH_bootstrap(){
+  if(!AUTH_ATIVO){ AUTH_iniciarApp(); return; }        // simulação: entra direto
+  const rt=(()=>{ try{ return localStorage.getItem(AUTH_RT_KEY); }catch(e){ return null; } })();
+  AUTH_.refreshToken=rt; AUTH_.email=(()=>{ try{ return localStorage.getItem(AUTH_EMAIL_KEY); }catch(e){ return null; } })();
+  if(rt){                                              // já logou antes: tenta renovar em silêncio
+    const t=await AUTH_.token();
+    if(t){ AUTH_iniciarApp(); return; }
+  }
+  AUTH_montarTela();                                   // sem sessão → tela de login
+}
+
+// ── Escrita blindada ── fetch NÃO lança em 429/403: sem conferir a resposta, o app dizia
+// "salvo" com a nuvem recusando, e o aparelho ficava com uma verdade própria (auditoria 27/08).
+// Em falha: avisa (badge + toast, 1x) e devolve null — o dado permanece no cache local.
+let FB_gravarAvisou=false;
+async function FB_gravar(url,opts,oQue){
+  let res=null;
+  try{res=await fetch(url,opts);}catch(e){}
+  if(res&&res.ok){FB_gravarAvisou=false;return res;}
+  const st=res?res.status:0;
+  const msg=st===429?'nuvem sem cota (429)':(st?'nuvem recusou '+st:'sem rede');
+  try{if(typeof setSyncStatus==='function')setSyncStatus('error',(oQue||'gravação')+' — '+msg);}catch(e){}
+  try{if(!FB_gravarAvisou){FB_gravarAvisou=true;toast('⚠️ '+(oQue||'A gravação')+' NÃO chegou à nuvem ('+msg+'). Ficou só neste navegador — repita quando a nuvem voltar.','#ef4444',8000);}}catch(e){}
+  return null;
+}
+
+function toFV(v){
+  if(v===null||v===undefined)return{nullValue:null};
+  if(typeof v==='boolean')return{booleanValue:v};
+  if(typeof v==='number')return{doubleValue:v};
+  if(typeof v==='string')return{stringValue:v};
+  if(Array.isArray(v))return{arrayValue:{values:v.map(toFV)}};
+  if(typeof v==='object'){const f={};Object.keys(v).forEach(k=>f[k]=toFV(v[k]));return{mapValue:{fields:f}};}
+  return{stringValue:String(v)};
+}
+function fromFV(fv){
+  if(!fv)return null;
+  if('nullValue' in fv)return null;
+  if('booleanValue' in fv)return fv.booleanValue;
+  if('integerValue' in fv)return Number(fv.integerValue);
+  if('doubleValue' in fv)return fv.doubleValue;
+  if('stringValue' in fv)return fv.stringValue;
+  if('arrayValue' in fv)return(fv.arrayValue.values||[]).map(fromFV);
+  if('mapValue' in fv){const o={};Object.keys(fv.mapValue.fields||{}).forEach(k=>o[k]=fromFV(fv.mapValue.fields[k]));return o;}
+  return null;
 }
 
 function loading(show,txt='Carregando...'){
@@ -7823,8 +7953,9 @@ async function CONC_desfazer(chave){
   toast('↩️ Conciliação desfeita.','#6b7280');
 }
 
-MOD_prepararCachesLocais();
-init();
+// Porteiro de login (AUTH_): decide entre abrir o app ou pedir o login.
+// Em ?mock entra direto. MOD_prepararCachesLocais()+init() rodam dentro de AUTH_iniciarApp().
+AUTH_bootstrap();
 </script>
 <!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
 <script src="js/banco.js?v=6cd5eb4b"></script>

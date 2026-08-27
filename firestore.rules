@@ -1,0 +1,28 @@
+rules_version = '2';
+// ══════════════════════════════════════════════════════════════════════════════
+// WEN Financeiro — projeto Firebase `wencontasapagar`
+//
+// Acesso de UM usuário só: o Will (wenprodutora@gmail.com). NÃO basta "estar
+// logado": com e-mail/senha ligado e a API key pública, qualquer um poderia
+// AUTO-CRIAR uma conta e passar por `request.auth != null`. Por isso a regra
+// exige o e-mail específico. Para liberar outra pessoa no futuro, some o e-mail
+// à lista `AUTORIZADOS` abaixo (e crie a conta no Console).
+//
+// ⚠️ ORDEM DE PUBLICAÇÃO (senão trava o acesso):
+//   1º) a conta wenprodutora@gmail.com já existe no Authentication e o app já
+//       faz login com ela; 2º) SÓ ENTÃO publicar estas regras.
+// Rollback: reabrir temporariamente com `allow read, write: if true;`.
+// ══════════════════════════════════════════════════════════════════════════════
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function autorizado() {
+      return request.auth != null
+        && request.auth.token.email in [
+             'wenprodutora@gmail.com'
+           ];
+    }
+    match /{document=**} {
+      allow read, write: if autorizado();
+    }
+  }
+}
