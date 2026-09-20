@@ -28,6 +28,8 @@ const FUNCOES = [
   'CC_abrirModalCartao', 'CC_fbSalvar',                // Cartão
   'IMP_abrir', 'IMP_categorizarIA',                    // Importação antiga (rede de segurança)
   'SOPHIA_abrir', 'SOPHIA_insights',                   // SophIA
+  'SIM_montarNaAba', 'SIM_coletar', 'SIM_carregarCfg', // Simulação de caixa (js/simulacao.js)
+  'SIM_abrirAjuste', 'SIM_setHorizonte',
   'REL_gerarHTML',                                     // Relatórios
   'IA_gerarConteudo', 'IA_getKey',                     // Motor de IA (PDF/foto dependem dele)
 ];

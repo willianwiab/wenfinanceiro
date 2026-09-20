@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260827-b78b395d';
+window.APP_VERSION='20260920-25560272';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -939,6 +939,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('receber',this)">📥 A Receber</button>
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
   <button onclick="showMain('evolucao',this)">📈 Evolução</button>
+  <button onclick="showMain('simulacao',this)">🔮 Simulação</button>
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
@@ -1486,6 +1487,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Compare seus gastos entre competências, veja onde melhorou ou piorou e o comprometimento futuro. Os números são calculados pelo sistema; a SophIA só interpreta.</p>
   </div>
   <div id="evAbaConteudo"></div>
+</div>
+
+<!-- ════════════════════════════════════════
+     SIMULAÇÃO DE CAIXA  (módulo SIM_ · js/simulacao.js)
+════════════════════════════════════════ -->
+<div class="page" id="page-simulacao">
+  <div style="margin-bottom:12px">
+    <h3 style="font-size:1rem;font-weight:700;color:#0f172a">🔮 Simulação de caixa</h3>
+    <p style="font-size:.82rem;color:#6b7280;margin-top:2px">Projeta o saldo dia a dia a partir do que já está no sistema: o saldo real das contas, o que há para receber e o que há para pagar. Adiar uma data ou cortar uma categoria aqui é só simulação — nada é alterado no Receber nem no Pagar.</p>
+  </div>
+  <div id="simConteudo"><div style="padding:22px;color:#6b7280;font-size:.88rem">Montando a projeção…</div></div>
 </div>
 
 <!-- ════════════════════════════════════════
@@ -2879,6 +2891,7 @@ function showMain(id,btn){
   if(id==='receber')renderSubPageR(subRAtivo);
   if(id==='pagar')renderSubPageP(subPAtivo);
   if(id==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();
+  if(id==='simulacao'&&typeof SIM_montarNaAba==='function')SIM_montarNaAba();
   if(id==='analise')renderAnalise();
   if(id==='contas')BC_renderPainel();
   if(id==='cartoes'){C_popularSelects();C_renderTudo();}
@@ -7684,6 +7697,11 @@ function MOD_hidratarMain(id){
   // Fluxo de Caixa usa BC_CONTAS/BC_MOVS/C_faturas — sem isto, saldo saía só do cache local.
   else if(id==='fluxo'){MOD_contasCompleto();MOD_cartoes();}
   else if(id==='cartoes'||id==='evolucao')MOD_cartoes();
+  else if(id==='simulacao'){
+    // precisa do saldo real das contas; a config traz ajustes/notas do Firestore
+    MOD_contasCompleto().then(()=>{if(typeof SIM_marcarContasProntas==='function')SIM_marcarContasProntas();});
+    MOD_umaVez('simulacao-cfg',SIM_carregarCfg).then(()=>{if(mainAtivo==='simulacao'&&typeof SIM_montarNaAba==='function')SIM_montarNaAba();});
+  }
   else if(id==='categorias')MOD_umaVez('centros-projetos',CF_inicializar);
   else if(id==='sophia'||id==='config')MOD_umaVez('config-ia',IA_carregarChave);
 }
@@ -7982,6 +8000,8 @@ AUTH_bootstrap();
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
 <script src="js/evolucao.js?v=ee95b775"></script>
+<!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
+<script src="js/simulacao.js?v=2d7a4db2"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -8086,6 +8106,171 @@ AUTH_bootstrap();
     .card-p .val{font-size:1.15rem}
   }
   @media (max-width:400px){ .cards-p{grid-template-columns:1fr} }
+</style>
+
+<!-- ══ MODAL — simular outra data (SIM_) ══ -->
+<div class="modal-bg" id="simAjBg" onclick="if(event.target===this)SIM_fecharAjuste()">
+  <div class="modal" style="max-width:400px">
+    <h2 id="simAjTitulo">📅 Simular outra data</h2>
+    <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+      <div style="font-size:.78rem;color:#6b7280;margin-bottom:4px">Lançamento</div>
+      <div style="font-size:.9rem;font-weight:700;color:#374151" id="simAjNome"></div>
+      <div style="font-size:.82rem;color:#6b7280;margin-top:3px">Valor: <b id="simAjValor" style="color:#1e293b"></b></div>
+      <div style="font-size:.82rem;color:#6b7280;margin-top:2px">Data atual: <b id="simAjAtual"></b></div>
+    </div>
+    <div style="font-size:.74rem;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Mover rapidamente</div>
+    <div class="sim-rapidos">
+      <button onclick="SIM_ajusteRapido(-30)" class="menos">−30 dias</button>
+      <button onclick="SIM_ajusteRapido(-15)" class="menos">−15 dias</button>
+      <button onclick="SIM_ajusteRapido(-7)"  class="menos">−7 dias</button>
+      <button onclick="SIM_ajusteRapido(7)">+7 dias</button>
+      <button onclick="SIM_ajusteRapido(15)">+15 dias</button>
+      <button onclick="SIM_ajusteRapido(30)">+30 dias</button>
+    </div>
+    <div class="form-group" style="margin-top:14px">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:#6b7280;margin-bottom:5px">Ou escolha a data</label>
+      <input type="date" id="simAjData" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:.9rem">
+    </div>
+    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:10px 12px;font-size:.78rem;color:#3730a3;margin-bottom:16px">
+      🔮 Isto é <b>só simulação</b>. O vencimento real no Receber e no Pagar não muda.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-outline" id="simAjLimpar" onclick="SIM_limparAjuste()" style="display:none">↩️ Data original</button>
+      <button class="btn btn-outline" onclick="SIM_fecharAjuste()">Cancelar</button>
+      <button class="btn btn-green" onclick="SIM_confirmarAjuste()">✅ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ══════════ SIMULAÇÃO DE CAIXA (SIM_) ══════════ */
+.sim-topo{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.sim-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.sim-card{border-radius:16px;padding:20px 22px;color:#fff;position:relative;overflow:hidden}
+.sim-card-banco{background:linear-gradient(135deg,#1e3a8a,#2563eb)}
+.sim-card-fim{background:linear-gradient(135deg,#4c1d95,#6d28d9)}
+.sim-card .sim-lbl{font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;font-weight:700;opacity:.8;margin-bottom:8px}
+.sim-card .sim-val{font-size:1.6rem;font-weight:900;line-height:1.05;margin-bottom:5px}
+.sim-card .sim-sub{font-size:.74rem;opacity:.72}
+.sim-btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.sim-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.26);color:#fff;border-radius:8px;padding:5px 13px;font-size:.76rem;font-weight:600;cursor:pointer;transition:background .2s}
+.sim-btn:hover{background:rgba(255,255,255,.3)}
+.sim-chips{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+.sim-chip{background:rgba(255,255,255,.12);border-radius:8px;padding:8px 6px;text-align:center}
+.sim-chip .v{font-size:.92rem;font-weight:800;white-space:nowrap;letter-spacing:-.02em}
+.sim-chip .l{font-size:.62rem;opacity:.72;margin-top:2px;text-transform:uppercase;letter-spacing:.05em}
+
+.sim-alertas{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.sim-alertas .sim-aviso{margin-bottom:0}
+.sim-aviso{display:flex;gap:11px;align-items:flex-start;border-radius:12px;padding:13px 16px;margin-bottom:12px}
+.sim-aviso .ic{font-size:1.2rem;flex-shrink:0;line-height:1.3}
+.sim-aviso .t{font-weight:700;font-size:.88rem;margin-bottom:3px}
+.sim-aviso .d{font-size:.81rem;color:#6b7280;line-height:1.55}
+.sim-aviso-critical,.sim-aviso-danger{background:#fef2f2;border:1px solid #fecaca}
+.sim-aviso-critical .t,.sim-aviso-danger .t{color:#b91c1c}
+.sim-aviso-warn{background:#fffbeb;border:1px solid #fde68a}.sim-aviso-warn .t{color:#92400e}
+.sim-aviso-info{background:#eff6ff;border:1px solid #bfdbfe}.sim-aviso-info .t{color:#1e40af}
+.sim-aviso-ok{background:#f0fdf4;border:1px solid #bbf7d0}.sim-aviso-ok .t{color:#166534;margin-bottom:0}
+.sim-ul{margin:7px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+
+.sim-folego{background:#fff;border-radius:14px;padding:16px 20px;border:1px solid #e5e7eb;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.sim-folego-ic{border-radius:12px;width:60px;height:60px;display:flex;align-items:center;justify-content:center;font-size:1.7rem;flex-shrink:0}
+.sim-folego-num{font-size:1.35rem;font-weight:900}
+.sim-folego-ate{text-align:right;flex-shrink:0}
+
+.sim-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sim-kpi{background:#fff;border-radius:12px;padding:14px 16px;border:1px solid #e5e7eb;border-bottom:3px solid #22c55e}
+.sim-kpi.neg{border-bottom-color:#ef4444}
+.sim-kpi .sim-lbl{font-size:.67rem;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.07em;margin-bottom:7px}
+.sim-kpi-v{font-size:1.08rem;font-weight:800}
+.sim-pior{margin-top:12px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;font-size:.8rem;color:#374151}
+
+.sim-bloco{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px}
+.sim-nota{font-size:.78rem;color:#6b7280;margin-bottom:12px;line-height:1.5}
+.sim-cats{display:flex;flex-direction:column;gap:8px}
+.sim-cat{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;cursor:pointer}
+.sim-cat.off{background:#fef2f2;border-color:#fecaca}
+.sim-cat input{width:16px;height:16px;cursor:pointer;flex-shrink:0}
+.sim-cat .i{font-size:1rem}
+.sim-cat .n{flex:1;font-size:.85rem;font-weight:600;color:#374151}
+.sim-cat .n em{font-size:.72rem;color:#dc2626;font-weight:700;font-style:normal}
+.sim-cat .v{font-size:.86rem;font-weight:700;color:#374151;white-space:nowrap}
+.sim-cat.off .v{color:#dc2626}
+.sim-eco{margin-top:10px;padding:10px 12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:9px;font-size:.8rem;color:#3730a3}
+.sim-vazio{padding:18px;text-align:center;color:#9ca3af;font-size:.82rem}
+
+.sim-lista{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-top:12px}
+.sim-lista-head{padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;user-select:none}
+.sim-lista-corpo{display:none;padding:10px 14px;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto}
+.sim-lista-corpo.aberto{display:flex}
+.sim-item{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px;border-radius:8px;gap:8px}
+.sim-item.rec{background:#f0fdf4}.sim-item.pag{background:#fef2f2}
+.sim-item-n{font-size:.83rem;font-weight:600;color:#374151}
+.sim-item-d{font-size:.72rem;color:#9ca3af;margin-top:2px}
+.sim-tag{font-size:.68rem;padding:1px 5px;border-radius:4px}
+.sim-tag.atraso{background:#fef3c7;color:#92400e}
+.sim-tag.sim{background:#e0e7ff;color:#4338ca}
+.sim-mini{background:#eef2ff;border:1px solid #e0e7ff;border-radius:6px;padding:3px 8px;font-size:.72rem;cursor:pointer;color:#4f46e5;line-height:1.3}
+.sim-mini:hover{background:#e0e7ff}
+
+.sim-tl{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;max-height:560px;overflow-y:auto}
+.sim-tl-marco{padding:7px 18px;background:#f8fafc;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;font-size:.76rem;color:#9ca3af;font-style:italic}
+.sim-tl-marco.pior{background:#fff7f7;color:#dc2626}
+.sim-tl-dia{border-bottom:1px solid #f1f5f9}
+.sim-tl-dia.hoje{background:#fefce8}
+.sim-tl-dia.pior{background:#fff7f7}
+.sim-tl-dia.pior .sim-tl-head{border-left:3px solid #ef4444}
+.sim-tl-head{padding:11px 18px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;gap:10px}
+.sim-tl-head:hover{background:#f9fafb}
+.sim-tl-nome{font-size:.85rem;font-weight:700;color:#374151}
+.sim-tl-badges{display:flex;gap:4px;margin-top:3px;flex-wrap:wrap}
+.sim-bg{font-size:.7rem;padding:2px 7px;border-radius:99px;font-weight:600}
+.sim-bg.rec{background:#dcfce7;color:#166534}.sim-bg.pag{background:#fee2e2;color:#dc2626}
+.sim-tl-det{display:none;flex-direction:column;gap:5px;padding:0 14px 12px}
+.sim-tl-det.aberto{display:flex}
+
+.sim-rapidos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sim-rapidos button{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;padding:9px 4px;font-size:.8rem;font-weight:700;cursor:pointer}
+.sim-rapidos button.menos{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+.sim-rapidos button:hover{filter:brightness(.96)}
+
+/* esqueleto enquanto o saldo das contas não chegou */
+.sim-esqueleto{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:26px;display:flex;flex-direction:column;gap:12px}
+.sim-esq-bar{height:14px;border-radius:7px;background:linear-gradient(90deg,#f1f5f9 25%,#e8ecf2 37%,#f1f5f9 63%);background-size:400% 100%;animation:sim-brilho 1.3s ease-in-out infinite}
+.sim-esq-txt{font-size:.82rem;color:#9ca3af;margin-top:4px}
+@keyframes sim-brilho{0%{background-position:100% 50%}100%{background-position:0 50%}}
+@media (prefers-reduced-motion:reduce){ .sim-esq-bar{animation:none} }
+
+/* faixa "você está vendo um cenário" */
+.sim-cenario{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:11px 16px;margin-bottom:16px}
+.sim-cenario-ic{font-size:1.1rem;flex-shrink:0}
+.sim-cenario-txt{flex:1;min-width:180px;font-size:.83rem;color:#3730a3;line-height:1.5}
+.sim-cenario-btn{background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:7px 15px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.sim-cenario-btn:hover{background:#4338ca}
+
+/* ações em lote dentro dos blocos de vencidos */
+.sim-grupo-acoes{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 12px;margin-bottom:4px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:9px}
+.sim-grupo-acoes span{font-size:.78rem;color:#64748b;font-weight:600;margin-right:2px}
+.sim-grupo-acoes button{background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:4px 11px;font-size:.78rem;font-weight:700;color:#334155;cursor:pointer}
+.sim-grupo-acoes button:hover{background:#eef2ff;border-color:#a5b4fc;color:#4338ca}
+.sim-grupo-acoes button.limpar{color:#64748b;font-weight:500;margin-left:auto}
+.sim-grupo-acoes button.limpar:hover{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+
+/* botões de saída do alerta "sem saldo de partida" */
+.sim-cta{background:#1e40af;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:.79rem;font-weight:700;cursor:pointer;margin-top:9px;margin-right:8px}
+.sim-cta:hover{background:#1e3a8a}
+.sim-cta.claro{background:#fff;color:#1e40af;border:1px solid #bfdbfe}
+.sim-cta.claro:hover{background:#eff6ff}
+
+@media (max-width:860px){ .sim-kpis{grid-template-columns:1fr 1fr} }
+@media (max-width:700px){
+  .sim-cards{grid-template-columns:1fr}
+  .sim-card .sim-val{font-size:1.45rem}
+  .sim-chip .v{font-size:.82rem}
+  .sim-folego{gap:10px;flex-direction:column;align-items:flex-start}
+  .sim-folego-ate{text-align:left}
+  .sim-topo{align-items:flex-start;flex-direction:column;gap:8px}
+}
 </style>
 </body>
 </html>
