@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261007-744ed81e';
+window.APP_VERSION='20261007-f159fb47';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -4664,6 +4664,11 @@ function C_gidSerieParcela(cartaoId,dataCompra,mesInicio,total,valor,ordinal){
 function C_ymAdd(ym,n){const p=String(ym||'').split('-').map(Number);const d=new Date(p[0],(p[1]||1)-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function C_ymToWen(ym){return CC_ymToKey(ym);} // "2026-07" -> "JUL/2026"
 function C_ymFromWen(wenKey){const ma=CC_mesAnoDaKey(wenKey);return ma.ano+'-'+String(ma.mes+1).padStart(2,'0');} // "JUL/2026" -> "2026-07"
+// Categorias que existem na fatura mas NÃO são gasto da empresa — espelha o C_foraDoGasto do NS.
+// O WEN ainda não tem a tela de marcar um item como "De terceiros"; a regra entra para o motor de
+// evolução ficar idêntico ao do NS (test/ev-paridade) e para a categoria, se vier, sair do gasto.
+const C_CAT_ESTORNO='Estornos/Créditos', C_CAT_TERCEIRO='De terceiros', C_CATS_FORA_DO_GASTO=[C_CAT_ESTORNO,C_CAT_TERCEIRO];
+function C_foraDoGasto(cat){return C_CATS_FORA_DO_GASTO.indexOf(cat)>=0;}
 function C_temFaturaReal(cartaoId,mes){return (C_faturas||[]).some(f=>f.cartaoId===cartaoId&&f.mesFatura===mes);}
 // Itens de cartão de um mês WEN, por categoria (modelo NOVO): usa a fatura IMUTÁVEL se importada,
 // senão as parcelas projetadas (prévia). Substitui o antigo CC_faturasDoCartao no rateio/relatórios.
@@ -8121,7 +8126,7 @@ AUTH_bootstrap();
 <script src="js/banco.js?v=6cd5eb4b"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
-<script src="js/evolucao.js?v=ee95b775"></script>
+<script src="js/evolucao.js?v=a207e335"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=2d7a4db2"></script>
 <style>

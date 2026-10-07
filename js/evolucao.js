@@ -58,7 +58,7 @@ function EV_meioCartao(cartaoId) {
 // parcelas projetadas), pra o total bater com o rateio. `modo`: competencia | pagamento | compromissos.
 function EV_coleta(anoMes, modo) {
   const m = modo || 'competencia', itens = [];
-  const add = o => { if ((o.valor || 0) > 0 && o.categoria !== 'Estornos/Créditos') itens.push(o); };
+  const add = o => { if ((o.valor || 0) > 0 && !C_foraDoGasto(o.categoria)) itens.push(o); };
   (typeof P_meses !== 'undefined' ? (P_meses[anoMes] || []) : []).forEach(c => {
     if (c.faturaId) return;
     add({ fonte: 'conta', categoria: c.categoria || 'Outros', valor: Number(c.valor) || 0, meio: EV_meioConta(c.contaFinanceiraId), integrante: c.criadoPor || null, desc: c.nome || '', parcela: null });
@@ -83,7 +83,7 @@ function EV_coleta(anoMes, modo) {
       const [ay, am] = (p.mesInicio || '').split('-').map(Number); if (!ay) return;
       for (let n = (p.parcelaAtual || 0) + 1; n <= (p.totalParcelas || 0); n++) {
         const d = new Date(ay, am - 1 + (n - 1), 1), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        if (k === anoMes) add({ fonte: 'parc', categoria: p.categoria || 'Outros', valor: Number(p.valorParcela) || 0, meio: EV_meioCartao(p.cartaoId), integrante: p.criadoPor || null, desc: p.descricao || '', parcela: { atual: n, total: p.totalParcelas } });
+        if (k === anoMes && !C_temFaturaReal(p.cartaoId, k)) add({ fonte: 'parc', categoria: p.categoria || 'Outros', valor: Number(p.valorParcela) || 0, meio: EV_meioCartao(p.cartaoId), integrante: p.criadoPor || null, desc: p.descricao || '', parcela: { atual: n, total: p.totalParcelas } });
       }
     });
   }
