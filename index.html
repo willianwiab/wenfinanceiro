@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20260920-25560272';
+window.APP_VERSION='20261007-744ed81e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -4734,7 +4734,12 @@ function C_montarParcelamentos(faturas){
       let candidatos=series.filter(s=>s.cartaoId===f.cartaoId&&s.totalParcelas===N&&s.mesInicio===mesInicio&&!usados.has(s.id));
       if(dataCompra){
         const mesmaData=candidatos.filter(s=>s.dataCompraOrigem===dataCompra);
-        candidatos=mesmaData.length?mesmaData:[];
+        // A data é PREFERÊNCIA, não exigência. O Inter repete a data da compra em toda parcela; o
+        // Nubank posta cada parcela com a data do CICLO — exigir data igual fazia cada mês virar
+        // série nova (OFX real, 06/10/2026). O que separa duas compras iguais é a parcela: a
+        // série candidata precisa estar ANTES desta parcela (parcelaAtual < X); a mesma N/M com
+        // data diferente é outra compra, nunca a continuação.
+        candidatos=mesmaData.length?mesmaData:candidatos.filter(s=>(Number(s.parcelaAtual)||0)<X&&Math.abs((Number(s.valorParcela)||0)-valor)<=0.02);
       }else{
         const dn=C_norm(C_descSemParc(it.descricao));
         candidatos=candidatos.filter(s=>Math.abs((Number(s.valorParcela)||0)-valor)<=0.02&&(s.descricaoNormalizada===dn||!s.dataCompraOrigem));
@@ -4753,7 +4758,7 @@ function C_montarParcelamentos(faturas){
       serie.mesFim=mesFim;serie.valorParcela=valor;serie.descricao=it.descricao||serie.descricao;
       serie.descricaoNormalizada=C_norm(C_descSemParc(it.descricao));
       if(it.categoria)serie.categoria=it.categoria;
-      if(dataCompra)serie.dataCompraOrigem=dataCompra;
+      if(dataCompra&&!serie.dataCompraOrigem)serie.dataCompraOrigem=dataCompra;   // a PRIMEIRA data vista é a da compra
       serie.ativo=serie.parcelaAtual<N;
     });
   });
@@ -4763,7 +4768,7 @@ function C_mesInicioDoItem(fatura,it){return C_ymAdd(fatura.mesFatura,-((Number(
 function C_serieDoItem(fatura,it){
   if(!fatura||!it||!it.parcela)return null;
   const N=Number(it.parcela.total),inicio=C_mesInicioDoItem(fatura,it),data=String(it.dataCompra||''),valor=Math.abs(Number(it.valor))||0;
-  const cand=(C_parcelamentos||[]).filter(p=>p.cartaoId===fatura.cartaoId&&Number(p.totalParcelas)===N&&p.mesInicio===inicio&&(!data||p.dataCompraOrigem===data));
+  const cand=(C_parcelamentos||[]).filter(p=>p.cartaoId===fatura.cartaoId&&Number(p.totalParcelas)===N&&p.mesInicio===inicio&&(!data||p.dataCompraOrigem===data||(Number(p.parcelaAtual)||0)>=(Number(it.parcela.atual)||1)));
   return cand.sort((a,b)=>Math.abs((Number(a.valorParcela)||0)-valor)-Math.abs((Number(b.valorParcela)||0)-valor))[0]||null;
 }
 async function C_reconstruirParcelamentos(){
@@ -4792,7 +4797,27 @@ function C_lancarFaturaEmPagar(fatura,cartao){
     fixa:false,obs:'Gerada pela importação da fatura — valor imutável.',competencia:wk};
   if(anterior&&anterior.dataPagamento)nova.dataPagamento=anterior.dataPagamento;
   if(anterior&&anterior.contaBancariaId)nova.contaBancariaId=anterior.contaBancariaId;
+  // Adiantamento que veio no arquivo vira pagamento PARCIAL — decisão do Will, 06/10/2026.
+  // `pagoAntecipado` guarda quanto do valorPago veio do arquivo: reimportar não soma de novo e
+  // uma baixa manual feita no meio não é engolida (valorPago = manual + adiantado).
+  const adiant=Array.isArray(fatura.pagamentosAntecipados)?fatura.pagamentosAntecipados:[];
+  const somaAdiant=Math.round(adiant.reduce((a,p)=>a+(Number(p.valor)||0),0)*100)/100;
+  if(somaAdiant>0.005||(anterior&&(Number(anterior.pagoAntecipado)||0)>0)){
+    const pagoManual=Math.max(0,anterior?(Number(anterior.valorPago)||0)-(Number(anterior.pagoAntecipado)||0):0);
+    const pago=Math.min(nova.valor,Math.round((pagoManual+somaAdiant)*100)/100);
+    nova.valorPago=pago; nova.pagoAntecipado=somaAdiant;
+    const quitou=pago>=nova.valor-0.005&&nova.valor>0;
+    nova.status=quitou?'PAGO':'PENDENTE';
+    if(quitou)nova.dataPagamento=adiant.map(x=>x.data).filter(Boolean).sort().pop()||nova.dataPagamento||BC_hoje();
+  }
   semEsta.push(nova); P_meses[wk]=semEsta; P_salvarStorage();
+  // Com banco vinculado, o livro-razão acompanha pelo MESMO caminho da baixa (BC_syncMovPagar,
+  // idempotente por conta), com a data em que o dinheiro saiu. Sem banco, nada é inventado.
+  const pagoAntes=anterior?(Number(anterior.valorPago)||0):0;
+  if(nova.contaBancariaId&&typeof BC_syncMovPagar==='function'&&Math.abs((Number(nova.valorPago)||0)-pagoAntes)>0.005){
+    const ultima=adiant.map(x=>x.data).filter(Boolean).sort().pop();
+    try{BC_syncMovPagar({...nova,dataPagamento:nova.dataPagamento||ultima||undefined});}catch(e){}
+  }
 }
 
 // Projeta parcelas FUTURAS como faturas "prévia"; mesmo faturaId da real → importar o mês substitui a prévia.
@@ -4967,7 +4992,7 @@ function C_renderDetalhe(){
   const nomeCartao=id=>C_card(id).nome||'Cartão';
   let titulo='',badge='',itens=[],total=0,parcInfo=null,previa=false;
   if(C_faturaAberta){const f=C_faturas.find(x=>x.id===C_faturaAberta);
-    if(f){titulo=`${nomeCartao(f.cartaoId)} · ${C_mesCurto(f.mesFatura)}`;badge='<span class="badge-imut">imutável</span>';
+    if(f){titulo=`${nomeCartao(f.cartaoId)} · ${C_mesCurto(f.mesFatura)}`;badge='<span class="badge-imut">imutável</span> <button onclick="C_excluirFatura(\''+C_jsAttr(f.id)+'\')" title="Excluir esta fatura e o que ela gerou" style="margin-left:8px;border:1px solid #fca5a5;color:#b91c1c;background:#fff;border-radius:8px;padding:2px 8px;font-size:.72rem;cursor:pointer">🗑️ Excluir fatura</button>';
       itens=(f.itens||[]).map(it=>({desc:it.descricao,sub:(it.parcela?`parc ${it.parcela.atual}/${it.parcela.total} · `:'')+C_dataBR(it.dataCompra),categoria:it.categoria||'',valor:Number(it.valor)||0,fitid:it.fitid}));
       total=Number(f.totalItens)||itens.reduce((a,x)=>a+x.valor,0);
       parcInfo=C_parcelamentos.filter(p=>p.cartaoId===f.cartaoId&&p.ativo);}
@@ -5036,6 +5061,56 @@ function C_planoExclusaoCartaoWen(id, cutoff){
   contas.forEach(c=>{ if(c.valorPago>0)(typeof BC_MOVS!=='undefined'?BC_MOVS:[]).forEach(m=>{ if(m.origemTipo==='pagar'&&m.origemId===c.id)movsReverter.push(m.id); }); });
   return {faturas, parcelamentos, contas, movsReverter, cutoff};
 }
+// PURO: algum subconjunto (bitmask, até 12 valores) soma o alvo, com 2 centavos de folga? Espelha o NS.
+function C_subconjuntoQueSoma(valores,alvo){
+  const v=(valores||[]).map(x=>Math.round(Math.abs(Number(x)||0)*100)).filter(Boolean).slice(0,12);
+  const t=Math.round((Number(alvo)||0)*100); if(t<=0||!v.length)return null;
+  for(let mask=1;mask<(1<<v.length);mask++){let soma=0;const sel=[];for(let i=0;i<v.length;i++)if(mask&(1<<i)){soma+=v[i];sel.push(v[i]/100);}if(Math.abs(soma-t)<=2)return sel;}
+  return null;
+}
+// PURO: o que UMA fatura arrasta junto (espelha C_planoExclusaoFatura do NS). No WEN as séries
+// são reconstruídas a partir das faturas, então apagar a fatura já derruba as parcelas que
+// nasceram nela no próximo C_reconstruirParcelamentos — aqui só listamos para a confirmação.
+function C_planoExclusaoFaturaWen(faturaId, faturas, meses, parcelamentos, movs){
+  const f=(faturas||[]).find(x=>x.id===faturaId); if(!f)return null;
+  const contas=[];
+  Object.keys(meses||{}).forEach(mk=>(meses[mk]||[]).forEach(c=>{ if(c&&c.faturaId===faturaId)contas.push({mk,id:c.id,valorPago:Number(c.valorPago)||0}); }));
+  const parcs=(parcelamentos||[]).filter(p=>p.cartaoId===f.cartaoId&&p.mesInicio===f.mesFatura).map(p=>p.id);
+  const movsReverter=[];
+  contas.forEach(c=>{ if(c.valorPago>0)(movs||[]).forEach(m=>{ if(m.origemTipo==='pagar'&&m.origemId===c.id)movsReverter.push(m.id); }); });
+  return {fatura:f, contas, parcelamentos:parcs, movsReverter, pago:contas.some(c=>c.valorPago>0)};
+}
+// Importou o OFX no mês errado? Antes a única saída era apagar o CARTÃO inteiro. A fatura segue
+// imutável enquanto existe; o que passa a existir é um caminho explícito para remover a errada.
+window.C_excluirFatura=async function(faturaId){
+  const plano=C_planoExclusaoFaturaWen(faturaId, C_faturas, P_meses, C_parcelamentos, (typeof BC_MOVS!=='undefined'?BC_MOVS:[]));
+  if(!plano){toast('Fatura não encontrada — atualize a tela.','#ef4444');return;}
+  const f=plano.fatura, cartao=C_card(f.cartaoId).nome||'cartão';
+  const linhas=[`• a fatura de ${C_mesCurto(f.mesFatura)} (${(f.itens||[]).length} itens, ${fmt(f.totalItens)})`];
+  if(plano.contas.length)linhas.push(`• ${plano.contas.length} conta(s) a pagar gerada(s) por ela`);
+  if(plano.parcelamentos.length)linhas.push(`• ${plano.parcelamentos.length} parcelamento(s) que começaram nesta fatura — as parcelas futuras somem do Rateio`);
+  if(plano.movsReverter.length)linhas.push(`• ${plano.movsReverter.length} pagamento(s) já lançado(s) no banco serão estornados`);
+  const alerta=plano.pago?'\n\n⚠️ Esta fatura JÁ FOI PAGA. O pagamento será estornado do saldo da conta.':'';
+  if(!confirm(`Excluir a fatura de ${C_mesCurto(f.mesFatura)} do ${cartao}?\n\nIsto remove:\n${linhas.join('\n')}${alerta}\n\nEsta ação não pode ser desfeita. Depois é só importar o OFX de novo, no mês certo.`))return;
+  try{
+    const mks=[...new Set(plano.contas.map(x=>x.mk))];
+    mks.forEach(mk=>{const ids=new Set(plano.contas.filter(x=>x.mk===mk).map(x=>x.id));P_meses[mk]=(P_meses[mk]||[]).filter(x=>!ids.has(x.id));});
+    if(mks.length&&typeof P_salvarStorage==='function')P_salvarStorage();
+    for(const chave of plano.movsReverter){ if(typeof BC_MOVS!=='undefined')BC_MOVS=BC_MOVS.filter(m=>m.id!==chave); try{await BC_fbExcluir(BC_COL_MOV,chave);}catch(e){} }
+    C_faturas=(C_faturas||[]).filter(x=>x.id!==faturaId); C_salvarCache();
+    try{await BC_fbExcluir(C_COL_FAT,faturaId);}catch(e){}
+    // as séries nascem das faturas: sem nenhuma fatura, C_reconstruirParcelamentos não roda — limpa à mão
+    if(!(C_faturas||[]).length){ for(const p of (C_parcelamentos||[])){ try{await BC_fbExcluir(C_COL_PARC,p.id);}catch(e){} } C_parcelamentos=[]; C_salvarCache(); }
+    else await C_reconstruirParcelamentos();
+    C_sincronizarFaturasPrevias(f.cartaoId);
+    if(typeof AUD_log==='function')AUD_log('excluir','cartao_faturas',f.id,`Fatura ${C_mesCurto(f.mesFatura)} do ${cartao} (${fmt(f.totalItens)}) — cascata: ${plano.contas.length} conta(s), ${plano.parcelamentos.length} parcelamento(s), ${plano.movsReverter.length} movimento(s)`,{mesFatura:f.mesFatura,totalItens:f.totalItens,itens:(f.itens||[]).length},null);
+    C_faturaAberta=null;C_previaAberta=null;C_catFiltro=null;
+    C_renderTudo();
+    try{ if(typeof renderTabelaP==='function')renderTabelaP(); }catch(e){}
+    try{ if(typeof BC_render==='function')BC_render(); }catch(e){}
+    toast('🗑️ Fatura excluída — dá para importar o OFX de novo.','#16a34a');
+  }catch(e){ toast('Erro: '+(e.message||e),'#ef4444'); }
+};
 window.C_excluirCartao=async function(id){
   const c=(C_cartoes||[]).find(x=>x.id===id)||{nome:'cartão'};
   let cutoff=''; try{cutoff=C_ymFromWen(mesAtualReal());}catch(e){cutoff=new Date().toISOString().slice(0,7);}
@@ -5099,12 +5174,27 @@ window.C_importarDaPrevia=async function(){
   // Trava de segurança: uma fatura zerada/negativa NÃO pode substituir uma boa (a id é fixa por
   // cartão+mês, então gravar por cima apaga o valor anterior). Foi o que zerou o AGO em 27/08.
   if(totalItens<=0){toast('⚠️ Os itens somam '+fmt(totalItens)+' — não vou gravar uma fatura zerada/negativa por cima da atual. Confira os valores (OFX de cartão pode vir com sinais invertidos).','#ef4444',9000);return;}
-  const fatura={id:cid+'_'+anoMes,cartaoId:cid,mesFatura:anoMes,totalItens,totalDeclarado:IMP_totalLido||null,fechada:true,itens};
+  // Fatura já PAGA e o arquivo novo tem total menor: a conta ficaria com pago > valor, e o excesso
+  // não iria a lugar nenhum. Confere ANTES de gravar. Espelha o NS (06/10/2026).
+  const wkAnt=C_ymToWen(anoMes); const anterior=((P_meses||{})[wkAnt]||[]).find(c=>c&&c.faturaId===cid+'_'+anoMes&&!c.previa)||null;
+  const jaPago=anterior?(Number(anterior.valorPago)||0):0;
+  if(jaPago>totalItens+0.005){toast('⚠️ Esta fatura já tem '+fmt(jaPago)+' pagos e o arquivo novo soma '+fmt(totalItens)+'. Desmarque o pagamento no Pagar antes de reimportar com total menor.','#ef4444',9000);return;}
+  // Adiantamento dentro do ciclo (Nubank): o BALAMT já vem com ele abatido. A fatura é a soma das
+  // compras; o adiantamento vira pagamento PARCIAL da conta (decisão do Will, 06/10/2026).
+  const declarado=(IMP_totalLido!=null)?Math.abs(Number(IMP_totalLido)||0):null;
+  const pagsArq=IMP_previa.filter(m=>m.pagamento).map(m=>({valor:Math.abs(Number(m.valor)||0),data:m.data||'',descricao:m.descricao||''}));
+  const falta=(declarado==null||totalItens<=0)?0:Math.round((totalItens-declarado)*100)/100;
+  const sub=falta>0.02?C_subconjuntoQueSoma(pagsArq.map(p=>p.valor),falta):null;
+  const pagosAntes=sub?sub.map(v=>pagsArq.find(p=>Math.abs(p.valor-v)<0.005)).filter(Boolean):[];
+  const fatura={id:cid+'_'+anoMes,cartaoId:cid,mesFatura:anoMes,totalItens,totalDeclarado:IMP_totalLido||null,fechada:true,itens,pagamentosAntecipados:pagosAntes.map(p=>({valor:p.valor,data:p.data,descricao:p.descricao}))};
   await C_confirmarImportacaoDados(fatura); // já grava em memória + cache local (não recarrega do Firestore, que pode estar 429)
   IMP_previa=[];IMP_destinoC=false;
   const rr=document.getElementById('cImportResultado');if(rr)rr.innerHTML='';
   const av=document.getElementById('cImpAviso2');if(av)av.innerHTML='';
-  toast('✅ Fatura '+C_ymToWen(anoMes)+' gravada — '+fmt(totalItens)+(IMP_totalLido&&Math.abs(totalItens-IMP_totalLido)>=0.01?' ⚠️ difere do total lido ('+fmt(IMP_totalLido)+')':''));
+  const somaAnt=pagosAntes.reduce((a,p)=>a+p.valor,0);
+  toast('✅ Fatura '+C_ymToWen(anoMes)+' gravada — '+fmt(totalItens)
+    +(somaAnt>0.005?' · 💡 '+fmt(somaAnt)+' já pagos antes do fechamento ('+pagosAntes.map(p=>BC_dataBR(p.data)).join(', ')+') registrados como pagamento parcial; falta '+fmt(declarado):'')
+    +(IMP_totalLido&&!(somaAnt>0.005)&&Math.abs(totalItens-IMP_totalLido)>=0.01?' ⚠️ difere do total lido ('+fmt(IMP_totalLido)+')':''),'#16a34a',somaAnt>0.005?9000:4000);
   C_faturaAberta=fatura.id;C_previaAberta=null;
   const btn=[...document.querySelectorAll('#page-cartoes .sub-nav button')].find(b=>(b.getAttribute('onclick')||'').includes("'Faturas'"));
   if(btn)C_aba('Faturas',btn); else C_renderTudo();
@@ -5927,28 +6017,52 @@ function IMP_parseOFX(text){
   while((m=re.exec(norm))){const b=m[1];const dt=tag(b,'DTPOSTED').slice(0,8);const val=parseFloat(tag(b,'TRNAMT'))||0;
     const fitid=tag(b,'FITID')||('ofx_'+dt+'_'+val);const memo=tag(b,'MEMO')||tag(b,'NAME')||'Movimento';
     const data=dt.length===8?`${dt.slice(0,4)}-${dt.slice(4,6)}-${dt.slice(6,8)}`:'';
-    movs.push({fitid,data,valor:val,descricao:memo,tipo:val<0?'saida':'entrada'});}
+    // trntype e nome ficam no item: a convenção de sinal do cartão vem do rótulo do próprio banco
+    movs.push({fitid,data,valor:val,descricao:memo,nome:tag(b,'NAME'),trntype:tag(b,'TRNTYPE').toUpperCase(),tipo:val<0?'saida':'entrada'});}
   return movs;
+}
+// BALAMT só é confiável como "total da fatura" quando há UM (fatura de um cartão). Espelha o NS.
+function IMP_ofxTotalDeclarado(text){
+  const bals=[...String(text||'').matchAll(/<BALAMT>([^<\r\n]*)/gi)].map(m=>{let v=String(m[1]).trim();if(v.indexOf(',')>=0)v=v.replace(/\./g,'').replace(',','.');return parseFloat(v);}).filter(n=>!isNaN(n));
+  return bals.length===1?bals[0]:null;
 }
 // OFX de CARTÃO: bancos (Nubank inclusive) exportam COMPRAS como valor NEGATIVO, mas o módulo de
 // cartão espera compras POSITIVAS (mesma convenção da leitura por IA). Se a soma vier negativa, a
 // convenção é "compra negativa" → invertemos todos os sinais, deixando o total da fatura positivo.
 // Sem isto, Math.max(0,total) no lançamento ZERAVA a fatura (incidente 27/08 — Nubank Will/AGO).
+// Mecânica de PAGAMENTO não é item da fatura: é o acerto da anterior. Inter: "PAGAMENTO DE
+// FATURA", TRNTYPE PAYMENT, tag "PAGAMENTO |" no MEMO e o par "DEB AUT PARCIAL"/"EST DEB AUTOM";
+// Nubank: "Pagamento recebido". No WEN ela fica VISÍVEL na revisão, já desmarcada (o Will
+// desmarcava à mão). Espelha o NS (06/10/2026, OFX reais do Inter e do Nubank).
+function IMP_ehPagamentoCartao(m){
+  const t=String(m.trntype||'').toUpperCase(), d=String(m.descricao||'')+' '+String(m.nome||'');
+  const tag=String(m.descricao||'').split('|')[0].trim().toUpperCase();
+  return t==='PAYMENT'||tag==='PAGAMENTO'||/pagamento\s+(?:de\s+)?fatura|pagamento\s+recebido/i.test(d)||/\bdeb(?:ito)?\.?\s+aut(?:om(?:[aá]tico)?)?\b/i.test(d);
+}
 function IMP_normalizarCartaoOFX(movs){
-  const arr=movs||[];
-  const neg=arr.filter(m=>(Number(m.valor)||0)<0).length;
-  const pos=arr.filter(m=>(Number(m.valor)||0)>0).length;
-  const soma=arr.reduce((a,m)=>a+(Number(m.valor)||0),0);
-  // Convenção "compras negativas" (Nubank etc.): numa fatura as COMPRAS (muitas, negativas)
-  // predominam por contagem sobre o pagamento (1 linha positiva). Se as negativas são maioria
-  // — ou empatam e a soma é <= 0 — invertemos tudo: compras positivas, pagamentos/estornos
-  // negativos (mesma convenção da IA). Robusto mesmo quando o "pagamento recebido" é grande e
-  // deixaria a soma positiva. Se as positivas predominam, o arquivo já usa compras positivas.
-  if(!(neg>pos || (neg===pos && soma<=0)))return arr;
+  const arr=(movs||[]).map(m=>({...m}));
+  arr.forEach(m=>{if(IMP_ehPagamentoCartao(m)){m.pagamento=true;m.incluir=false;}});
+  const itens=arr.filter(m=>!m.pagamento&&(Number(m.valor)||0)!==0);
+  // 0. TRNTYPE — rótulo do próprio banco, acima de qualquer heurística. Inter e Nubank marcam
+  //    compra como DEBIT e crédito como CREDIT: o sinal dos DEBIT revela a convenção, e vale com
+  //    um item só (fatura só de estorno). Lição do OFX real do Inter: o "Estorno deb automatico"
+  //    é estorno de PAGAMENTO e carrega o sinal da compra — heurística de texto errava.
+  const deb=itens.filter(m=>String(m.trntype||'').toUpperCase()==='DEBIT'), cre=itens.filter(m=>String(m.trntype||'').toUpperCase()==='CREDIT');
+  let inverter=null;
+  if((deb.length||cre.length)&&deb.every(m=>m.valor<0)&&cre.every(m=>m.valor>0))inverter=true;
+  else if((deb.length||cre.length)&&deb.every(m=>m.valor>0)&&cre.every(m=>m.valor<0))inverter=false;
+  if(inverter===null){
+    // 1. sem rótulo: maioria por contagem (regra de 27/08) — compras predominam sobre o pagamento;
+    //    empate decide pela soma.
+    const neg=itens.filter(m=>(Number(m.valor)||0)<0).length, pos=itens.filter(m=>(Number(m.valor)||0)>0).length;
+    const soma=itens.reduce((a,m)=>a+(Number(m.valor)||0),0);
+    inverter=(neg>pos || (neg===pos && soma<=0));
+  }
+  if(!inverter)return arr;
   return arr.map(m=>{const v=-(Number(m.valor)||0);return {...m,valor:v,tipo:v<0?'saida':'entrada'};});
 }
 async function IMP_ofxArquivo(input){const f=input.files[0];if(!f)return;input.value='';
-  try{const txt=await IMP_fileText(f);let previa=IMP_parseOFX(txt);if(IMP_tipo==='cartao')previa=IMP_normalizarCartaoOFX(previa);IMP_previa=previa;IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
+  try{const txt=await IMP_fileText(f);let previa=IMP_parseOFX(txt);if(IMP_tipo==='cartao'){previa=IMP_normalizarCartaoOFX(previa);const bal=IMP_ofxTotalDeclarado(txt);IMP_totalLido=(bal==null)?null:Math.abs(bal);}IMP_previa=previa;IMP_setAviso(IMP_previa.length?`✅ ${IMP_previa.length} movimentação(ões) lida(s) do OFX. Revise e importe.`:'Nenhuma transação encontrada no arquivo.');IMP_renderPreview();}
   catch(e){IMP_setAviso('⚠️ Erro ao ler OFX: '+e.message);}
 }
 function IMP_extrairJSON(txt){try{return JSON.parse(txt);}catch(e){}const i=txt.indexOf('['),j=txt.lastIndexOf(']');if(i>=0&&j>i){try{return JSON.parse(txt.slice(i,j+1));}catch(e){}}return [];}
@@ -5984,7 +6098,14 @@ async function IMP_gemini(input){
 // ══ Revisão de importação estilo NS (estatísticas, filtros, tabela, confiança) ══
 let IMP_filtro='todos';
 function IMP_normDesc(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();}
-function IMP_parseParcela(desc){const m=(desc||'').match(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/);if(m){const a=+m[1],t=+m[2];if(t>1&&a<=t)return {atual:a,total:t};}return null;}
+// TODAS as ocorrências, não só a primeira: o NAME truncado ("parcela 05/1") vem antes do MEMO
+// completo ("parcela 05/12") e a primeira era inválida — a parcela sumia. Espelha o NS (06/10/2026).
+function IMP_parseParcela(desc){
+  const str=String(desc||''); const valida=(a,t)=>(t>1&&a>=1&&a<=t)?{atual:a,total:t}:null;
+  for(const m of str.matchAll(/parc\w*\.?\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/gi)){const r=valida(+m[1],+m[2]);if(r)return r;}
+  for(const m of str.matchAll(/(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})/g)){const r=valida(+m[1],+m[2]);if(r)return r;}
+  return null;
+}
 function IMP_sugerirCatConf(desc){
   if(typeof CC_regraSugerir==='function'){const rg=CC_regraSugerir(desc);if(rg)return {cat:rg,conf:'alta',origem:'regra'};}
   const d=IMP_normDesc(desc);
@@ -6080,9 +6201,10 @@ function IMP_renderPreviewRico(p){
     const parc=m.parcela?` <span class="imp-parc">parc ${m.parcela.atual}/${m.parcela.total} <span onclick="IMP_limparParcela(${i})" title="Não é parcela" style="cursor:pointer;opacity:.6">✕</span></span>`:'';
     const dupb=m.dup?' <span class="imp-dupb">possível duplicidade</span>':'';
     const credB=credito?' <span style="font-size:.64rem;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:20px">crédito</span>':'';
+    const pagB=m.pagamento?' <span style="font-size:.64rem;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:20px" title="Acerto da fatura anterior ou adiantamento — não é compra">pagamento da fatura · fora</span>':'';
     return `<tr class="${m.incluir?'':'excl'}">
       <td style="text-align:center"><input type="checkbox" ${m.incluir?'checked':''} onchange="IMP_toggleIncluir(${i})" style="width:17px;height:17px;accent-color:#16a34a"></td>
-      <td>${(m.descricao||'').replace(/</g,'&lt;')}${parc}${dupb}${credB}</td>
+      <td>${(m.descricao||'').replace(/</g,'&lt;')}${parc}${dupb}${credB}${pagB}</td>
       <td style="white-space:nowrap">${BC_dataBR(m.data)||'—'}</td>
       <td style="font-weight:700;white-space:nowrap;color:${(credito||ent)?'#16a34a':'#0f172a'}">${credito?fmt(Number(m.valor)):((ent?'+ ':'')+fmt(Math.abs(Number(m.valor)||0)))}</td>
       <td><select onchange="IMP_setCat(${i},this.value)" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:.82rem;background:#fff;max-width:190px">${IMP_catOptions(m.categoria||'')}</select></td>
@@ -6097,7 +6219,7 @@ function IMP_renderPreviewRico(p){
       <div class="imp-box ${dupN?'dup':''}"><div class="n">${dupN}</div><div class="l">duplicidades</div></div>
       <div class="imp-box ok"><div class="n">${fmt(total)}</div><div class="l">total identificado</div></div>
     </div>
-    ${(isCartao&&IMP_totalLido)?(()=>{const diff=Math.round((total-IMP_totalLido)*100)/100;const bate=Math.abs(diff)<0.01;
+    ${(isCartao&&IMP_totalLido)?(()=>{const diff=Math.round((total-IMP_totalLido)*100)/100;const pgs=IMP_previa.filter(m=>m.pagamento).map(m=>Math.abs(Number(m.valor)||0));const bate=Math.abs(diff)<0.01||(diff>0.02&&!!C_subconjuntoQueSoma(pgs,diff));
       return bate
         ? `<div class="imp-alerta" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ Bate exato! Os ${incl.length} itens somam <b>${fmt(total)}</b> = o total da fatura lido pela IA (<b>${fmt(IMP_totalLido)}</b>). Este mês vai fechar certinho.</div>`
         : `<div class="imp-alerta" style="background:#fef2f2;border-color:#fecaca;color:#991b1b">⚠️ Os itens somam <b>${fmt(total)}</b>, mas a IA leu o total da fatura como <b>${fmt(IMP_totalLido)}</b> — diferença de <b>${fmt(Math.abs(diff))}</b> ${diff<0?'(faltou item)':'(item a mais)'}. A IA pode ter perdido/duplicado uma linha. Confira a lista antes de confirmar pra o mês fechar exato.</div>`;
