@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261007-f159fb47';
+window.APP_VERSION='20261007-49789a34';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1549,12 +1549,14 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       </div>
     </div>
     <div id="bcAvisoSaldo" class="bc-aviso" style="display:none"></div>
+    <div id="bcAvisoMovs" class="bc-aviso" style="display:none"></div>
     <div class="cards-p" id="bcTopo"></div>
     <div id="bcFiltros" style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 12px">
       <button class="bc-fil active" onclick="BC_filtrar('ativas',this)">Ativas</button>
       <button class="bc-fil" onclick="BC_filtrar('arquivadas',this)">Arquivadas</button>
     </div>
     <div id="bcLista" class="bc-grid"></div>
+    <div id="bcTransfs" style="display:none;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;margin-top:16px"></div>
   </div>
 </div>
 
@@ -2326,7 +2328,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <!-- Modal transferência entre contas -->
 <div class="modal-bg" id="bcTransfBg">
   <div class="modal" style="max-width:420px">
-    <h2>🔄 Transferência entre contas</h2>
+    <h2 id="bcTransfTitulo">🔄 Transferência entre contas</h2>
+    <input type="hidden" id="bcTransfId"/>
     <div class="form-group"><label>De (origem)</label><select id="bcTransfOrigem"></select></div>
     <div class="form-group"><label>Para (destino)</label><select id="bcTransfDestino"></select></div>
     <div class="form-row">
@@ -2337,7 +2340,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="form-group"><label>Status</label><select id="bcTransfStatus"><option value="concluida">✅ Concluída (já saiu/entrou)</option><option value="prevista">📅 Prevista (ainda vai acontecer)</option></select></div>
     <div class="modal-actions">
       <button class="btn btn-outline-b" onclick="BC_fecharTransf()">Cancelar</button>
-      <button class="btn btn-purple" onclick="BC_salvarTransf()">✅ Transferir</button>
+      <button class="btn btn-purple" id="bcTransfBtn" onclick="BC_salvarTransf()">✅ Transferir</button>
     </div>
   </div>
 </div>
@@ -4273,7 +4276,7 @@ function catBadgeP(c){if(!c)return'';const ci=catInfoP(c);return`<span class="ca
 // Receber é INTOCÁVEL: entra só como projeção (previsão) na conta principal.
 // ══════════════════════════════════════════════════════
 const BC_COL='contas_financeiras', BC_COL_MOV='movimentacoes_contas', BC_COL_TRANSF='transferencias_contas';
-const BC_CONTAS={}; let BC_MOVS=[], BC_TRANSFS=[];
+const BC_CONTAS={}; let BC_MOVS=[], BC_TRANSFS=[], BC_movsOk=false;
 let BC_editandoId=null, BC_filtro='ativas', bcExtratoConta=null, BC_extratoFiltro='todas';
 const BC_TIPOS={corrente:{icon:'🏛️',label:'Conta corrente'},digital:{icon:'📱',label:'Conta digital'},investimento:{icon:'📈',label:'Investimento'},caixa:{icon:'💵',label:'Caixa físico'},personalizada:{icon:'🔧',label:'Personalizada'}};
 function BC_tipoInfo(t){return BC_TIPOS[t]||BC_TIPOS.personalizada;}
@@ -4313,7 +4316,7 @@ async function BC_inicializarMovimentos(){
   try{
     const [movs,transfs]=await Promise.all([BC_fbCarregar(BC_COL_MOV),BC_fbCarregar(BC_COL_TRANSF)]);
     // Histórico pesado: só é consultado quando Contas ou Conciliação é realmente aberta.
-    if(Array.isArray(movs))BC_MOVS=movs;
+    if(Array.isArray(movs)){BC_MOVS=movs;BC_movsOk=true;}
     if(Array.isArray(transfs))BC_TRANSFS=transfs;
   }catch(e){ok=false;console.warn('BC_inicializarMovimentos',e.message);}
   BC_salvarCache();
@@ -4338,7 +4341,126 @@ function BC_syncMovPagar(r){
     BC_MOVS=BC_MOVS.filter(m=>m.id!==chave);BC_MOVS.push(mov);BC_fbUpsert(BC_COL_MOV,chave,mov);
   }else if(BC_MOVS.some(m=>m.id===chave)){BC_MOVS=BC_MOVS.filter(m=>m.id!==chave);BC_fbExcluir(BC_COL_MOV,chave);}
 }
-function BC_saldoConta(id){const c=BC_CONTAS[id];if(!c||!c.saldoConfigurado)return null;const base=Number(c.saldoInicial)||0;const db=c.dataSaldoInicial||'0000-00-00';return base+BC_movsDaConta(id).filter(m=>(m.data||'')>=db).reduce((s,m)=>s+BC_movContrib(m),0);}
+// Remove o débito de uma conta do Pagar do livro-razão (idempotente por id). Usado quando a conta é
+// excluída — antes o movimento ficava ÓRFÃO, debitando o banco para sempre (relato do Will no NS, 06/10).
+function BC_removerMovPagar(contaId){const chave='mov_pagar_'+contaId;if(!(BC_MOVS||[]).some(m=>m.id===chave))return false;BC_MOVS=BC_MOVS.filter(m=>m.id!==chave);try{BC_fbExcluir(BC_COL_MOV,chave);}catch(e){}return true;}
+// PUROS: ids por mês antes de uma exclusão, e quais sumiram depois — para estornar exatamente o que saiu.
+function P_idsPorMes(meses){const o={};Object.keys(meses||{}).forEach(mk=>{o[mk]=(meses[mk]||[]).map(r=>String(r&&r.id)).filter(x=>x&&x!=='undefined');});return o;}
+function P_idsRemovidos(antes,depois){const out=[];Object.keys(antes||{}).forEach(mk=>{const agora=new Set(((depois||{})[mk]||[]).map(r=>String(r&&r.id)));(antes[mk]||[]).forEach(id=>{if(!agora.has(id))out.push(id);});});return out;}
+// PURO: a edição mexeu no que vira movimento bancário?
+function P_mexeuNoPago(a,b){a=a||{};b=b||{};const n=x=>Math.round((Number(x)||0)*100)/100;return n(a.valorPago)!==n(b.valorPago)||String(a.contaBancariaId||'')!==String(b.contaBancariaId||'')||String(a.dataPagamento||'')!==String(b.dataPagamento||'')||n(a.juros)!==n(b.juros)||n(a.multa)!==n(b.multa)||n(a.desconto)!==n(b.desconto);}
+// PURO (espelha CF_movimentosErrados do NS): movimento do Pagar que não bate com a conta de hoje.
+//   órfão      → a conta a pagar não existe mais em nenhum mês;
+//   divergente → valor ≠ pago+juros+multa−desconto, banco diferente do vinculado, ou conta sem banco.
+// Estornado fica fora: já conta zero no saldo e é histórico, não erro.
+function BC_movimentosErrados(movs,meses){
+  const contas=new Map();Object.keys(meses||{}).forEach(mk=>(meses[mk]||[]).forEach(r=>{if(r&&r.id)contas.set(String(r.id),{mk,r});}));
+  const orfaos=[],divergentes=[];
+  (movs||[]).forEach(m=>{
+    if(!m||m.origemTipo!=='pagar'||!m.origemId||m.estornada)return;
+    const hit=contas.get(String(m.origemId)); if(!hit){orfaos.push(m);return;}
+    const r=hit.r,deve=Math.round(BC_debitoLancamento(r)*100)/100,tem=Math.round((Number(m.valor)||0)*100)/100;
+    const contaErrada=String(m.contaId||'')!==String(r.contaBancariaId||'');
+    if(Math.abs(deve-tem)>0.005||contaErrada||!(deve>0))divergentes.push({mov:m,conta:r,mk:hit.mk,deveria:deve,tem,contaErrada});
+  });
+  return {orfaos,divergentes,total:orfaos.length+divergentes.length,valorOrfao:Math.round(orfaos.reduce((a,m)=>a+(Number(m.valor)||0),0)*100)/100};
+}
+// Guarda de AÇÃO (lição do NS, 06/10): a varredura decide por AUSÊNCIA — só com o Pagar hidratado da
+// nuvem e os movimentos lidos nesta sessão. Com base parcial, conta que este aparelho não conhece
+// pareceria apagada e a correção apagaria movimento legítimo.
+function BC_baseCompletaParaVarredura(){return !!(typeof P_hidratado!=='undefined'&&P_hidratado&&typeof P_nuvemConfiavel!=='undefined'&&P_nuvemConfiavel&&BC_movsOk&&Object.keys(P_meses||{}).some(mk=>(P_meses[mk]||[]).length));}
+function BC_renderAvisoMovs(){
+  const el=document.getElementById('bcAvisoMovs');if(!el)return;const esconder=()=>{el.style.display='none';el.innerHTML='';};
+  if(!BC_baseCompletaParaVarredura())return esconder();
+  let d;try{d=BC_movimentosErrados(BC_MOVS,P_meses);}catch(e){return esconder();}
+  if(!d.total)return esconder();
+  const partes=[];if(d.orfaos.length)partes.push(d.orfaos.length+' de conta a pagar que não existe mais'+(d.valorOrfao?' ('+fmt(d.valorOrfao)+')':''));
+  if(d.divergentes.length)partes.push(d.divergentes.length+' com valor ou banco diferente do que está lançado hoje');
+  el.style.display='block';
+  el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>⚠️ ${d.total} movimento(s) do extrato fora do lugar</b><br><span style="font-size:.8rem">${partes.join(' · ')}. Enquanto estiverem aí, os saldos abaixo não refletem o que você lançou.</span></div><button class="btn btn-purple" style="width:auto;white-space:nowrap" onclick="BC_corrigirMovimentosErrados()">Corrigir agora</button></div>`;
+}
+window.BC_corrigirMovimentosErrados=async function(){
+  if(!BC_baseCompletaParaVarredura()){toast('Não consegui reler seus lançamentos e movimentos agora. Sem essa leitura eu apagaria movimento legítimo — tente de novo em instantes.','#ef4444',7000);return;}
+  const d=BC_movimentosErrados(BC_MOVS,P_meses);
+  if(!d.total){toast('Nenhum movimento fora do lugar 💚');return;}
+  const meses=Object.keys(P_meses||{}).filter(mk=>(P_meses[mk]||[]).length).length;
+  const linhas=[];if(d.orfaos.length)linhas.push('• '+d.orfaos.length+' de conta a pagar que não existe mais ('+fmt(d.valorOrfao)+')');
+  if(d.divergentes.length)linhas.push('• '+d.divergentes.length+' com valor ou banco diferente do que está lançado hoje');
+  if(!confirm('Corrigir '+d.total+' movimento(s) do extrato?\n\n'+linhas.join('\n')+'\n\nConferido contra '+meses+' mês(es) de contas a pagar.\n\nOs órfãos são removidos e os demais reescritos conforme a conta a pagar de hoje. Nenhuma conta a pagar é apagada.'))return;
+  try{
+    for(const m of d.orfaos){BC_MOVS=BC_MOVS.filter(x=>x.id!==m.id);try{await BC_fbExcluir(BC_COL_MOV,m.id);}catch(e){}}
+    for(const dv of d.divergentes){try{BC_syncMovPagar(dv.conta);}catch(e){}}
+    BC_salvarCache();
+    if(typeof AUD_log==='function')AUD_log('editar','movimentacoes_contas','varredura','Varredura do extrato: '+d.orfaos.length+' órfão(s) removido(s), '+d.divergentes.length+' reescrito(s)',null,null);
+    BC_renderPainel();toast('✅ '+d.total+' movimento(s) corrigido(s) — saldo recalculado.');
+  }catch(e){toast('Erro: '+(e.message||e),'#ef4444');}
+};
+// PURO (espelha CF_planoExclusaoConta do NS): o que a conta bancária arrasta. Receber NÃO entra —
+// R_ é intocável neste sistema; só as contas do Pagar são desvinculadas.
+function BC_planoExclusaoConta(id,movs,transfs,meses){
+  const movimentos=(movs||[]).filter(m=>m&&String(m.contaId)===String(id));
+  const transferencias=(transfs||[]).filter(t=>t&&(String(t.origemId)===String(id)||String(t.destinoId)===String(id)));
+  const despesas=[];Object.keys(meses||{}).forEach(mk=>(meses[mk]||[]).forEach(r=>{if(r&&String(r.contaBancariaId||'')===String(id))despesas.push({mk,id:r.id,nome:r.nome});}));
+  return {movimentos,transferencias,despesas,temHistorico:movimentos.length>0||transferencias.length>0};
+}
+// Arquivar guarda o histórico; excluir apaga de vez. Faltava a segunda opção (espelha o NS).
+window.BC_excluirConta=async function(id){
+  const c=BC_CONTAS[id];if(!c)return;
+  const plano=BC_planoExclusaoConta(id,BC_MOVS,BC_TRANSFS,P_meses);
+  const linhas=[];
+  if(plano.movimentos.length)linhas.push('• '+plano.movimentos.length+' movimento(s) do extrato desta conta');
+  if(plano.transferencias.length)linhas.push('• '+plano.transferencias.length+' transferência(s) de/para ela');
+  if(plano.despesas.length)linhas.push('• '+plano.despesas.length+' conta(s) a pagar ficam SEM conta vinculada (os lançamentos NÃO são apagados)');
+  const sug=plano.temHistorico?'\n\nEsta conta tem histórico — se a ideia é só tirar da frente, use Arquivar em vez de excluir.':'';
+  if(!confirm('Excluir a conta "'+(c.nome||'conta')+'"?'+(linhas.length?'\n\nIsto remove:\n'+linhas.join('\n'):'')+sug+'\n\nEsta ação não pode ser desfeita.'))return;
+  try{
+    for(const m of plano.movimentos){BC_MOVS=BC_MOVS.filter(x=>x.id!==m.id);try{await BC_fbExcluir(BC_COL_MOV,m.id);}catch(e){}}
+    for(const t of plano.transferencias){BC_apagarMovsTransf(t.id);BC_TRANSFS=BC_TRANSFS.filter(x=>x.id!==t.id);try{await BC_fbExcluir(BC_COL_TRANSF,t.id);}catch(e){}}
+    if(plano.despesas.length){plano.despesas.forEach(d=>{const r=(P_meses[d.mk]||[]).find(x=>String(x.id)===String(d.id));if(r)delete r.contaBancariaId;});if(typeof P_salvarStorage==='function')P_salvarStorage();}
+    delete BC_CONTAS[id];try{await BC_fbExcluir(BC_COL,id);}catch(e){}
+    BC_salvarCache();if(typeof BC_popularSelectBaixa==='function')BC_popularSelectBaixa();BC_renderPainel();
+    if(typeof AUD_log==='function')AUD_log('excluir','contas_financeiras',c.nome||id,'Conta bancária excluída — '+plano.movimentos.length+' movimento(s), '+plano.transferencias.length+' transferência(s), '+plano.despesas.length+' desvinculada(s)',null,null);
+    toast('🗑️ Conta excluída.','#16a34a');
+  }catch(e){toast('Erro: '+(e.message||e),'#ef4444');}
+};
+// Apaga as duas pontas de uma transferência (id determinístico). Cobre editar, excluir e "voltar a prevista".
+function BC_apagarMovsTransf(tid){const ids=['mov_transf_'+tid+'_saida','mov_transf_'+tid+'_entrada'];BC_MOVS=(BC_MOVS||[]).filter(m=>!ids.includes(m.id));ids.forEach(i=>{try{BC_fbExcluir(BC_COL_MOV,i);}catch(e){}});}
+function BC_movsDaTransf(t){const d=t.data||BC_hoje(),desc='🔄 '+(t.descricao||'Transferência');return [
+  {id:'mov_transf_'+t.id+'_saida',contaId:t.origemId,tipo:'transferencia_saida',valor:Number(t.valor)||0,data:d,descricao:desc,origemTipo:'transferencia',origemId:t.id,transferenciaId:t.id,estornada:false},
+  {id:'mov_transf_'+t.id+'_entrada',contaId:t.destinoId,tipo:'transferencia_entrada',valor:Number(t.valor)||0,data:d,descricao:desc,origemTipo:'transferencia',origemId:t.id,transferenciaId:t.id,estornada:false}];}
+// Corrigir é editar; desfazer é excluir. Faltavam os dois (espelha o NS, 06/10/2026).
+window.BC_excluirTransf=async function(id){
+  const t=(BC_TRANSFS||[]).find(x=>x.id===id);if(!t){toast('Transferência não encontrada — atualize a tela.','#ef4444');return;}
+  const nm=i=>(BC_CONTAS[i]&&BC_CONTAS[i].nome)||'conta removida';
+  if(!confirm('Excluir a transferência de '+fmt(t.valor)+' de '+nm(t.origemId)+' para '+nm(t.destinoId)+'?\n\n'+(t.status==='concluida'?'O valor volta para a conta de origem e sai da de destino.':'Ela sai da previsão das duas contas.')))return;
+  try{BC_apagarMovsTransf(id);BC_TRANSFS=BC_TRANSFS.filter(x=>x.id!==id);await BC_fbExcluir(BC_COL_TRANSF,id);BC_salvarCache();BC_renderPainel();
+    if(typeof AUD_log==='function')AUD_log('excluir','transferencias_contas',id,'Transferência excluída — '+fmt(t.valor),null,null);toast('🗑️ Transferência excluída — saldo recalculado.','#16a34a');}
+  catch(e){toast('Erro: '+(e.message||e),'#ef4444');}
+};
+// A tela oferecia "prevista" sem caminho de volta: ficava presa na previsão para sempre.
+window.BC_concluirTransf=async function(id){
+  const t=(BC_TRANSFS||[]).find(x=>x.id===id);if(!t){toast('Transferência não encontrada — atualize a tela.','#ef4444');return;}
+  if(t.status==='concluida'){toast('Esta transferência já está concluída.');return;}
+  if(!confirm('Confirmar que a transferência de '+fmt(t.valor)+' aconteceu?\n\nEla sai da previsão e passa a mexer no saldo das duas contas, na data '+BC_dataBR(t.data||BC_hoje())+'.'))return;
+  try{t.status='concluida';await BC_fbUpsert(BC_COL_TRANSF,id,t);for(const m of BC_movsDaTransf(t)){BC_MOVS.push(m);await BC_fbUpsert(BC_COL_MOV,m.id,m);}BC_salvarCache();BC_renderPainel();
+    if(typeof AUD_log==='function')AUD_log('editar','transferencias_contas',id,'Transferência concluída — '+fmt(t.valor),'prevista','concluida');toast('🔄 Transferência concluída!');}
+  catch(e){toast('Erro: '+(e.message||e),'#ef4444');}
+};
+// Até agora as transferências eram invisíveis depois de salvas: não havia lista, logo não havia onde corrigir.
+function BC_renderTransfs(){
+  const el=document.getElementById('bcTransfs');if(!el)return;
+  const nm=i=>(BC_CONTAS[i]&&BC_CONTAS[i].nome)||'conta removida';
+  const lista=(BC_TRANSFS||[]).slice().sort((a,b)=>(a.status==='prevista'?0:1)-(b.status==='prevista'?0:1)||String(b.data||'').localeCompare(String(a.data||'')));
+  if(!lista.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  el.innerHTML=`<div style="font-weight:800;color:#0f172a;margin-bottom:2px">🔄 Transferências entre contas</div><div style="font-size:.8rem;color:#64748b;margin-bottom:8px">Dinheiro que só mudou de lugar — não é receita nem despesa.</div>`
+    +lista.slice(0,12).map(t=>{const prev=t.status==='prevista';return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #f1f5f9"><div><div style="font-weight:700;color:#0f172a;font-size:.9rem">${nm(t.origemId)} → ${nm(t.destinoId)}${prev?' <span style="font-size:.68rem;font-weight:800;background:#eff6ff;color:#1e40af;border-radius:8px;padding:1px 7px">📅 prevista</span>':''}</div><div style="font-size:.8rem;color:#64748b">${fmt(t.valor)} · ${BC_dataBR(t.data)}${t.descricao?' · '+String(t.descricao).replace(/</g,'&lt;'):''}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">${prev?`<button class="btn btn-purple" style="width:auto;padding:5px 11px;font-size:.78rem" onclick="BC_concluirTransf('${t.id}')">Já aconteceu</button>`:''}<button class="bc-fil" onclick="BC_novaTransf('${t.id}')">Corrigir</button><button class="bc-fil" style="color:#b91c1c;border-color:#fca5a5" onclick="BC_excluirTransf('${t.id}')">Excluir</button></div></div>`;}).join('')
+    +(lista.length>12?`<div style="font-size:.78rem;color:#64748b;margin-top:8px">Mostrando as 12 mais recentes de ${lista.length}.</div>`:'');
+}
+// Saldo ATUAL é o que já aconteceu: o filtro tinha piso (data do saldo inicial) mas não teto, então
+// movimento com data futura já entrava no saldo de hoje. O que ainda vai acontecer é papel da
+// previsão. Espelha o NS (06/10/2026).
+function BC_saldoConta(id){const c=BC_CONTAS[id];if(!c||!c.saldoConfigurado)return null;const base=Number(c.saldoInicial)||0;const db=c.dataSaldoInicial||'0000-00-00';const hoje=BC_hoje();return base+BC_movsDaConta(id).filter(m=>(m.data||'')>=db&&(m.data||'')<=hoje).reduce((s,m)=>s+BC_movContrib(m),0);}
 function BC_despesasAbertas(id){let s=0;Object.keys(P_meses||{}).forEach(m=>(P_meses[m]||[]).forEach(r=>{if(String(r.contaBancariaId||'')===String(id))s+=Math.max(0,(Number(r.valor)||0)-(Number(r.valorPago)||0));}));return s;}
 // Receber é intocável → projeção atribuída à conta principal (a receber em aberto do mês)
 function BC_receitasAbertas(id){const c=BC_CONTAS[id];if(!c||!c.principal)return 0;const mref=mesAtualReal();return (R_todosOsDados||[]).filter(r=>r.mes===mref&&Number(r.saldo)>0).reduce((s,r)=>s+Number(r.saldo||0),0);}
@@ -4410,13 +4532,21 @@ function BC_popularSelectBaixa(){
 }
 
 // ── Transferências ──
-function BC_novaTransf(){
-  const ativas=BC_contasAtivas();if(ativas.length<2){toast('Você precisa de pelo menos 2 contas ativas pra transferir.','#f59e0b');return;}
-  const opts=ativas.map(id=>`<option value="${id}">${BC_CONTAS[id].nome}</option>`).join('');
+function BC_novaTransf(id){
+  const t=id?(BC_TRANSFS||[]).find(x=>x.id===id):null; if(id&&!t){toast('Transferência não encontrada — atualize a tela.','#ef4444');return;}
+  const ativas=BC_contasAtivas();
+  // na edição, as contas da transferência entram mesmo se arquivadas depois — senão o select cairia
+  // na primeira ativa e trocaria o banco sem ninguém pedir
+  const lista=t?[...ativas,...Object.keys(BC_CONTAS).filter(i=>!ativas.includes(i)&&(i===t.origemId||i===t.destinoId))]:ativas;
+  if(lista.length<2){toast('Você precisa de pelo menos 2 contas ativas pra transferir.','#f59e0b');return;}
+  const opts=lista.map(i=>`<option value="${i}">${BC_CONTAS[i].nome}</option>`).join('');
   const o=document.getElementById('bcTransfOrigem'),d=document.getElementById('bcTransfDestino');
-  o.innerHTML=opts;d.innerHTML=opts;d.selectedIndex=1;
-  document.getElementById('bcTransfValor').value='';document.getElementById('bcTransfData').value=BC_hoje();
-  document.getElementById('bcTransfDesc').value='';document.getElementById('bcTransfStatus').value='concluida';
+  o.innerHTML=opts;d.innerHTML=opts;
+  document.getElementById('bcTransfId').value=t?t.id:'';
+  const tit=document.getElementById('bcTransfTitulo');if(tit)tit.textContent=t?'🔄 Corrigir transferência':'🔄 Transferência entre contas';
+  const btn=document.getElementById('bcTransfBtn');if(btn)btn.textContent=t?'✅ Salvar':'✅ Transferir';
+  if(t){o.value=t.origemId||'';d.value=t.destinoId||'';document.getElementById('bcTransfValor').value=Number(t.valor)||'';document.getElementById('bcTransfData').value=t.data||BC_hoje();document.getElementById('bcTransfDesc').value=t.descricao||'';document.getElementById('bcTransfStatus').value=t.status||'concluida';}
+  else{d.selectedIndex=1;document.getElementById('bcTransfValor').value='';document.getElementById('bcTransfData').value=BC_hoje();document.getElementById('bcTransfDesc').value='';document.getElementById('bcTransfStatus').value='concluida';}
   document.getElementById('bcTransfBg').classList.add('open');
 }
 function BC_fecharTransf(){document.getElementById('bcTransfBg').classList.remove('open');}
@@ -4427,15 +4557,18 @@ async function BC_salvarTransf(){
   if(!origem||!destino){toast('Escolha as contas.','#ef4444');return;}
   if(origem===destino){toast('Origem e destino não podem ser a mesma.','#ef4444');return;}
   if(valor<=0){toast('Informe um valor maior que zero.','#ef4444');return;}
-  const tid='t'+Date.now()+Math.floor(Math.random()*9999);
+  const idEd=(document.getElementById('bcTransfId')||{}).value||'';
+  const antes=idEd?(BC_TRANSFS||[]).find(x=>x.id===idEd):null; if(idEd&&!antes){toast('Transferência não encontrada — atualize a tela.','#ef4444');return;}
+  const tid=idEd||('t'+Date.now()+Math.floor(Math.random()*9999));
   const t={id:tid,origemId:origem,destinoId:destino,valor,data,descricao:desc,status};
-  BC_TRANSFS.push(t);await BC_fbUpsert(BC_COL_TRANSF,tid,t);
-  if(status==='concluida'){
-    const m1={id:'mov_transf_'+tid+'_saida',contaId:origem,tipo:'transferencia_saida',valor,data,descricao:'🔄 '+(desc||'Transferência'),origemTipo:'transferencia',origemId:tid,transferenciaId:tid,estornada:false};
-    const m2={id:'mov_transf_'+tid+'_entrada',contaId:destino,tipo:'transferencia_entrada',valor,data,descricao:'🔄 '+(desc||'Transferência'),origemTipo:'transferencia',origemId:tid,transferenciaId:tid,estornada:false};
-    BC_MOVS.push(m1,m2);await BC_fbUpsert(BC_COL_MOV,m1.id,m1);await BC_fbUpsert(BC_COL_MOV,m2.id,m2);
-  }
-  BC_fecharTransf();BC_renderPainel();toast(status==='concluida'?'🔄 Transferência concluída!':'📅 Transferência prevista registrada!');
+  // As duas pontas são SEMPRE refeitas a partir do que a transferência diz agora: trocar a conta
+  // deixava o par antigo pendurado no banco errado; voltar a "prevista" precisa apagar sem recriar.
+  if(idEd){BC_apagarMovsTransf(tid);BC_TRANSFS=BC_TRANSFS.map(x=>x.id===tid?t:x);}else BC_TRANSFS.push(t);
+  await BC_fbUpsert(BC_COL_TRANSF,tid,t);
+  if(status==='concluida'){for(const m of BC_movsDaTransf(t)){BC_MOVS.push(m);await BC_fbUpsert(BC_COL_MOV,m.id,m);}}
+  BC_salvarCache();
+  if(typeof AUD_log==='function')AUD_log(idEd?'editar':'criar','transferencias_contas',tid,(idEd?'Transferência corrigida — ':'Transferência — ')+fmt(valor),null,null);
+  BC_fecharTransf();BC_renderPainel();toast(idEd?'✅ Transferência atualizada!':(status==='concluida'?'🔄 Transferência concluída!':'📅 Transferência prevista registrada!'));
 }
 
 // ── Conferir / ajustar saldo ──
@@ -4499,7 +4632,7 @@ function BC_renderAvisoSaldo(){
   el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>💛 Informe o saldo da conta ${BC_CONTAS[id].nome||''}</b><br><span style="font-size:.8rem">Assim os cálculos começam certos, a partir de hoje. É só o saldo que aparece no app do banco agora.</span></div><button class="btn btn-purple" style="width:auto" onclick="BC_abrirModal('${id}')">Informar saldo</button></div>`;
 }
 function BC_renderPainel(){
-  BC_renderAvisoSaldo();
+  BC_renderAvisoSaldo();try{BC_renderAvisoMovs();}catch(e){}try{BC_renderTransfs();}catch(e){}
   const ativas=BC_contasAtivas();
   const config=ativas.filter(id=>BC_CONTAS[id].saldoConfigurado);
   const somaAtual=config.reduce((s,id)=>s+(BC_saldoConta(id)||0),0);
@@ -4520,7 +4653,7 @@ function BC_renderPainel(){
 function BC_cardHTML(id){
   const c=BC_CONTAS[id];const cor=c.cor||'#16a34a';const saldo=BC_saldoConta(id);
   const chips=[c.principal?'<span class="bc-chip principal">⭐ Principal</span>':'','<span class="bc-chip">'+(c.titular||'WEN')+'</span>','<span class="bc-chip">'+BC_tipoInfo(c.tipo).label+'</span>',c.arquivada?'<span class="bc-chip">🗄️ Arquivada</span>':''].join('');
-  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();IMP_abrir('conta','${id}')">📥 Importar extrato</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
+  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();IMP_abrir('conta','${id}')">📥 Importar extrato</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
   return `<div class="bc-card${c.arquivada?' arquivada':''}" onclick="BC_abrirExtrato('${id}')">
     <div class="bc-faixa" style="background:${cor}"></div>
     <div class="bc-body">
@@ -7049,16 +7182,24 @@ function salvarContaP(){
     const mes=P_editandoMes||P_mesAtual;const original=(P_meses[mes]||[]).find(r=>String(r.id)===String(P_editandoId))||Object.values(P_meses).flat().find(r=>String(r.id)===String(P_editandoId));
     if(!compSel&&original&&original.competencia)delete base.competencia; // limpou o override → volta pro mês do bucket (não reintroduz o antigo via merge)
     const algumaMudanca=original&&(original.valor!==novoValor||original.fixa!==novaFixa||original.dia!==(parseInt(document.getElementById('pFDia').value)||null));
+    const pagoAntes=Number(original&&original.valorPago)||0, estavaPaga=original?(pagoAntes>=(Number(original.valor)||0)-0.005&&pagoAntes>0):false;
+    if(estavaPaga&&base.status!=='PAGO'&&!confirm('Desmarcar o pagamento de "'+nome+'"?\n\nA conta volta a ficar em aberto e o débito sai do saldo da conta bancária.'))return;
     const futuros=P_getMesesFuturos();fecharModalP();
     // preserva campos das Fases 1/2/4 (contaBancariaId, dataPagamento, juros/multa/desconto, faturaCartao, dataCriacao) que não estão no formulário
     const mesclado={...original,...base,competencia:base.competencia,id:P_editandoId};if(base.competencia===undefined)delete mesclado.competencia;
+    // Pagamento na edição: PAGO quita; desmarcar PAGO zera (e BC_syncMovPagar apaga o débito); baixa
+    // PARCIAL é preservada — antes qualquer edição zerava o que já tinha sido pago, porque o seletor
+    // só conhece Pendente/Pago. Espelha o NS (06/10/2026).
+    if(base.status==='PAGO'){mesclado.valorPago=novoValor;mesclado.status='PAGO';if(!mesclado.dataPagamento)mesclado.dataPagamento=BC_hoje();}
+    else if(estavaPaga){mesclado.valorPago=0;mesclado.status='PENDENTE';delete mesclado.dataPagamento;}
+    else{mesclado.valorPago=Math.min(pagoAntes,novoValor);mesclado.status=mesclado.valorPago>0?'PARCIAL':'PENDENTE';}
     if(algumaMudanca&&futuros.length>0){
-      P_pendingEdit={conta:mesclado,nomeOriginal:original.nome,mes};
+      P_pendingEdit={conta:mesclado,nomeOriginal:original.nome,mes,original:{...original}};
       let mudancas=[];if(original.valor!==novoValor)mudancas.push(`Valor: <b>${fmt(original.valor)}</b> → <b>${fmt(novoValor)}</b>`);
       document.getElementById('pConfirmInfo').innerHTML=`<b>${nome}</b><br>${mudancas.join('<br>')||'Dados atualizados'}`;
       document.querySelectorAll('.prop-opcao').forEach((el,i)=>{el.classList.toggle('selected',i===0);el.querySelector('input').checked=i===0;});
       document.getElementById('pConfirmBg').classList.add('open');
-    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1)P_meses[mes][idx]=mesclado;AUD_log('editar','meses',nome,'Conta editada',original?original.valor:null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
+    }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1){P_meses[mes][idx]=mesclado;if(P_mexeuNoPago(original,mesclado)){try{BC_syncMovPagar(mesclado);BC_salvarCache();}catch(e){}}}AUD_log('editar','meses',nome,'Conta editada',original?original.valor:null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
   }else{
     const sel=[...document.querySelectorAll('#pMesesCheck input:checked')].map(i=>i.value);if(!sel.length){toast('Selecione ao menos um mês.','#ef4444');return;}
     const agora=new Date().toISOString();
@@ -7071,7 +7212,7 @@ function selecionarPropOpcaoP(el,v){document.querySelectorAll('.prop-opcao').for
 function cancelarPropagacaoP(){document.getElementById('pConfirmBg').classList.remove('open');P_pendingEdit=null;}
 function confirmarPropagacaoP(){
   const opcao=document.querySelector('input[name=pPropOp]:checked')?.value||'somente';document.getElementById('pConfirmBg').classList.remove('open');if(!P_pendingEdit)return;
-  const{conta,nomeOriginal,mes}=P_pendingEdit;const m=mes||P_mesAtual;const idx=(P_meses[m]||[]).findIndex(r=>String(r.id)===String(conta.id));if(idx>-1)P_meses[m][idx]={...conta};
+  const{conta,nomeOriginal,mes,original}=P_pendingEdit;const m=mes||P_mesAtual;const idx=(P_meses[m]||[]).findIndex(r=>String(r.id)===String(conta.id));if(idx>-1){P_meses[m][idx]={...conta};if(P_mexeuNoPago(original,conta)){try{BC_syncMovPagar(P_meses[m][idx]);BC_salvarCache();}catch(e){}}}
   let atualizados=0;
   if(opcao==='futuros'){P_getMesesFuturos().forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;atualizados++;}});toast('✅ '+atualizados+' meses futuros atualizados!');}
   else if(opcao==='todos'){[...P_getMesesPassados(),...P_getMesesFuturos()].forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;atualizados++;}});toast('✅ Todos os meses atualizados!');}
@@ -7088,10 +7229,15 @@ function P_excluirContaCtx(id,mes){
 function confirmarExcluirP(){
   const opcao=document.querySelector('input[name=pExclOp]:checked')?.value||'somente';document.getElementById('pExclBg').classList.remove('open');if(!P_pendingExcluir)return;
   const{id,nome,mes}=P_pendingExcluir;const m=mes||P_mesAtual;
+  const idsAntes=P_idsPorMes(P_meses);   // para estornar o débito de cada conta que sair (ver abaixo)
   if(opcao==='somente'){P_meses[m]=(P_meses[m]||[]).filter(r=>String(r.id)!==String(id));toast('🗑️ Removida deste mês!','#ef4444');}
   else if(opcao==='futuros'){P_meses[m]=(P_meses[m]||[]).filter(r=>String(r.id)!==String(id));P_getMesesOrdenados().filter(k=>k>m).forEach(ms=>{P_meses[ms]=(P_meses[ms]||[]).filter(r=>r.nome!==nome);});toast('🗑️ Removida deste mês e futuros!','#ef4444');}
   else{Object.keys(P_meses).forEach(ms=>{P_meses[ms]=(P_meses[ms]||[]).filter(r=>r.nome!==nome);});toast('🗑️ Removida de todos!','#ef4444');}
   AUD_log('excluir','meses',nome,'Conta excluída ('+opcao+')',null,null); // Fase 14 auditoria
+  // O débito no banco sai JUNTO. Antes a conta sumia e o movimento ficava no extrato para sempre —
+  // saldo errado sem nenhuma tela explicando de onde vinha (relato do Will no NS, 06/10/2026).
+  let estornos=0;P_idsRemovidos(idsAntes,P_meses).forEach(cid=>{if(BC_removerMovPagar(cid))estornos++;});
+  if(estornos){BC_salvarCache();if(mainAtivo==='contas')try{BC_renderPainel();}catch(e){}}
   P_pendingExcluir=null;P_salvarStorage();renderTabelaP();renderDashboardP();
 }
 function P_editarContaCtx(id,mes){const m=mes||P_mesAtual;const prev=P_mesAtual;P_mesAtual=m;P_editandoMes=m;abrirModalP(id);P_mesAtual=prev;}
