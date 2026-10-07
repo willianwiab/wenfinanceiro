@@ -1,0 +1,20 @@
+# Suíte Node do WEN Financeiro a cada push: paridade com o Nossa Semente (CE_, EV_), cartão, Pagar/banco,
+# cache, quota, versão selada. Os testes de navegador (Playwright) precisam de servidor local em ?mock
+# e ficam fora. versao.test falha se o commit não passou pelo bump-version.sh — é a guarda certa.
+name: testes
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Suíte Node (sem navegador)
+        run: |
+          f=0
+          for t in $(grep -L chromium test/*.test.mjs); do
+            if ! node "$t" > /tmp/saida.txt 2>&1; then f=$((f+1)); echo "❌ $t"; tail -25 /tmp/saida.txt; fi
+          done
+          echo "arquivos com falha: $f"; [ "$f" -eq 0 ]
