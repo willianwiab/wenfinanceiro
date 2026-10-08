@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-d59c1aab';
+window.APP_VERSION='20261008-364027f1';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1341,8 +1341,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <option value="manual">✍️ Manuais</option>
           <option value="fixa">📌 Fixas</option>
           <option value="fatura">💳 Faturas de cartão</option>
-          <option value="extrato">📥 Vindas do extrato</option>
-          <option value="conciliada">🔗 Conciliadas c/ extrato</option>
+          <option value="extrato">📥 Vindas do extrato (OFX)</option>
         </select>
       </div>
       <div style="padding:7px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap;border-bottom:1px solid #f1f5f9;background:#fafafa;font-size:.8rem;color:#6b7280">
@@ -7167,7 +7166,7 @@ function renderTabelaP(){
   // Tudo que vem do extrato nasce PAGO (a conciliação dá a baixa na hora). Se o chip de
   // status filtrasse antes, pedir esses recortes devolveria lista vazia sem explicar nada.
   // Nesses dois o status não filtra: mostra pago e não pago, que é o ponto de olhar pra lá.
-  const origemIgnoraStatus=(origemFiltro==='extrato'||origemFiltro==='conciliada');
+  const origemIgnoraStatus=(origemFiltro==='extrato');
   let data=[];
   if(P_filtroAtual==='VENCIDO'&&!origemIgnoraStatus){
     const mesesBuscar=mesFiltro&&mesFiltro!=='TODOS_MESES'?[mesFiltro]:P_getMesesOrdenados();
@@ -7190,9 +7189,9 @@ function renderTabelaP(){
     if(origemFiltro==='sistema')return !doExtrato;
     if(origemFiltro==='fatura')return !!r.faturaCartao;
     if(origemFiltro==='fixa')return fixa&&!r.faturaCartao;
-    if(origemFiltro==='extrato')return doExtrato;
-    if(origemFiltro==='conciliada')return !!r.conciliadoMov;
+    if(origemFiltro==='extrato')return doExtrato||!!r.conciliadoMov;
     // "Manual" é o que você digitou: nem fatura, nem fixa, nem nascida do extrato.
+    // (ter sido conciliada depois não muda quem a criou)
     if(origemFiltro==='manual')return !r.faturaCartao&&!fixa&&!doExtrato;
     return true;
   });
@@ -7225,13 +7224,40 @@ function renderTabelaP(){
       <td class="center"><button class="toggle-btn-p" onclick="P_editarContaCtx('${r.id}','${mesR}')">✏️</button><button class="toggle-btn-p" title="Mover para outro mês" onclick="P_moverMesCtx('${r.id}','${mesR}')">📆</button><button class="toggle-btn-p" onclick="P_excluirContaCtx('${r.id}','${mesR}')">🗑️</button></td>
     </tr>`;
   });
-  if(!rows)rows=`<tr><td colspan="7" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
-  if(origemIgnoraStatus&&P_filtroAtual!=='TODOS'){
-    const rot=origemFiltro==='extrato'?'vindas do extrato':'conciliadas com o extrato';
-    banner.innerHTML=`📥 Mostrando <b>todas as ${rot}</b>, pagas e não pagas — o filtro de status está desconsiderado neste recorte.`;
+  // Linhas de DÉBITO do OFX que ainda não viraram conta a pagar. Antes só existiam na
+  // tela de Conciliação — quem importava o extrato e vinha aqui via "Nenhuma conta" e não
+  // tinha como saber que elas estavam esperando em outro lugar. Entram como linha de
+  // trabalho, com o botão que as transforma em conta.
+  let soltas=[];
+  if(origemFiltro==='extrato'){
+    soltas=P_movsOfxSoltas(mesFiltro&&mesFiltro!=='TODOS_MESES'?mesFiltro:P_mesAtual)
+      .filter(m=>!busca||(m.descricao||'').toLowerCase().includes(busca))
+      .filter(m=>{const v=Math.abs(Number(m.valor)||0);return v>=filtroMin&&v<=filtroMax;});
+    rows+=soltas.map(m=>{
+      const v=Math.abs(Number(m.valor)||0);const dia=parseInt(String(m.data||'').split('-')[2])||'';
+      const desc=String(m.descricao||'Movimentação').replace(/^📥\s*/,'').replace(/</g,'&lt;');
+      return `<tr style="background:#fffbeb">
+        <td><div style="font-weight:600">${desc}</div><div style="font-size:.72rem;color:#92400e">📥 só no extrato — ainda não é conta a pagar</div></td>
+        <td class="center">${dia?'Dia '+dia:'—'}</td>
+        <td class="right">${fmt(v)}</td>
+        <td class="right" style="color:#92400e">${fmt(v)}</td>
+        <td class="center"><span class="badge-p" style="background:#fef3c7;color:#92400e">📥 no extrato</span></td>
+        <td class="center"><button class="btn-parcial-p" onclick="CONC_criarLanc('${m.id}','pagar')">➕ Virar conta</button></td>
+        <td class="center"><button class="toggle-btn-p" title="Abrir a Conciliação pra casar com uma conta existente" onclick="CONC_irConciliar()">🔗</button></td>
+      </tr>`;
+    }).join('');
   }
-  const total=data.reduce((a,r)=>a+r.valor,0),totalSaldo=data.reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0);
-  document.getElementById('pTabelaDiv').innerHTML=`<table class="t-pagar"><thead><tr>${thSort('nome','Descrição')}${thSort('dia','Venc.')}${thSort('valor','Valor')}${thSort('saldo','Saldo')}<th style="text-align:center">Status</th><th style="text-align:center">Baixa</th><th style="text-align:center">Ações</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">TOTAL (${data.length})</td><td style="text-align:right">${fmt(total)}</td><td style="text-align:right">${fmt(totalSaldo)}</td><td colspan="3"></td></tr></tfoot></table>`;
+  if(!rows)rows=`<tr><td colspan="7" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
+  if(origemFiltro==='extrato'){
+    const partes=[];
+    if(P_filtroAtual!=='TODOS')partes.push('pagas e não pagas (o filtro de status não vale aqui)');
+    if(soltas.length)partes.push(`<b>${soltas.length}</b> linha(s) ainda só no extrato, em amarelo`);
+    banner.innerHTML=partes.length?`📥 Mostrando tudo que veio do OFX — ${partes.join(' · ')}.`:'';
+  }
+  const somaSoltas=soltas.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0);
+  const total=data.reduce((a,r)=>a+r.valor,0)+somaSoltas,totalSaldo=data.reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0)+somaSoltas;
+  const qtdTotal=data.length+soltas.length;
+  document.getElementById('pTabelaDiv').innerHTML=`<table class="t-pagar"><thead><tr>${thSort('nome','Descrição')}${thSort('dia','Venc.')}${thSort('valor','Valor')}${thSort('saldo','Saldo')}<th style="text-align:center">Status</th><th style="text-align:center">Baixa</th><th style="text-align:center">Ações</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">TOTAL (${qtdTotal})</td><td style="text-align:right">${fmt(total)}</td><td style="text-align:right">${fmt(totalSaldo)}</td><td colspan="3"></td></tr></tfoot></table>`;
 }
 
 // Modal Pagar
@@ -8158,6 +8184,19 @@ function CONC_movs(){return (BC_MOVS||[]).filter(m=>m.origemTipo==='import'&&!m.
 // pelo "Criar lançamento" da Conciliação. O marcador certo é `origemExtrato`; o `obs` é o
 // reconhecimento das que foram criadas antes do marcador existir (08/10/2026) — retroativo.
 function P_veioDoExtrato(r){return !!r&&(!!r.origemExtrato||r.obs==='Criado do extrato');}
+// Débitos do extrato do mês que ainda não têm conta a pagar atrás deles.
+function P_movsOfxSoltas(mesKey){
+  if(typeof CONC_movs!=='function')return [];
+  return CONC_movs().filter(m=>{
+    if(m.tipo!=='saida')return false;                       // crédito não é conta a pagar
+    if(CONC_movLinkado(m.id)||CONC_movIgnorado(m.id))return false;
+    return CONC_isoToKey(m.data||'')===mesKey;
+  }).sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
+}
+function CONC_irConciliar(){
+  const nb=[...document.querySelectorAll('.nav-main button')].find(b=>/A Pagar/.test(b.textContent));if(nb)showMain('pagar',nb);
+  const sb=[...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b=>/Concilia/.test(b.textContent));if(sb)showSubP('p-conciliacao',sb);
+}
 function CONC_diasEntre(a,b){const da=new Date((a||'')+'T12:00:00'),db=new Date((b||'')+'T12:00:00');if(isNaN(da)||isNaN(db))return 999;return Math.abs(Math.round((da-db)/86400000));}
 function CONC_brToIso(br){const p=(br||'').split('/');if(p.length===3)return p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0');return '';}
 function CONC_isoToKey(iso){const p=(iso||'').split('-');if(p.length<2)return '';return (MESES_ABREV[(+p[1])-1]||'JAN')+'/'+p[0];}

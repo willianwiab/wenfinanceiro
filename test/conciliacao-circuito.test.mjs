@@ -96,10 +96,40 @@ const r = await page.evaluate(async () => {
   // a tabela mostra o mês corrente do A Pagar; as contas do teste estão em AGO/2026
   out.mes = { antes: P_mesAtual };
   P_mesAtual = 'AGO/2026'; P_filtroAtual = 'TODOS';
+  // uma conta que o OFX NUNCA tocou, pra provar que o recorte exclui de verdade
+  (P_meses['AGO/2026'] = P_meses['AGO/2026'] || []).push(
+    { id: 'pmock_intacta', nome: 'Conta que o banco nao tocou', valor: 10, valorPago: 0, dia: 28,
+      mes: 'AGO/2026', categoria: 'outros', fixa: false, status: 'PENDENTE', cod: '', obs: '' });
   const contaCom = v => { sel.value = v; renderTabelaP(); return document.querySelectorAll('#pTabelaDiv tbody tr').length; };
   out.contagens = { todas: contaCom(''), extrato: contaCom('extrato'), manual: contaCom('manual') };
   const textoCom = v => { sel.value = v; renderTabelaP(); return document.getElementById('pTabelaDiv').textContent; };
   out.textos = { extrato: textoCom('extrato'), manual: textoCom('manual'), sistema: textoCom('sistema') };
+
+  // ── 6b. linha do OFX que AINDA não virou conta aparece na lista ──
+  const movSolta = { id: 'mov_ofx_bmock1_FITSOLTA', contaId: 'bmock1', tipo: 'saida', valor: 55.5,
+                     data: '2026-08-25', descricao: '📥 DEBITO AVULSO SEM CONTA', categoria: null,
+                     origemTipo: 'import', origemId: 'FITSOLTA', estornada: false };
+  const movCredito = { id: 'mov_ofx_bmock1_FITCRED', contaId: 'bmock1', tipo: 'entrada', valor: 900,
+                       data: '2026-08-26', descricao: '📥 PIX RECEBIDO', categoria: null,
+                       origemTipo: 'import', origemId: 'FITCRED', estornada: false };
+  BC_MOVS.push(movSolta, movCredito);
+  sel.value = 'extrato'; renderTabelaP();
+  const tExtrato = document.getElementById('pTabelaDiv').textContent;
+  out.soltas = {
+    helperAcha: P_movsOfxSoltas('AGO/2026').map(m => m.id),
+    apareceNaLista: /DEBITO AVULSO SEM CONTA/.test(tExtrato),
+    dizQueNaoEhConta: /ainda não é conta a pagar/.test(tExtrato),
+    temBotaoVirarConta: /Virar conta/.test(document.getElementById('pTabelaDiv').innerHTML),
+    creditoFicaDeFora: !/PIX RECEBIDO/.test(tExtrato),
+    somaNoTotal: /55,50|TOTAL \(3\)/.test(tExtrato),
+    avisaNoBanner: /só no extrato/.test(document.getElementById('vencidoBanner-p').innerHTML),
+  };
+  // a que JÁ virou conta não pode aparecer duas vezes
+  out.semDuplicata = (tExtrato.match(/PIX avulso do extrato/g) || []).length === 1;
+  // e no padrão "Do sistema" as soltas não aparecem
+  sel.value = 'sistema'; renderTabelaP();
+  out.soltasForaDoPadrao = !/DEBITO AVULSO SEM CONTA/.test(document.getElementById('pTabelaDiv').textContent);
+  BC_MOVS = BC_MOVS.filter(m => m.id !== 'mov_ofx_bmock1_FITSOLTA' && m.id !== 'mov_ofx_bmock1_FITCRED');
 
   // ── 7. o padrão é "🏠 Do sistema" e ele esconde só o que veio do extrato ──
   const selLimpo = document.createElement('div');
@@ -109,6 +139,7 @@ const r = await page.evaluate(async () => {
     primeiraOpcao: [...sel.options][0].value,
     escondeExtrato: !/PIX avulso do extrato/.test(out.textos.sistema),
     mantemManual: /Compra sem identificar/.test(out.textos.sistema),
+    conciliarNaoExpulsaDoPadrao: /Compra sem identificar/.test(out.textos.sistema),
   };
 
   // ── 8. com o chip em "Pendentes", pedir o extrato AINDA mostra (nasce PAGO) ──
@@ -116,7 +147,7 @@ const r = await page.evaluate(async () => {
   sel.value = 'extrato'; renderTabelaP();
   out.chipPendente = {
     aparece: /PIX avulso do extrato/.test(document.getElementById('pTabelaDiv').textContent),
-    avisa: /filtro de status está desconsiderado/.test(document.getElementById('vencidoBanner-p').innerHTML),
+    avisa: /filtro de status não vale aqui/.test(document.getElementById('vencidoBanner-p').innerHTML),
   };
   // e com o chip em Pendentes + padrão do sistema, o status volta a valer
   sel.value = 'sistema'; renderTabelaP();
@@ -165,17 +196,31 @@ ok('já nasce conciliada com a movimentação', r.criada.jaNasceConciliada);
 ok('é reconhecida como vinda do extrato', r.criada.reconheceComoExtrato);
 ok('RETROATIVO: pega as antigas pelo obs', r.retroativo.peloObs && r.retroativo.naoPegaQualquerUma, r.retroativo);
 ok('digitada à mão NÃO é "vinda do extrato"', r.separacao.manualNaoEhExtrato);
-ok('conciliada à mão também não vira "do extrato"', r.separacao.conciliadaNaoViraExtrato);
+ok('a casada à mão NÃO carrega o marcador de nascida', r.separacao.conciliadaNaoViraExtrato);
 ok('cada recorte é menor que o total', r.contagens.extrato < r.contagens.todas && r.contagens.manual < r.contagens.todas, r.contagens);
-ok('"📥 Vindas do extrato" mostra SÓ a nascida do extrato',
-   /PIX avulso do extrato/.test(r.textos.extrato) && !/Compra sem identificar/.test(r.textos.extrato));
-ok('"✍️ Manuais" mostra SÓ a digitada à mão',
-   /Compra sem identificar/.test(r.textos.manual) && !/PIX avulso do extrato/.test(r.textos.manual));
+// "Vindas do extrato (OFX)" = tudo que o extrato tocou: a que NASCEU dele e a que foi CASADA com ele.
+ok('mostra a que nasceu do extrato', /PIX avulso do extrato/.test(r.textos.extrato));
+ok('mostra também a que foi casada com o extrato', /Compra sem identificar/.test(r.textos.extrato));
+ok('NÃO mostra a conta que o banco nunca tocou', !/Conta que o banco nao tocou/.test(r.textos.extrato));
+ok('"✍️ Manuais" exclui a nascida do extrato', !/PIX avulso do extrato/.test(r.textos.manual));
+ok('"✍️ Manuais" mantém a digitada, mesmo conciliada', /Compra sem identificar/.test(r.textos.manual));
+
+console.log('\n── linhas do OFX que ainda não viraram conta ──');
+ok('o helper acha só o débito solto', r.soltas.helperAcha.length === 1 && r.soltas.helperAcha[0] === 'mov_ofx_bmock1_FITSOLTA', r.soltas.helperAcha);
+ok('aparece na lista de 📥 Vindas do extrato', r.soltas.apareceNaLista);
+ok('a linha diz que ainda não é conta a pagar', r.soltas.dizQueNaoEhConta);
+ok('tem o botão "Virar conta"', r.soltas.temBotaoVirarConta);
+ok('crédito (PIX recebido) fica de fora', r.soltas.creditoFicaDeFora);
+ok('entra no TOTAL do rodapé', r.soltas.somaNoTotal);
+ok('o aviso conta quantas estão só no extrato', r.soltas.avisaNoBanner);
+ok('a que já virou conta não duplica', r.semDuplicata);
+ok('no padrão 🏠 Do sistema elas não aparecem', r.soltasForaDoPadrao);
 
 console.log('\n── padrão 🏠 Do sistema ──');
 ok('"sistema" é a opção marcada por padrão', r.padrao.valorInicial === 'sistema' && r.padrao.primeiraOpcao === 'sistema', r.padrao);
 ok('o padrão esconde o que veio do extrato', r.padrao.escondeExtrato);
 ok('o padrão mantém as digitadas à mão', r.padrao.mantemManual);
+ok('conciliar NÃO expulsa a conta do padrão', r.padrao.conciliarNaoExpulsaDoPadrao);
 
 console.log('\n── pago ou não pago, o extrato sempre aparece ──');
 ok('chip em Pendentes NÃO esconde a vinda do extrato', r.chipPendente.aparece, r.chipPendente);
