@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-364027f1';
+window.APP_VERSION='20261008-2ed00b89';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -334,6 +334,13 @@ body{background:#f0f4f8;color:#1e293b}
 .notif-vazio{text-align:center;padding:18px;color:#6b7280;font-size:.83rem}
 .notif-divider{height:1px;background:#f1f5f9;margin:3px 14px}
 .notif-pill{font-size:.7rem;padding:2px 7px;border-radius:20px;font-weight:700;white-space:nowrap;flex-shrink:0}
+.notif-x{background:none;border:none;cursor:pointer;color:#cbd5e1;font-size:1rem;line-height:1;padding:3px 5px;border-radius:6px;flex-shrink:0}
+.notif-x:hover{background:#fee2e2;color:#b91c1c}
+.notif-limpar{margin-left:auto;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:.66rem;font-weight:700;text-transform:none;letter-spacing:0;padding:2px 6px;border-radius:6px}
+.notif-limpar:hover{background:#f1f5f9;color:#475569}
+.notif-rodape{border-top:1px solid #f1f5f9;padding:8px 12px;text-align:center}
+.notif-rodape button{background:none;border:none;cursor:pointer;color:#6b7280;font-size:.72rem;font-weight:600;padding:4px 8px;border-radius:6px}
+.notif-rodape button:hover{background:#f1f5f9;color:#0f172a}
 
 /* Tabela receber */
 .table-wrap-r{background:white;border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden}
@@ -2585,7 +2592,7 @@ function toast(msg,cor='#16a34a',ms=2800){
 // ══════════════════════════════════════════════════════
 const SIMULACAO_LOCAL = new URLSearchParams(location.search).has('mock');
 if (SIMULACAO_LOCAL){
-  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, cartao_parcelas:{}, cartao_faturas:{}, cartao_regras:{}, centros_custo:{}, projetos:{}, config_ia:{}, contas_fixas:{}, auditoria:{} };
+  const MOCK_DB = { lancamentos:{}, banco_conciliados:{}, banco_regras:{}, agenda_notif_dispensadas:{}, categorias_pagar:{}, meses:{}, contas_financeiras:{}, movimentacoes_contas:{}, transferencias_contas:{}, cartoes:{}, cartao_lancamentos:{}, cartao_parcelas:{}, cartao_faturas:{}, cartao_regras:{}, centros_custo:{}, projetos:{}, config_ia:{}, contas_fixas:{}, auditoria:{} };
 
   const seedFV = (col, id, obj) => { const f={}; Object.keys(obj).forEach(k=>f[k]=toFV(obj[k])); MOCK_DB[col][id]=f; };
 
@@ -3027,6 +3034,11 @@ const R_ICS_PROXY_KEY='wen_ics_proxy_url';
 const R_ICS_IGNORADOS_KEY='wen_agenda_ignorados';
 const R_ICS_PROXY_DEFAULT='https://script.google.com/macros/s/AKfycbzLutnhFnil5Z2w6E3pOrzcj3rhQJwdk8OSvRg9k_GPSINZJe0xaqLw855EJySs3N3q0A/exec';
 const R_CONCIL_COL='agenda_conciliados';
+// Notificações dispensadas pelo Will. Coleção à parte de propósito: dispensar um aviso não
+// é conciliar nada e NÃO toca no lançamento — o Receber fica intocado. Na nuvem, e não no
+// localStorage, senão cada máquina mostraria um sininho diferente.
+const R_NOTIF_DISP_COL='agenda_notif_dispensadas';
+let R_notifDispensadas={};
 const R_META_HORAS=100;
 
 // Firebase Receber
@@ -3105,6 +3117,56 @@ async function R_carregarConciliados(){
       pt=json.nextPageToken||null;
     }while(pt);
   }catch(e){console.warn('Conciliados:',e.message);}
+  await R_carregarNotifDispensadas();
+}
+async function R_carregarNotifDispensadas(){
+  try{
+    const novas={};let pt=null;
+    do{
+      let url=`${FS_URL}/${R_NOTIF_DISP_COL}?key=${FB_API_KEY}&pageSize=300`;
+      if(pt)url+='&pageToken='+pt;
+      const res=await fetch(url);
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const json=await res.json();
+      (json.documents||[]).forEach(doc=>{const f=doc.fields||{};const o={};Object.keys(f).forEach(k=>o[k]=fromFV(f[k]));if(o.chave)novas[o.chave]=o;});
+      pt=json.nextPageToken||null;
+    }while(pt);
+    R_notifDispensadas=novas;   // só substitui se a LEITURA deu certo
+  }catch(e){console.warn('Notificações dispensadas:',e.message);}
+}
+window.R_dispensarNotif=async function(chave,tipo,label){
+  if(!chave)return;
+  const obj={chave:String(chave),tipo:tipo||'',label:label||'',ts:new Date().toISOString()};
+  R_notifDispensadas[obj.chave]=obj;
+  R_repintarNotificacoes();
+  const fields={};Object.keys(obj).forEach(k=>fields[k]=toFV(obj[k]));
+  const ok=await FB_gravar(`${FS_URL}/${R_NOTIF_DISP_COL}/${encodeURIComponent(obj.chave)}?key=${FB_API_KEY}`,
+    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Dispensar notificação');
+  if(ok===null){delete R_notifDispensadas[obj.chave];R_repintarNotificacoes();return;}  // falhou: volta
+  toast('🔕 Notificação dispensada.','#6b7280');
+};
+window.R_dispensarVarias=async function(chaves,tipo){
+  const lista=(chaves||'').split('|').filter(Boolean);
+  if(!lista.length)return;
+  if(!confirm(`Dispensar ${lista.length} notificação(ões)? Elas somem do sininho — os lançamentos NÃO são apagados.`))return;
+  for(const c of lista)await R_dispensarNotif(c,tipo,'');
+  toast(`🔕 ${lista.length} dispensada(s).`,'#6b7280');
+};
+window.R_restaurarNotifs=async function(){
+  const chaves=Object.keys(R_notifDispensadas);
+  if(!chaves.length)return;
+  if(!confirm(`Trazer de volta ${chaves.length} notificação(ões) dispensada(s)?`))return;
+  for(const c of chaves){
+    await FB_gravar(`${FS_URL}/${R_NOTIF_DISP_COL}/${encodeURIComponent(c)}?key=${FB_API_KEY}`,{method:'DELETE'},'Restaurar notificação');
+    delete R_notifDispensadas[c];
+  }
+  R_repintarNotificacoes();toast('↩️ Notificações restauradas.','#6b7280');
+};
+// Repinta usando a última leitura da agenda, sem ir na rede de novo. O próprio render
+// guarda os argumentos — depender das globais _ultimos* falhava quando elas ainda eram nulas.
+let R_ultimaNotif=null;
+function R_repintarNotificacoes(){
+  if(R_ultimaNotif)atualizarNotificacoes(R_ultimaNotif.cancelados,R_ultimaNotif.confirmados);
 }
 async function R_marcarConciliado(eventoId,dados){
   R_conciliados[eventoId]={id:eventoId,...dados};
@@ -4133,16 +4195,35 @@ function toggleNotifPainel(){R_notifAberto=!R_notifAberto;document.getElementByI
 function fecharNotifPainel(){R_notifAberto=false;document.getElementById('notifPainel').classList.remove('open');}
 document.addEventListener('click',e=>{if(R_notifAberto&&!e.target.closest('#notifBtn')&&!e.target.closest('#notifPainel'))fecharNotifPainel();});
 function atualizarNotificacoes(cancelados,confirmados){
+  R_ultimaNotif={cancelados:cancelados||[],confirmados:confirmados||[]};
   const badge=document.getElementById('notifBadge');const conteudo=document.getElementById('notifConteudo');
   const idsConfirmados=new Set(confirmados.map(ev=>ev.id));
-  const lancamentosCancelados=R_todosOsDados.filter(r=>{if(!r.googleEventId)return false;return!idsConfirmados.has(r.googleEventId);});
-  const novosNaoSinc=confirmados.filter(ev=>R_mesApartirDeAbril2026(ev.mes)&&!R_eventoTemLancamento(ev.id)&&!R_eventoIgnorado(ev)).slice(0,5);
+  const disp=k=>!!R_notifDispensadas[String(k)];
+  const lancamentosCancelados=R_todosOsDados.filter(r=>{if(!r.googleEventId)return false;if(disp(r.id))return false;return!idsConfirmados.has(r.googleEventId);});
+  const novosNaoSinc=confirmados.filter(ev=>R_mesApartirDeAbril2026(ev.mes)&&!R_eventoTemLancamento(ev.id)&&!R_eventoIgnorado(ev)&&!disp(ev.id)).slice(0,5);
   const total=lancamentosCancelados.length+novosNaoSinc.length;
   badge.textContent=total;badge.classList.toggle('show',total>0);
+  const esc=t=>String(t==null?'':t).replace(/</g,'&lt;').replace(/'/g,"\\'");
   let html='';
-  if(lancamentosCancelados.length){html+=`<div class="notif-secao"><div class="notif-secao-titulo">❌ Cancelados (${lancamentosCancelados.length})</div>${lancamentosCancelados.map(r=>`<div class="notif-item cancelado" onclick="R_abrirLancamentoCancelado('${r.id}')"><span class="notif-item-icon">❌</span><div class="notif-item-info"><div class="notif-item-nome">👤 ${r.cliente}</div><div class="notif-item-data">📅 ${r.data||'-'} · ${r.mes}</div></div><span class="notif-pill" style="background:#fee2e2;color:#b91c1c">Ver</span></div>`).join('')}</div>`;if(novosNaoSinc.length)html+='<div class="notif-divider"></div>';}
-  if(novosNaoSinc.length){html+=`<div class="notif-secao"><div class="notif-secao-titulo">🆕 Sem lançamento (${novosNaoSinc.length})</div>${novosNaoSinc.map(ev=>{const idEsc=ev.id.replace(/'/g,"\\'");return`<div class="notif-item novo" onclick="R_criarLancamentoDeEvento('${idEsc}');fecharNotifPainel()"><span class="notif-item-icon">🆕</span><div class="notif-item-info"><div class="notif-item-nome" style="color:#15803d">👤 ${ev.titulo}</div><div class="notif-item-data">📅 ${ev.data} · ${ev.mes}</div></div><span class="notif-pill" style="background:#dcfce7;color:#15803d">+ Lançar</span></div>`;}).join('')}</div>`;}
+  if(lancamentosCancelados.length){
+    const chaves=lancamentosCancelados.map(r=>r.id).join('|');
+    html+=`<div class="notif-secao"><div class="notif-secao-titulo">❌ Cancelados (${lancamentosCancelados.length})`
+      +`<button class="notif-limpar" title="Dispensar todas desta seção" onclick="event.stopPropagation();R_dispensarVarias('${chaves}','cancelado')">limpar todas</button></div>`
+      +lancamentosCancelados.map(r=>`<div class="notif-item cancelado" onclick="R_abrirLancamentoCancelado('${r.id}')"><span class="notif-item-icon">❌</span><div class="notif-item-info"><div class="notif-item-nome">👤 ${esc(r.cliente)}</div><div class="notif-item-data">📅 ${esc(r.data||'-')} · ${esc(r.mes)}</div></div><span class="notif-pill" style="background:#fee2e2;color:#b91c1c">Ver</span><button class="notif-x" title="Dispensar (não apaga o lançamento)" onclick="event.stopPropagation();R_dispensarNotif('${r.id}','cancelado','${esc(r.cliente)}')">✕</button></div>`).join('')
+      +`</div>`;
+    if(novosNaoSinc.length)html+='<div class="notif-divider"></div>';
+  }
+  if(novosNaoSinc.length){
+    const chaves=novosNaoSinc.map(ev=>ev.id).join('|');
+    html+=`<div class="notif-secao"><div class="notif-secao-titulo">🆕 Sem lançamento (${novosNaoSinc.length})`
+      +`<button class="notif-limpar" title="Dispensar todas desta seção" onclick="event.stopPropagation();R_dispensarVarias('${chaves}','novo')">limpar todas</button></div>`
+      +novosNaoSinc.map(ev=>{const idEsc=String(ev.id).replace(/'/g,"\\'");
+        return`<div class="notif-item novo" onclick="R_criarLancamentoDeEvento('${idEsc}');fecharNotifPainel()"><span class="notif-item-icon">🆕</span><div class="notif-item-info"><div class="notif-item-nome">📅 ${esc(ev.titulo)}</div><div class="notif-item-data">${esc(ev.data||'-')} · ${esc(ev.mes)}</div></div><span class="notif-pill" style="background:#dbeafe;color:#1e40af">Lançar</span><button class="notif-x" title="Dispensar" onclick="event.stopPropagation();R_dispensarNotif('${idEsc}','novo','${esc(ev.titulo)}')">✕</button></div>`;}).join('')
+      +`</div>`;
+  }
   if(!html)html='<div class="notif-vazio">✅ Sem notificações!</div>';
+  const nDisp=Object.keys(R_notifDispensadas).length;
+  if(nDisp)html+=`<div class="notif-rodape"><button onclick="event.stopPropagation();R_restaurarNotifs()">↩️ Restaurar ${nDisp} dispensada(s)</button></div>`;
   conteudo.innerHTML=html;
 }
 function R_abrirLancamentoCancelado(rid){
