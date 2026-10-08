@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-2f5fd2b3';
+window.APP_VERSION='20261008-8f553e8a';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -971,6 +971,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <button class="sub-pagar" onclick="showSubP('p-semana',this)">📆 Semana</button>
     <button class="sub-pagar" onclick="showSubP('p-periodo',this)">🗓 Por Período</button>
     <button class="sub-pagar" onclick="showSubP('p-contas',this)">📋 Contas</button>
+    <button class="sub-pagar" onclick="showSubP('p-conciliacao',this)">🔗 Conciliação</button>
     <button class="sub-pagar" onclick="showSubP('p-categorias',this)">🏷️ Categorias</button>
     <button class="sub-pagar" onclick="showSubP('p-competencia',this)">📅 Competência</button>
     <button class="sub-pagar" onclick="showSubP('p-auditoria',this)">🕵️ Auditoria</button>
@@ -2621,6 +2622,11 @@ if (SIMULACAO_LOCAL){
   seedFV('movimentacoes_contas','mov_ofx_bmock1_FIT777',{id:'mov_ofx_bmock1_FIT777',contaId:'bmock1',tipo:'saida',valor:250.5,data:'2026-08-05',descricao:'📥 ALUGUEL SALA',categoria:null,origemTipo:'import',origemId:'FIT777',estornada:false});
   seedFV('movimentacoes_contas','mov_ofx_bmock1_FIT888',{id:'mov_ofx_bmock1_FIT888',contaId:'bmock1',tipo:'saida',valor:99.9,data:'2026-08-12',descricao:'📥 COMPRA NAO IDENTIFICADA',categoria:null,origemTipo:'import',origemId:'FIT888',estornada:false});
   seedFV('banco_conciliados','conc_mock_1',{chave:'conc_mock_1',status:'match',tipo:'pagar',id:'pmock_aluguel',mes:'AGO/2026',movId:'mov_ofx_bmock1_FIT777',label:'ALUGUEL SALA',ts:new Date(2026,7,6).toISOString()});
+  // Conta a pagar em aberto que casa com a movimentação pendente (mesmo valor, mesmo dia) —
+  // é o par que a tela de Conciliação deve sugerir.
+  seedFV('meses','AGO%2F2026',{mes:'AGO/2026',contas:[
+    {id:'pmock_conc',nome:'Compra sem identificar',valor:99.9,valorPago:0,dia:12,mes:'AGO/2026',categoria:'outros',fixa:false,status:'PENDENTE',cod:'',obs:''}
+  ]});
 
   // Contas a Pagar fictícias (coleção `meses`) — pra testar baixa → conta bancária (Fase 1)
   const P_SEED_JUL=[
