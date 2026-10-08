@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-2ed00b89';
+window.APP_VERSION='20261008-b25a202f';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2676,9 +2676,12 @@ if (SIMULACAO_LOCAL){
       let ids = Object.keys(col);
       const filtro = sq.where && sq.where.fieldFilter;
       if (filtro){
-        const campo = filtro.field.fieldPath, valor = filtro.value.stringValue;
-        ids = ids.filter(id => { const fv = col[id][campo] && col[id][campo].stringValue; return fv && fv > valor; });
+        const campo = filtro.field.fieldPath, valor = filtro.value.stringValue, op = filtro.op;
+        ids = ids.filter(id => { const fv = col[id][campo] && col[id][campo].stringValue;
+          if (fv == null) return false;
+          return op === 'EQUAL' ? fv === valor : fv > valor; });
       }
+      if (sq.limit) ids = ids.slice(0, sq.limit);
       const results = ids.map(id => ({ document: { name: `mock/${collection}/${id}`, fields: col[id] } }));
       return mockResposta(results);
     }
@@ -2696,7 +2699,13 @@ if (SIMULACAO_LOCAL){
       col[docId] = { ...(col[docId]||{}), ...(body.fields||{}) };
       return mockResposta({ fields: col[docId] });
     }
-    // GET (lista a coleção inteira — os datasets fictícios são pequenos, sem paginação)
+    // GET de UM documento — o mock devolvia a coleção inteira aqui, o que escondia
+    // qualquer teste sobre os campos de um documento específico.
+    if (docId){
+      if (!col[docId]) return Promise.resolve({ ok:false, status:404, json:()=>Promise.resolve({ error:{ code:404 } }) });
+      return mockResposta({ name:`mock/${collection}/${docId}`, fields: col[docId] });
+    }
+    // GET da coleção (datasets fictícios são pequenos, sem paginação)
     const documents = Object.keys(col).map(id => ({ name:`mock/${collection}/${id}`, fields: col[id] }));
     return mockResposta({ documents });
   }
@@ -3052,10 +3061,39 @@ async function R_fbSalvar(reg){
 // Exclusão lógica (soft-delete): em vez de apagar o documento, só marca excluido:true.
 // Isso permite que o cache local de outros aparelhos/sessões descubra a exclusão da
 // próxima vez que sincronizarem (uma exclusão de verdade não deixa rastro pra comparar).
+// Devolve {ok, motivo}. Três tentativas, da menos destrutiva pra mais:
+//  A) PATCH com updateMask → MESCLA. Sem a máscara o Firestore substitui o documento
+//     inteiro, e o registro perdia id/cliente/valor/mês — virava um toco `{excluido}`
+//     que o sync incremental não conseguia casar com nada (o `delete porId[undefined]`).
+//  B) se o id do campo não for o nome do documento, acha o documento de verdade.
+//  C) último recurso: apaga o documento mesmo.
 async function R_fbExcluir(id){
-  const url=`${FS_URL}/lancamentos/${id}?key=${FB_API_KEY}`;
-  const fields={excluido:toFV(true),atualizadoEm:toFV(new Date().toISOString())};
-  await FB_gravar(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},'Exclusão no Receber');
+  const mask='&updateMask.fieldPaths=excluido&updateMask.fieldPaths=atualizadoEm';
+  const corpo={method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fields:{excluido:toFV(true),atualizadoEm:toFV(new Date().toISOString())}})};
+  const alvo=encodeURIComponent(String(id));
+  let res=await FB_gravar(`${FS_URL}/lancamentos/${alvo}?key=${FB_API_KEY}${mask}`,corpo,'Exclusão no Receber');
+  if(res)return {ok:true,via:'patch'};
+  const real=await R_fbAcharDocId(id);
+  if(real&&real!==String(id)){
+    res=await FB_gravar(`${FS_URL}/lancamentos/${encodeURIComponent(real)}?key=${FB_API_KEY}${mask}`,corpo,'Exclusão no Receber');
+    if(res)return {ok:true,via:'doc-real'};
+  }
+  res=await FB_gravar(`${FS_URL}/lancamentos/${alvo}?key=${FB_API_KEY}`,{method:'DELETE'},'Exclusão no Receber');
+  if(res)return {ok:true,via:'delete'};
+  return {ok:false,motivo:'a nuvem recusou a exclusão'};
+}
+// Procura o documento cujo CAMPO id é esse — pra quando o nome do documento divergir.
+async function R_fbAcharDocId(id){
+  try{
+    const body={structuredQuery:{from:[{collectionId:'lancamentos'}],limit:1,
+      where:{fieldFilter:{field:{fieldPath:'id'},op:'EQUAL',value:{stringValue:String(id)}}}}};
+    const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok)return null;
+    const json=await res.json();
+    const doc=(Array.isArray(json)?json:[]).map(i=>i.document).filter(Boolean)[0];
+    return doc&&doc.name?doc.name.split('/').pop():null;
+  }catch(e){return null;}
 }
 async function R_fbCarregarTodos(){
   let todos=[],pt=null;
@@ -3065,7 +3103,9 @@ async function R_fbCarregarTodos(){
     const res=await fetch(url);
     if(!res.ok)throw new Error(res.status===429?'Nuvem sem cota (429)':'Receber recusado ('+res.status+')');
     const json=await res.json();
-    if(json.documents){json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));todos.push(obj);});}
+    if(json.documents){json.documents.forEach(doc=>{const f=doc.fields||{};const obj={};Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));
+      if(obj.id==null&&doc.name)obj.id=String(doc.name).split('/').pop();   // id vem do nome quando o campo sumiu
+      todos.push(obj);});}
     pt=json.nextPageToken||null;
   }while(pt);
   return todos.filter(r=>!r.excluido);
@@ -3093,6 +3133,10 @@ async function R_fbBuscarAlterados(desde){
     if(!item.document)return;
     const f=item.document.fields||{};const obj={};
     Object.keys(f).forEach(k=>obj[k]=fromFV(f[k]));
+    // Documento estragado por um PATCH antigo (sem updateMask) perdeu o campo `id`. Sem o id
+    // a exclusão nunca se aplicava no cache e o registro voltava pra sempre. O nome do
+    // documento sobrevive a tudo — é ele quem manda quando o campo faltar.
+    if(obj.id==null&&item.document.name)obj.id=String(item.document.name).split('/').pop();
     todos.push(obj);
   });
   return {todos,parcial:true};
@@ -3514,8 +3558,17 @@ async function R_confirmarExcluir(){
   if(!R_ridParaExcluir)return;
   loading(true,'Excluindo...');setSyncStatus('saving');
   try{
-    await R_fbExcluir(R_ridParaExcluir);
-    R_todosOsDados=R_todosOsDados.filter(r=>String(r.id)!==String(R_ridParaExcluir));
+    const r=await R_fbExcluir(R_ridParaExcluir);
+    if(!r||!r.ok){
+      // Antes a linha sumia e o toast dizia "Excluído!" mesmo quando nada tinha sido gravado —
+      // por isso dava pra clicar em excluir várias vezes sem desconfiar de nada.
+      setSyncStatus('error','exclusão não chegou à nuvem');
+      renderTabelaR();
+      toast('⚠️ NÃO consegui excluir: '+((r&&r.motivo)||'a nuvem não respondeu')+'. O lançamento continua aí — tente de novo em instantes.','#ef4444',9000);
+      return;
+    }
+    R_todosOsDados=R_todosOsDados.filter(x=>String(x.id)!==String(R_ridParaExcluir));
+    R_salvarCacheLocal();   // sem isto, um F5 trazia o excluído de volta do cache
     setSyncStatus('ok');renderTabelaR();renderDashboardR();renderAgendaWidget();toast('🗑️ Excluído!','#ef4444');
   }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}
   finally{loading(false);R_ridParaExcluir=null;document.getElementById('rModalConfirmBg').classList.remove('open');}
