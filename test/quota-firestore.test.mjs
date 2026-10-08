@@ -43,8 +43,17 @@ test('conciliação bancária não carrega duas vezes ao iniciar a página',()=>
 
 test('histórico bancário é carregado apenas sob demanda',()=>{
   assert.match(html,/function MOD_hidratarMain\(id\)/);
-  assert.match(html,/id==='contas'\)MOD_contasCompleto\(\)/);
+  assert.match(html,/id==='contas'\)\{MOD_contasCompleto\(\);MOD_conciliacao\(\);\}/);
   const ini=html.indexOf('async function init(){');
   const initBody=html.slice(ini,html.indexOf('// ── Lembrete de backup diário',ini));
   assert.doesNotMatch(initBody,/BC_inicializarMovimentos\(\)/);
+  assert.doesNotMatch(initBody,/MOD_conciliacao\(\)/);
+});
+
+// Os links de conciliação alimentam DUAS telas (Conciliação e as marcas ✅/⏳ do extrato de
+// cada conta). Têm que passar pela mesma tarefa MOD_umaVez, senão viram duas leituras.
+test('links de conciliação são lidos uma vez só, por tarefa compartilhada',()=>{
+  assert.match(html,/function MOD_conciliacao\(\)\{return MOD_umaVez\('conciliacao',/);
+  assert.match(html,/id==='p-conciliacao'\)MOD_contasCompleto\(\)\.then\(MOD_conciliacao\)/);
+  assert.strictEqual((html.match(/MOD_umaVez\('conciliacao'/g)||[]).length,1);
 });

@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261007-49789a34';
+window.APP_VERSION='20261008-2f5fd2b3';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2616,6 +2616,11 @@ if (SIMULACAO_LOCAL){
 
   // Uma conciliação já confirmada, pra testar o selo "🔗 Conciliado"
   seedFV('banco_conciliados','mock_chave_1',{chave:'mock_chave_1',status:'match',tipo:'receber',id:'mock1',mes:'JUL/2026',label:'CLIENTE TESTE A',motivo:'valor_exato',ts:new Date(2026,6,12).toISOString()});
+  // Duas movimentações vindas do extrato + o link da Conciliação de uma delas — é o que as
+  // marcas ✅/⏳ e os filtros 📥/✅/⏳ do extrato da conta leem.
+  seedFV('movimentacoes_contas','mov_ofx_bmock1_FIT777',{id:'mov_ofx_bmock1_FIT777',contaId:'bmock1',tipo:'saida',valor:250.5,data:'2026-08-05',descricao:'📥 ALUGUEL SALA',categoria:null,origemTipo:'import',origemId:'FIT777',estornada:false});
+  seedFV('movimentacoes_contas','mov_ofx_bmock1_FIT888',{id:'mov_ofx_bmock1_FIT888',contaId:'bmock1',tipo:'saida',valor:99.9,data:'2026-08-12',descricao:'📥 COMPRA NAO IDENTIFICADA',categoria:null,origemTipo:'import',origemId:'FIT888',estornada:false});
+  seedFV('banco_conciliados','conc_mock_1',{chave:'conc_mock_1',status:'match',tipo:'pagar',id:'pmock_aluguel',mes:'AGO/2026',movId:'mov_ofx_bmock1_FIT777',label:'ALUGUEL SALA',ts:new Date(2026,7,6).toISOString()});
 
   // Contas a Pagar fictícias (coleção `meses`) — pra testar baixa → conta bancária (Fase 1)
   const P_SEED_JUL=[
@@ -4468,6 +4473,36 @@ function BC_transfPrevEntra(id){return BC_TRANSFS.filter(t=>t.status==='prevista
 function BC_transfPrevSai(id){return BC_TRANSFS.filter(t=>t.status==='prevista'&&t.origemId===id).reduce((s,t)=>s+(Number(t.valor)||0),0);}
 function BC_calcularLivre(id){const a=BC_saldoConta(id);return a===null?null:a-BC_despesasAbertas(id);}
 function BC_calcularPrevisao(id){const a=BC_saldoConta(id);return a===null?null:a+BC_receitasAbertas(id)-BC_despesasAbertas(id)+BC_transfPrevEntra(id)-BC_transfPrevSai(id);}
+// ── Conciliação vista do lado da conta ───────────────────────────────────────
+// A marca ✅ NÃO é gravada na movimentação: é DERIVADA de CONC_LINKS, onde a tela de
+// Conciliação (A Pagar → Conciliação) registra o que casou. Cada link guarda o `movId`,
+// então a ligação é exata — nada de adivinhar por valor ou data. Duas vantagens: vale
+// retroativo pra tudo que já foi conciliado, e não envelhece se alguém desfizer.
+// `ok` diz se os links já foram LIDOS: sem isso, "não conciliada" seria mentira — é
+// ausência de informação, não ausência de conciliação. A tela respeita a diferença.
+function BC_concilIndice(){
+  const ix={ok:false,match:new Set(),decidido:new Set()};
+  if(typeof CONC_LINKS==='undefined'||!CONC_LINKS)return ix;
+  ix.ok=(typeof CONC_LINKS_OK!=='undefined')&&CONC_LINKS_OK;
+  try{
+    Object.keys(CONC_LINKS).forEach(k=>{
+      const x=CONC_LINKS[k];if(!x||!x.movId)return;
+      const id=String(x.movId);
+      if(x.status==='match')ix.match.add(id);
+      if(x.status==='match'||x.status==='ignorado')ix.decidido.add(id);
+    });
+  }catch(e){}
+  return ix;
+}
+// O que a Conciliação olha é exatamente isto (ver CONC_movs): movimentação vinda do
+// extrato e não estornada. Pagamento lançado na mão, transferência e ajuste não vêm do
+// banco — não existe linha de extrato pra casar com eles.
+function BC_movDoExtrato(m){return !!m&&m.origemTipo==='import'&&!m.estornada;}
+function BC_movConciliavel(m){return BC_movDoExtrato(m);}
+function BC_movConciliado(m,ix){if(!BC_movConciliavel(m))return false;ix=ix||BC_concilIndice();return ix.match.has(String(m.id));}
+// "Decidida" = conciliada OU ignorada de propósito. O que foi ignorado não fica cobrando
+// atenção no filtro de pendentes.
+function BC_movDecidida(m,ix){if(!BC_movConciliavel(m))return true;ix=ix||BC_concilIndice();return ix.decidido.has(String(m.id));}
 function BC_naoConciliado(){let total=0;Object.keys(P_meses||{}).forEach(m=>(P_meses[m]||[]).forEach(r=>{if((Number(r.valorPago)||0)>0&&!r.contaBancariaId)total+=BC_debitoLancamento(r);}));return total;}
 function BC_contasAtivas(){return Object.keys(BC_CONTAS).filter(id=>!BC_CONTAS[id].arquivada&&BC_CONTAS[id].ativa!==false);}
 function BC_principal(){return BC_contasAtivas().find(id=>BC_CONTAS[id].principal);}
@@ -4598,7 +4633,11 @@ async function BC_criarAjuste(){
 }
 
 // ── Extrato (livro-razão) ──
-function BC_abrirExtrato(id){bcExtratoConta=id;BC_extratoFiltro='todas';document.getElementById('bcExtratoBg').classList.add('open');BC_renderExtrato();}
+function BC_abrirExtrato(id){bcExtratoConta=id;BC_extratoFiltro='todas';document.getElementById('bcExtratoBg').classList.add('open');BC_renderExtrato();
+  // Links ainda não chegaram? busca e repinta — a tela não mente nesse meio-tempo.
+  if(typeof CONC_LINKS_OK!=='undefined'&&!CONC_LINKS_OK&&typeof MOD_conciliacao==='function')
+    MOD_conciliacao().then(()=>{if(bcExtratoConta===id)BC_renderExtrato();});
+}
 window.BC_extratoFil=function(f){BC_extratoFiltro=f;BC_renderExtrato();};
 function BC_renderExtrato(){
   const id=bcExtratoConta;const c=BC_CONTAS[id];if(!c)return;const cor=c.cor||'#16a34a';
@@ -4609,17 +4648,36 @@ function BC_renderExtrato(){
     <div class="card-p"><label>🌿 Livre</label><div class="val">${livre===null?'—':fmt(livre)}</div></div>
     <div class="card-p"><label>🔮 Previsão</label><div class="val">${prev===null?'—':fmt(prev)}</div></div>`;
   const movs=BC_movsDaConta(id);const mesAtual=BC_hoje().slice(0,7);
+  // Índice montado UMA vez por render, não por linha — ver BC_concilIndice.
+  const cix=BC_concilIndice();
+  const nExtrato=movs.filter(BC_movDoExtrato).length;
+  const nConcil=movs.filter(m=>BC_movConciliado(m,cix)).length;
+  const nPend=cix.ok?movs.filter(m=>BC_movConciliavel(m)&&!BC_movDecidida(m,cix)).length:0;
+  const sufixo=n=>n?` <span style="opacity:.65;font-weight:600">${n}</span>`:'';
   const entMes=movs.filter(m=>(m.data||'').slice(0,7)===mesAtual&&BC_movContrib(m)>0).reduce((s,m)=>s+BC_movContrib(m),0);
   const saiMes=movs.filter(m=>(m.data||'').slice(0,7)===mesAtual&&BC_movContrib(m)<0).reduce((s,m)=>s-BC_movContrib(m),0);
-  document.getElementById('bcExtratoResumo').innerHTML=`Este mês: <b style="color:#16a34a">+${fmt(entMes)}</b> de entradas · <b style="color:#ef4444">−${fmt(saiMes)}</b> de saídas`+(saldo===null?` · <button class="bc-fil" onclick="document.getElementById('bcExtratoBg').classList.remove('open');BC_abrirModal('${id}')">Informar saldo</button>`:'');
-  const filtros=[['todas','Todas'],['entradas','Entradas'],['saidas','Saídas'],['transferencia','Transferências'],['ajuste','Ajustes']];
-  document.getElementById('bcExtratoFiltros').innerHTML=filtros.map(([k,l])=>`<button class="bc-fil${BC_extratoFiltro===k?' active':''}" onclick="BC_extratoFil('${k}')">${l}</button>`).join('');
+  document.getElementById('bcExtratoResumo').innerHTML=`Este mês: <b style="color:#16a34a">+${fmt(entMes)}</b> de entradas · <b style="color:#ef4444">−${fmt(saiMes)}</b> de saídas`+(nPend?` · <b style="color:#b45309">⏳ ${nPend}</b> a conciliar`:'')+(saldo===null?` · <button class="bc-fil" onclick="document.getElementById('bcExtratoBg').classList.remove('open');BC_abrirModal('${id}')">Informar saldo</button>`:'');
+  const filtros=[['todas','Todas',''],['entradas','Entradas',''],['saidas','Saídas',''],['transferencia','Transferências',''],['ajuste','Ajustes',''],['extrato','📥 Extrato',sufixo(nExtrato)]];
+  if(cix.ok)filtros.push(['conciliadas','✅ Conciliadas',sufixo(nConcil)],['naoconciliadas','⏳ A conciliar',sufixo(nPend)]);
+  else filtros.push(['conciliadas','✅ Conciliadas <span style="opacity:.6;font-weight:600">carregando…</span>','']);
+  document.getElementById('bcExtratoFiltros').innerHTML=filtros.map(([k,l,sf])=>`<button class="bc-fil${BC_extratoFiltro===k?' active':''}" onclick="BC_extratoFil('${k}')">${l}${sf}</button>`).join('');
   let lista=movs.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));const f=BC_extratoFiltro;
   if(f==='entradas')lista=lista.filter(m=>BC_movContrib(m)>0);else if(f==='saidas')lista=lista.filter(m=>BC_movContrib(m)<0);
   else if(f==='transferencia')lista=lista.filter(m=>m.tipo&&m.tipo.indexOf('transferencia')===0);else if(f==='ajuste')lista=lista.filter(m=>m.tipo==='ajuste'||m.tipo==='estorno');
+  else if(f==='extrato')lista=lista.filter(BC_movDoExtrato);
+  else if(f==='conciliadas')lista=lista.filter(m=>BC_movConciliado(m,cix));
+  else if(f==='naoconciliadas')lista=lista.filter(m=>BC_movConciliavel(m)&&!BC_movDecidida(m,cix));
   const el=document.getElementById('bcExtratoLista');
   if(!lista.length){el.innerHTML='<p style="color:#9ca3af;font-size:.85rem;padding:14px 0;text-align:center">Nenhuma movimentação'+(f==='todas'?' ainda — aparecem quando você paga, recebe ou transfere.':' nesse filtro.')+'</p>';return;}
-  el.innerHTML=lista.map(m=>{const v=BC_movContrib(m);return `<div class="bc-mov"><div style="flex:1;min-width:0"><div style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.descricao||'Movimento'}</div><div style="font-size:.73rem;color:#9ca3af">${BC_dataBR(m.data)}${m.categoria?' · '+m.categoria:''}</div></div><div style="font-weight:800;flex-shrink:0;color:${v>=0?'#16a34a':'#ef4444'}">${v>=0?'+':'−'} ${fmt(Math.abs(v))}</div></div>`;}).join('');
+  el.innerHTML=lista.map(m=>{const v=BC_movContrib(m);
+    // Marcas ficam FORA do texto truncável — no celular quem encurta é a descrição, não o selo.
+    // O selo de origem vai sem emoji: a descrição importada já começa com 📥 (vem do IMP_).
+    const conc=BC_movConciliado(m,cix);
+    const selo=conc?'<span title="conciliada com o extrato">✅</span>'
+      :(cix.ok&&BC_movConciliavel(m)&&!BC_movDecidida(m,cix)?'<span title="ainda não conciliada" style="opacity:.6">⏳</span>':'');
+    const origem=BC_movDoExtrato(m)?'<span title="importada do extrato bancário" style="font-size:.68rem;background:#eff6ff;color:#1e40af;border-radius:7px;padding:1px 6px;font-weight:700">extrato</span>':'';
+    const marcas=(selo||origem)?`<span style="display:flex;align-items:center;gap:4px;flex-shrink:0">${selo}${origem}</span>`:'';
+    return `<div class="bc-mov"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.descricao||'Movimento'}</span>${marcas}</div><div style="font-size:.73rem;color:#9ca3af">${BC_dataBR(m.data)}${m.categoria?' · '+m.categoria:''}</div></div><div style="font-weight:800;flex-shrink:0;color:${v>=0?'#16a34a':'#ef4444'}">${v>=0?'+':'−'} ${fmt(Math.abs(v))}</div></div>`;}).join('');
 }
 
 // ── Filtro + render ──
@@ -7955,6 +8013,9 @@ function MOD_umaVez(chave,tarefa){
   const p=Promise.resolve().then(tarefa).then(ok=>{if(ok===false)delete MOD_carregamentos[chave];return ok;}).catch(e=>{delete MOD_carregamentos[chave];console.warn('Módulo '+chave+':',e.message||e);return false;});
   MOD_carregamentos[chave]=p;return p;
 }
+// Links de conciliação — usados pela tela de Conciliação E pelas marcas ✅/⏳ do extrato de
+// cada conta. Uma leitura só, compartilhada pelas duas telas.
+function MOD_conciliacao(){return MOD_umaVez('conciliacao',async()=>{const ok=await CONC_inicializar();if(ok!==false&&typeof BK_inicializar==='function')await BK_inicializar(true);return ok;});}
 function MOD_prepararCachesLocais(){
   try{BC_carregarCache();}catch(e){}
   try{C_carregarCache();}catch(e){}
@@ -7966,7 +8027,9 @@ async function MOD_contasCompleto(){const ok=await MOD_contasBasico();if(ok===fa
 function MOD_cartoes(){return MOD_umaVez('cartoes',async()=>{await MOD_umaVez('categorias-pagar',CAT_inicializar);const ok=await C_ativar();if(mainAtivo==='evolucao'&&typeof EV_montarNaAba==='function')EV_montarNaAba();return ok;});}
 function MOD_hidratarMain(id){
   if(id==='pagar')MOD_umaVez('categorias-pagar',CAT_inicializar);
-  else if(id==='contas')MOD_contasCompleto();
+  // O extrato da conta mostra ✅/⏳ por movimentação — os links moram em banco_conciliados,
+  // que antes só era lido ao abrir A Pagar → Conciliação.
+  else if(id==='contas'){MOD_contasCompleto();MOD_conciliacao();}
   // Fluxo de Caixa usa BC_CONTAS/BC_MOVS/C_faturas — sem isto, saldo saía só do cache local.
   else if(id==='fluxo'){MOD_contasCompleto();MOD_cartoes();}
   else if(id==='cartoes'||id==='evolucao')MOD_cartoes();
@@ -7983,7 +8046,7 @@ function MOD_hidratarSubP(id){
   else if(id==='p-categorias')MOD_umaVez('categorias-pagar',CAT_inicializar);
   else if(id==='p-auditoria')MOD_umaVez('auditoria',AUD_inicializar);
   else if(id==='p-fixas')MOD_umaVez('contas-fixas',FX_inicializar);
-  else if(id==='p-conciliacao')MOD_contasCompleto().then(()=>MOD_umaVez('conciliacao',async()=>{const ok=await CONC_inicializar();if(ok!==false&&typeof BK_inicializar==='function')await BK_inicializar(true);return ok;}));
+  else if(id==='p-conciliacao')MOD_contasCompleto().then(MOD_conciliacao);
 }
 
 async function init(){
@@ -8048,8 +8111,9 @@ function dispensarLembreteBackup(){
 // ══════════════════════════════════════════════════════
 const CONC_COL='banco_conciliados';
 const CONC_LINKS={}; // chave -> {chave,status:'match'|'ignorado',tipo:'pagar'|'receber',id,mes,movId,label,statusAntes,valorPagoAntes,valorReservaAntes,saldoAntes,ts}
+let CONC_LINKS_OK=false; // os links já foram lidos? sem isto, o ⏳ do extrato da conta seria mentira
 let CONC_tol=7, CONC_busca='', CONC_filtroTipo='todos', CONC_selMov=null, CONC_selLanc=null;
-async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);if(typeof BK_conciliados!=='undefined'){Object.keys(BK_conciliados).forEach(k=>delete BK_conciliados[k]);Object.assign(BK_conciliados,l);}}catch(e){console.warn('Conciliação:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();return true;}
+async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);CONC_LINKS_OK=true;Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);if(typeof BK_conciliados!=='undefined'){Object.keys(BK_conciliados).forEach(k=>delete BK_conciliados[k]);Object.assign(BK_conciliados,l);}}catch(e){console.warn('Conciliação:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();return true;}
 function CONC_movLinkado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.movId===id);}
 function CONC_movIgnorado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='ignorado'&&x.movId===id);}
 function CONC_lancLinkado(tipo,id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.tipo===tipo&&String(x.id)===String(id)&&(tipo==='pagar'?x.mes===mes:true));}
