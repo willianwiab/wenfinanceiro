@@ -99,7 +99,29 @@ const r = await page.evaluate(async () => {
   const contaCom = v => { sel.value = v; renderTabelaP(); return document.querySelectorAll('#pTabelaDiv tbody tr').length; };
   out.contagens = { todas: contaCom(''), extrato: contaCom('extrato'), manual: contaCom('manual') };
   const textoCom = v => { sel.value = v; renderTabelaP(); return document.getElementById('pTabelaDiv').textContent; };
-  out.textos = { extrato: textoCom('extrato'), manual: textoCom('manual') };
+  out.textos = { extrato: textoCom('extrato'), manual: textoCom('manual'), sistema: textoCom('sistema') };
+
+  // ── 7. o padrão é "🏠 Do sistema" e ele esconde só o que veio do extrato ──
+  const selLimpo = document.createElement('div');
+  selLimpo.innerHTML = document.getElementById('pOrigemFiltro').outerHTML;
+  out.padrao = {
+    valorInicial: selLimpo.querySelector('option[selected]')?.value,
+    primeiraOpcao: [...sel.options][0].value,
+    escondeExtrato: !/PIX avulso do extrato/.test(out.textos.sistema),
+    mantemManual: /Compra sem identificar/.test(out.textos.sistema),
+  };
+
+  // ── 8. com o chip em "Pendentes", pedir o extrato AINDA mostra (nasce PAGO) ──
+  P_filtroAtual = 'PENDENTE';
+  sel.value = 'extrato'; renderTabelaP();
+  out.chipPendente = {
+    aparece: /PIX avulso do extrato/.test(document.getElementById('pTabelaDiv').textContent),
+    avisa: /filtro de status está desconsiderado/.test(document.getElementById('vencidoBanner-p').innerHTML),
+  };
+  // e com o chip em Pendentes + padrão do sistema, o status volta a valer
+  sel.value = 'sistema'; renderTabelaP();
+  out.chipVoltaAValer = { pagoSumiu: !/PIX avulso do extrato/.test(document.getElementById('pTabelaDiv').textContent) };
+  P_filtroAtual = 'TODOS'; sel.value = 'sistema';
   sel.value = '';
 
   // ── 7. desfazer devolve tudo ──
@@ -149,6 +171,16 @@ ok('"📥 Vindas do extrato" mostra SÓ a nascida do extrato',
    /PIX avulso do extrato/.test(r.textos.extrato) && !/Compra sem identificar/.test(r.textos.extrato));
 ok('"✍️ Manuais" mostra SÓ a digitada à mão',
    /Compra sem identificar/.test(r.textos.manual) && !/PIX avulso do extrato/.test(r.textos.manual));
+
+console.log('\n── padrão 🏠 Do sistema ──');
+ok('"sistema" é a opção marcada por padrão', r.padrao.valorInicial === 'sistema' && r.padrao.primeiraOpcao === 'sistema', r.padrao);
+ok('o padrão esconde o que veio do extrato', r.padrao.escondeExtrato);
+ok('o padrão mantém as digitadas à mão', r.padrao.mantemManual);
+
+console.log('\n── pago ou não pago, o extrato sempre aparece ──');
+ok('chip em Pendentes NÃO esconde a vinda do extrato', r.chipPendente.aparece, r.chipPendente);
+ok('a tela avisa que o status foi desconsiderado', r.chipPendente.avisa);
+ok('fora desse recorte o chip volta a valer', r.chipVoltaAValer.pagoSumiu);
 
 console.log('\n── desfazer volta tudo ──');
 ok('conta volta a PENDENTE', r.desfeito.status === 'PENDENTE', r.desfeito);

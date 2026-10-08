@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 
 const raiz=fileURLToPath(new URL('..',import.meta.url));
 const html=fs.readFileSync(raiz+'/index.html','utf8');
-const banco=fs.readFileSync(raiz+'/js/banco.js','utf8');
 
 test('inicialização não dispara módulos auxiliares do Firestore',()=>{
   const ini=html.indexOf('async function init(){');
@@ -35,10 +34,18 @@ test('falha de categorias não é tratada como coleção vazia',()=>{
   assert.match(trecho,/catch\(e\)\{console\.warn\('Categorias:',e\.message\);return false;\}/);
 });
 
-test('conciliação bancária não carrega duas vezes ao iniciar a página',()=>{
-  assert.doesNotMatch(banco,/Promise\.all\(\[BK_carregarConciliados\(\),\s*BK_carregarRegras\(\)\]\)/);
-  assert.match(banco,/async function BK_inicializar\(conciliadosJaCarregados\)/);
-  assert.match(banco,/if \(!conciliadosJaCarregados\) tarefas\.push\(BK_carregarConciliados\(\)\)/);
+// O módulo BK_ (js/banco.js) foi aposentado em 08/10/2026: a tela que ele servia não existia
+// mais e 684 das suas 762 linhas eram inalcançáveis. Só o selo 🔗 sobreviveu, virou
+// CONC_seloConciliado no index.html. Esta guarda impede o fantasma de voltar junto com a
+// leitura extra de banco_regras que ele fazia por sessão sem ninguém consumir.
+test('o módulo BK_ saiu de vez — nenhum resíduo no index nem na pasta js',()=>{
+  assert.equal(fs.existsSync(raiz+'/js/banco.js'),false,'js/banco.js voltou');
+  assert.doesNotMatch(html,/BK_[A-Za-z]/,'sobrou referência a BK_ no index.html');
+  assert.doesNotMatch(html,/src="js\/banco\.js/,'a tag do script voltou');
+  // o selo passou a ler CONC_LINKS (ao vivo), não um espelho congelado no boot
+  assert.match(html,/function CONC_seloConciliado\(tipo,id,mes\)/);
+  assert.match(html,/Object\.values\(CONC_LINKS\)\.some/);
+  assert.match(html,/MOD_conciliacao\(\)\{return MOD_umaVez\('conciliacao',CONC_inicializar\);\}/);
 });
 
 test('histórico bancário é carregado apenas sob demanda',()=>{

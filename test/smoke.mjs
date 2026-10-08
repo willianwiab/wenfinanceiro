@@ -16,12 +16,14 @@ import { chromium } from 'playwright';
 const URL = process.argv[2] || 'https://willianwiab.github.io/wenfinanceiro/index.html?mock';
 
 // Uma função por módulo — se o script quebrar no carregamento, elas somem todas juntas.
-// Cobre os dois arquivos externos (js/banco.js → BC_/CONC_, js/concil.js → CX_) e o index.
+// Cobre os arquivos externos (js/concil.js → CX_, js/simulacao.js → SIM_) e o index.html,
+// onde moram Pagar/Receber, contas bancárias (BC_), conciliação (CONC_), cartão e SophIA.
 const FUNCOES = [
   'P_abrirModalBaixa', 'P_atualizarNavMes',            // Pagar
   'R_abrirModal', 'R_aplicarRecorrente',               // Receber
-  'BC_abrirModal', 'BC_saldoConta', 'BC_renderPainel', // Contas bancárias   (js/banco.js)
-  'CONC_conciliar', 'CONC_candidatosDe',               // Motor de conciliação (js/banco.js)
+  'BC_abrirModal', 'BC_saldoConta', 'BC_renderPainel', // Contas bancárias   (index.html)
+  'CONC_conciliar', 'CONC_candidatosDe',               // Conciliação        (index.html)
+  'CONC_seloConciliado',                               // selo 🔗 de Receber/Pagar
   'CX_abrir', 'CX_aceitarSugestao', 'CX_ajustarBaixa', // Trazer extrato     (js/concil.js)
   'CX_arquivoPdf', 'CX_arquivoFoto', 'CX_ofxArquivo',  // as 4 formas de importar
   'CX_conciliarLote', 'CX_ignorarMov', 'CX_setBusca', 'CX_setFoco',

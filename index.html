@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-b376684b';
+window.APP_VERSION='20261008-d59c1aab';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -309,7 +309,6 @@ body{background:#f0f4f8;color:#1e293b}
 .concil-item-acao{border:none;border-radius:5px;padding:3px 9px;font-size:.73rem;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .concil-vazio{text-align:center;padding:18px;color:#6b7280;font-size:.83rem}
 .concil-mes-select{border:1px solid #e0e7ff;border-radius:7px;padding:5px 9px;font-size:.8rem;outline:none;color:#4f46e5;font-weight:600;background:white;cursor:pointer}
-#bkFiltros button.active{background:#1e40af;color:white;border-color:#1e40af}
 
 /* Notificações */
 .notif-btn{position:relative;background:rgba(255,255,255,.15);border:none;border-radius:9px;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.15rem;transition:background .2s;flex-shrink:0}
@@ -1337,6 +1336,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <option value="">🏷️ Todas categorias</option>
         </select>
         <select id="pOrigemFiltro" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none" title="Filtrar por origem do lançamento">
+          <option value="sistema" selected>🏠 Do sistema</option>
           <option value="">📂 Todas as origens</option>
           <option value="manual">✍️ Manuais</option>
           <option value="fixa">📌 Fixas</option>
@@ -3415,7 +3415,7 @@ function renderTabelaR(){
       <td class="center">${r.data||'-'}</td><td class="center" style="color:${R_getVencEfetivo(r)!==r.data&&R_getVencEfetivo(r)!=='-'?'#f97316':'inherit'}">${R_getVencEfetivo(r)}</td><td class="center">${r.horas}h</td>
       <td class="right">${fmt(r.valorTotal)}</td><td class="right" style="color:#22c55e">${fmt(r.valorReserva)}</td>
       <td class="right" style="color:${r.saldo>0?'#ef4444':'#16a34a'}">${fmt(r.saldo)}</td>
-      <td class="center"><span class="badge-r ${R_isPago(r)?'pago':'pendente'}">${R_isPago(r)?'✅ PAGO':'🔴 PENDENTE'}</span>${typeof BK_statusConciliacao==='function'?`<div style="margin-top:3px">${BK_statusConciliacao('receber',r.id,r.mes)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div>`:''}</td>
+      <td class="center"><span class="badge-r ${R_isPago(r)?'pago':'pendente'}">${R_isPago(r)?'✅ PAGO':'🔴 PENDENTE'}</span><div style="margin-top:3px">${CONC_seloConciliado('receber',r.id,r.mes)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div></td>
       <td class="center">
         <button class="btn-acao-r" data-action="editar">✏️</button>
         <button class="btn-acao-r del" data-action="excluir">🗑️</button>
@@ -7163,8 +7163,13 @@ function renderTabelaP(){
   const catFiltro=document.getElementById('pCatFiltroTabela')?.value||'';
   const filtroMin=parseFloat(document.getElementById('pFiltroMin')?.value)||0;
   const filtroMax=parseFloat(document.getElementById('pFiltroMax')?.value)||Infinity;
+  const origemFiltro=document.getElementById('pOrigemFiltro')?.value||'';
+  // Tudo que vem do extrato nasce PAGO (a conciliação dá a baixa na hora). Se o chip de
+  // status filtrasse antes, pedir esses recortes devolveria lista vazia sem explicar nada.
+  // Nesses dois o status não filtra: mostra pago e não pago, que é o ponto de olhar pra lá.
+  const origemIgnoraStatus=(origemFiltro==='extrato'||origemFiltro==='conciliada');
   let data=[];
-  if(P_filtroAtual==='VENCIDO'){
+  if(P_filtroAtual==='VENCIDO'&&!origemIgnoraStatus){
     const mesesBuscar=mesFiltro&&mesFiltro!=='TODOS_MESES'?[mesFiltro]:P_getMesesOrdenados();
     mesesBuscar.forEach(m=>{(P_meses[m]||[]).forEach(r=>{if(P_isContaVencida(r,m)&&(!busca||r.nome.toLowerCase().includes(busca)))data.push({...r,_mes:m});});});
     const mIdxMap={};P_getMesesOrdenados().forEach((m,i)=>mIdxMap[m]=i);data.sort((a,b)=>mIdxMap[a._mes]-mIdxMap[b._mes]||a.dia-b.dia);
@@ -7173,14 +7178,16 @@ function renderTabelaP(){
     else banner.innerHTML='';
   }else{
     banner.innerHTML='';
-    data=P_getData().filter(r=>{const s=r.status.toUpperCase();let mf=false;if(P_filtroAtual==='TODOS')mf=true;else if(P_filtroAtual==='PAGO')mf=s==='PAGO';else if(P_filtroAtual==='PENDENTE')mf=s!=='PAGO';return mf&&(!busca||r.nome.toLowerCase().includes(busca));});
+    data=P_getData().filter(r=>{const s=r.status.toUpperCase();let mf=false;if(origemIgnoraStatus||P_filtroAtual==='TODOS')mf=true;else if(P_filtroAtual==='PAGO')mf=s==='PAGO';else if(P_filtroAtual==='PENDENTE')mf=s!=='PAGO';return mf&&(!busca||r.nome.toLowerCase().includes(busca));});
     data.sort((a,b)=>(a.dia||99)-(b.dia||99));
   }
   if(catFiltro)data=data.filter(r=>(r.categoria||'outros')===catFiltro||(catFiltro==='outros'&&!r.categoria));
-  const origemFiltro=document.getElementById('pOrigemFiltro')?.value||'';
   if(origemFiltro)data=data.filter(r=>{
     const fixa=!!(r.fixaId||r.fixa);
     const doExtrato=P_veioDoExtrato(r);
+    // 🏠 Do sistema (padrão): as contas que VOCÊ planejou — fixas, manuais e faturas de
+    // cartão. Fica de fora só o que nasceu de uma linha do extrato.
+    if(origemFiltro==='sistema')return !doExtrato;
     if(origemFiltro==='fatura')return !!r.faturaCartao;
     if(origemFiltro==='fixa')return fixa&&!r.faturaCartao;
     if(origemFiltro==='extrato')return doExtrato;
@@ -7213,12 +7220,16 @@ function renderTabelaP(){
       <td class="center">${r.dia?'Dia '+r.dia:'—'}</td>
       <td class="right">${fmt(r.valor)}</td>
       <td class="right" style="color:${saldo>0?'#b91c1c':'#15803d'}">${fmt(saldo)}</td>
-      <td class="center"><span class="badge-p ${st.cls}">${st.label}</span>${typeof BK_statusConciliacao==='function'?`<div style="margin-top:3px">${BK_statusConciliacao('pagar',r.id,mesR)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div>`:''}</td>
+      <td class="center"><span class="badge-p ${st.cls}">${st.label}</span><div style="margin-top:3px">${CONC_seloConciliado('pagar',r.id,mesR)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div></td>
       <td class="center">${!isPago?`<button class="btn-parcial-p" onclick="P_abrirBaixaCtx('${r.id}','${mesR}')">💰 Baixar</button>`:`<span class="btn-pagar-p pago">✅</span>`}</td>
       <td class="center"><button class="toggle-btn-p" onclick="P_editarContaCtx('${r.id}','${mesR}')">✏️</button><button class="toggle-btn-p" title="Mover para outro mês" onclick="P_moverMesCtx('${r.id}','${mesR}')">📆</button><button class="toggle-btn-p" onclick="P_excluirContaCtx('${r.id}','${mesR}')">🗑️</button></td>
     </tr>`;
   });
   if(!rows)rows=`<tr><td colspan="7" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
+  if(origemIgnoraStatus&&P_filtroAtual!=='TODOS'){
+    const rot=origemFiltro==='extrato'?'vindas do extrato':'conciliadas com o extrato';
+    banner.innerHTML=`📥 Mostrando <b>todas as ${rot}</b>, pagas e não pagas — o filtro de status está desconsiderado neste recorte.`;
+  }
   const total=data.reduce((a,r)=>a+r.valor,0),totalSaldo=data.reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0);
   document.getElementById('pTabelaDiv').innerHTML=`<table class="t-pagar"><thead><tr>${thSort('nome','Descrição')}${thSort('dia','Venc.')}${thSort('valor','Valor')}${thSort('saldo','Saldo')}<th style="text-align:center">Status</th><th style="text-align:center">Baixa</th><th style="text-align:center">Ações</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">TOTAL (${data.length})</td><td style="text-align:right">${fmt(total)}</td><td style="text-align:right">${fmt(totalSaldo)}</td><td colspan="3"></td></tr></tfoot></table>`;
 }
@@ -7761,7 +7772,6 @@ document.getElementById('rModalConfirmBg')?.addEventListener('click',e=>{if(e.ta
 document.getElementById('rModalParcialBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('rModalParcialBg'))R_fecharModalParcial();});
 document.getElementById('rModalRecorBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('rModalRecorBg'))R_fecharModalRecor();});
 document.getElementById('modalNFBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('modalNFBg'))document.getElementById('modalNFBg').classList.remove('open');});
-document.getElementById('bkModalManualBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('bkModalManualBg'))BK_fecharModalManual();});
 
 // Pagar
 document.getElementById('pModalBg')?.addEventListener('click',e=>{if(e.target===document.getElementById('pModalBg'))fecharModalP();});
@@ -8025,7 +8035,7 @@ function MOD_umaVez(chave,tarefa){
 }
 // Links de conciliação — usados pela tela de Conciliação E pelas marcas ✅/⏳ do extrato de
 // cada conta. Uma leitura só, compartilhada pelas duas telas.
-function MOD_conciliacao(){return MOD_umaVez('conciliacao',async()=>{const ok=await CONC_inicializar();if(ok!==false&&typeof BK_inicializar==='function')await BK_inicializar(true);return ok;});}
+function MOD_conciliacao(){return MOD_umaVez('conciliacao',CONC_inicializar);}
 function MOD_prepararCachesLocais(){
   try{BC_carregarCache();}catch(e){}
   try{C_carregarCache();}catch(e){}
@@ -8123,7 +8133,23 @@ const CONC_COL='banco_conciliados';
 const CONC_LINKS={}; // chave -> {chave,status:'match'|'ignorado',tipo:'pagar'|'receber',id,mes,movId,label,statusAntes,valorPagoAntes,valorReservaAntes,saldoAntes,ts}
 let CONC_LINKS_OK=false; // os links já foram lidos? sem isto, o ⏳ do extrato da conta seria mentira
 let CONC_tol=7, CONC_busca='', CONC_filtroTipo='todos', CONC_selMov=null, CONC_selLanc=null;
-async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);CONC_LINKS_OK=true;Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);if(typeof BK_conciliados!=='undefined'){Object.keys(BK_conciliados).forEach(k=>delete BK_conciliados[k]);Object.assign(BK_conciliados,l);}}catch(e){console.warn('Conciliação:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();return true;}
+async function CONC_inicializar(){try{const l=await CC_fbCarregar(CONC_COL);CONC_LINKS_OK=true;Object.keys(CONC_LINKS).forEach(k=>delete CONC_LINKS[k]);Object.assign(CONC_LINKS,l);}catch(e){console.warn('Conciliação:',e.message);return false;}if(mainAtivo==='pagar'&&subPAtivo==='p-conciliacao')CONC_render();
+  // Os links chegam DEPOIS do primeiro render de Receber/Pagar. Sem este refresh o selo 🔗
+  // dessas telas ficaria apagado até a próxima navegação (era o rabo do módulo aposentado).
+  if(mainAtivo==='receber'&&subRAtivo==='r-lancamentos')renderTabelaR();
+  if(mainAtivo==='pagar'&&subPAtivo==='p-contas')renderTabelaP();
+  return true;}
+// Selo 🔗 de Receber/Pagar: este lançamento está casado com alguma movimentação do extrato?
+// Lê CONC_LINKS, então acende e apaga na hora em que se concilia ou desfaz — sem recarregar.
+// O ramo grupo/ids atende os documentos legados do antigo banco.js (uma transação quitando
+// várias diárias do mesmo cliente); nada grava esse formato hoje, mas ele vive na coleção.
+function CONC_seloConciliado(tipo,id,mes){
+  return Object.values(CONC_LINKS).some(c=>{
+    if(!c||c.status!=='match'||c.tipo!==tipo)return false;
+    if(c.grupo&&Array.isArray(c.ids))return c.ids.some(it=>String(it.id)===String(id)&&it.mes===mes);
+    return String(c.id)===String(id)&&c.mes===mes;
+  });
+}
 function CONC_movLinkado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.movId===id);}
 function CONC_movIgnorado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='ignorado'&&x.movId===id);}
 function CONC_lancLinkado(tipo,id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.tipo===tipo&&String(x.id)===String(id)&&(tipo==='pagar'?x.mes===mes:true));}
@@ -8346,8 +8372,6 @@ async function CONC_desfazer(chave){
 // Em ?mock entra direto. MOD_prepararCachesLocais()+init() rodam dentro de AUTH_iniciarApp().
 AUTH_bootstrap();
 </script>
-<!-- Conciliação (aba) descartada do roadmap e substituída por "Importar" (IMP_). banco.js segue carregado só p/ os helpers usados em outros renders (ex.: BK_statusConciliacao). -->
-<script src="js/banco.js?v=6cd5eb4b"></script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
 <script src="js/evolucao.js?v=a207e335"></script>
