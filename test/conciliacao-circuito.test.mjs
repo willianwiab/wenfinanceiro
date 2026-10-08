@@ -57,7 +57,52 @@ const r = await page.evaluate(async () => {
   out.extrato = { conciliadas: conta('conciliadas'), aConciliar: conta('naoconciliadas'), extrato: conta('extrato') };
   document.getElementById('bcExtratoBg').classList.remove('open');
 
-  // ── 6. desfazer devolve tudo ──
+  // ── 6. filtro "📥 Vindas do extrato" em A Pagar → Contas ──
+  const sel = document.getElementById('pOrigemFiltro');
+  out.filtroOrigem = { opcoes: [...sel.options].map(o => o.value) };
+  // cria uma conta a pagar A PARTIR de uma linha do extrato (débito/PIX que não existia no sistema)
+  window.prompt = () => 'PIX avulso do extrato';
+  const movLivre = { id: 'mov_ofx_bmock1_FITPIX', contaId: 'bmock1', tipo: 'saida', valor: 77.7,
+                     data: '2026-08-20', descricao: '📥 PIX ENVIADO FULANO', categoria: null,
+                     origemTipo: 'import', origemId: 'FITPIX', estornada: false };
+  BC_MOVS.push(movLivre);
+  await CONC_criarLanc('mov_ofx_bmock1_FITPIX', 'pagar');
+  await new Promise(res => setTimeout(res, 600));
+  const criada = (P_meses['AGO/2026'] || []).find(x => x.nome === 'PIX avulso do extrato');
+  out.criada = {
+    existe: !!criada,
+    marcador: !!(criada && criada.origemExtrato),
+    guardaOMov: criada && criada.origemMovId === 'mov_ofx_bmock1_FITPIX',
+    jaNasceConciliada: !!(criada && criada.conciliadoMov),
+    reconheceComoExtrato: P_veioDoExtrato(criada),
+  };
+  // retroativo: conta antiga, criada antes do marcador existir, só com o obs
+  out.retroativo = {
+    peloObs: P_veioDoExtrato({ obs: 'Criado do extrato' }) === true,
+    naoPegaQualquerUma: P_veioDoExtrato({ obs: 'outra coisa' }) === false,
+  };
+  // o que foi digitado à mão NÃO pode cair em "vindas do extrato", nem o contrário
+  const manual = (P_meses['AGO/2026'] || []).find(x => x.id === 'pmock_conc');
+  out.separacao = {
+    manualNaoEhExtrato: P_veioDoExtrato(manual) === false,
+    // a conciliada à mão tem conciliadoMov mas NÃO é "vinda do extrato"
+    conciliadaNaoViraExtrato: !!manual.conciliadoMov && P_veioDoExtrato(manual) === false,
+  };
+  // e os filtros da tela separam de verdade
+  // abre de fato a sub-aba 📋 Contas (é lá que o select de mês é populado)
+  const bContas = [...document.querySelectorAll('#subnav-pagar .nav-sub button')].find(b => /Contas/.test(b.textContent));
+  showSubP('p-contas', bContas);
+  await new Promise(res => setTimeout(res, 1500));
+  // a tabela mostra o mês corrente do A Pagar; as contas do teste estão em AGO/2026
+  out.mes = { antes: P_mesAtual };
+  P_mesAtual = 'AGO/2026'; P_filtroAtual = 'TODOS';
+  const contaCom = v => { sel.value = v; renderTabelaP(); return document.querySelectorAll('#pTabelaDiv tbody tr').length; };
+  out.contagens = { todas: contaCom(''), extrato: contaCom('extrato'), manual: contaCom('manual') };
+  const textoCom = v => { sel.value = v; renderTabelaP(); return document.getElementById('pTabelaDiv').textContent; };
+  out.textos = { extrato: textoCom('extrato'), manual: textoCom('manual') };
+  sel.value = '';
+
+  // ── 7. desfazer devolve tudo ──
   window.confirm = () => true;
   await CONC_desfazer('conc_mov_ofx_bmock1_FIT888');
   await new Promise(res => setTimeout(res, 600));
@@ -88,6 +133,22 @@ ok('✅ acende no extrato da conta', r.antes.conciliadaNoExtrato === false && r.
 console.log('\n── os filtros refletem na hora ──');
 ok('Conciliadas = 2', r.extrato.conciliadas === 2, r.extrato);
 ok('A conciliar = 0', r.extrato.aConciliar === 0, r.extrato.aConciliar);
+
+console.log('\n── filtro 📥 Vindas do extrato (A Pagar → Contas) ──');
+ok('a opção existe no select', r.filtroOrigem.opcoes.includes('extrato'), r.filtroOrigem.opcoes);
+ok('criar do extrato gera a conta a pagar', r.criada.existe);
+ok('carimba o marcador origemExtrato', r.criada.marcador);
+ok('guarda de qual movimentação veio', r.criada.guardaOMov);
+ok('já nasce conciliada com a movimentação', r.criada.jaNasceConciliada);
+ok('é reconhecida como vinda do extrato', r.criada.reconheceComoExtrato);
+ok('RETROATIVO: pega as antigas pelo obs', r.retroativo.peloObs && r.retroativo.naoPegaQualquerUma, r.retroativo);
+ok('digitada à mão NÃO é "vinda do extrato"', r.separacao.manualNaoEhExtrato);
+ok('conciliada à mão também não vira "do extrato"', r.separacao.conciliadaNaoViraExtrato);
+ok('cada recorte é menor que o total', r.contagens.extrato < r.contagens.todas && r.contagens.manual < r.contagens.todas, r.contagens);
+ok('"📥 Vindas do extrato" mostra SÓ a nascida do extrato',
+   /PIX avulso do extrato/.test(r.textos.extrato) && !/Compra sem identificar/.test(r.textos.extrato));
+ok('"✍️ Manuais" mostra SÓ a digitada à mão',
+   /Compra sem identificar/.test(r.textos.manual) && !/PIX avulso do extrato/.test(r.textos.manual));
 
 console.log('\n── desfazer volta tudo ──');
 ok('conta volta a PENDENTE', r.desfeito.status === 'PENDENTE', r.desfeito);

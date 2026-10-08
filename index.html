@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-8f553e8a';
+window.APP_VERSION='20261008-b376684b';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1341,6 +1341,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <option value="manual">✍️ Manuais</option>
           <option value="fixa">📌 Fixas</option>
           <option value="fatura">💳 Faturas de cartão</option>
+          <option value="extrato">📥 Vindas do extrato</option>
           <option value="conciliada">🔗 Conciliadas c/ extrato</option>
         </select>
       </div>
@@ -7179,10 +7180,13 @@ function renderTabelaP(){
   const origemFiltro=document.getElementById('pOrigemFiltro')?.value||'';
   if(origemFiltro)data=data.filter(r=>{
     const fixa=!!(r.fixaId||r.fixa);
+    const doExtrato=P_veioDoExtrato(r);
     if(origemFiltro==='fatura')return !!r.faturaCartao;
     if(origemFiltro==='fixa')return fixa&&!r.faturaCartao;
+    if(origemFiltro==='extrato')return doExtrato;
     if(origemFiltro==='conciliada')return !!r.conciliadoMov;
-    if(origemFiltro==='manual')return !r.faturaCartao&&!fixa;
+    // "Manual" é o que você digitou: nem fatura, nem fixa, nem nascida do extrato.
+    if(origemFiltro==='manual')return !r.faturaCartao&&!fixa&&!doExtrato;
     return true;
   });
   if(filtroMin>0)data=data.filter(r=>r.valor>=filtroMin);if(filtroMax<Infinity)data=data.filter(r=>r.valor<=filtroMax);
@@ -8124,6 +8128,10 @@ function CONC_movLinkado(id){return Object.values(CONC_LINKS).some(x=>x&&x.statu
 function CONC_movIgnorado(id){return Object.values(CONC_LINKS).some(x=>x&&x.status==='ignorado'&&x.movId===id);}
 function CONC_lancLinkado(tipo,id,mes){return Object.values(CONC_LINKS).some(x=>x&&x.status==='match'&&x.tipo===tipo&&String(x.id)===String(id)&&(tipo==='pagar'?x.mes===mes:true));}
 function CONC_movs(){return (BC_MOVS||[]).filter(m=>m.origemTipo==='import'&&!m.estornada);}
+// Conta a pagar que NASCEU de uma linha do extrato (débito, PIX, qualquer movimentação), criada
+// pelo "Criar lançamento" da Conciliação. O marcador certo é `origemExtrato`; o `obs` é o
+// reconhecimento das que foram criadas antes do marcador existir (08/10/2026) — retroativo.
+function P_veioDoExtrato(r){return !!r&&(!!r.origemExtrato||r.obs==='Criado do extrato');}
 function CONC_diasEntre(a,b){const da=new Date((a||'')+'T12:00:00'),db=new Date((b||'')+'T12:00:00');if(isNaN(da)||isNaN(db))return 999;return Math.abs(Math.round((da-db)/86400000));}
 function CONC_brToIso(br){const p=(br||'').split('/');if(p.length===3)return p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0');return '';}
 function CONC_isoToKey(iso){const p=(iso||'').split('-');if(p.length<2)return '';return (MESES_ABREV[(+p[1])-1]||'JAN')+'/'+p[0];}
@@ -8305,7 +8313,7 @@ async function CONC_criarLanc(movId,tipo){
   if(tipo==='pagar'){
     if(!P_meses[mesKey])P_meses[mesKey]=[];
     const id=gerarId();const dia=parseInt((iso.split('-')[2]))||null;
-    P_meses[mesKey].push({id,nome:nome||'Lançamento',valor:v,valorPago:0,dia,mes:mesKey,categoria:mov.categoria||'',fixa:false,status:'PENDENTE',cod:'',obs:'Criado do extrato',dataCriacao:new Date().toISOString()});
+    P_meses[mesKey].push({id,nome:nome||'Lançamento',valor:v,valorPago:0,dia,mes:mesKey,categoria:mov.categoria||'',fixa:false,status:'PENDENTE',cod:'',obs:'Criado do extrato',origemExtrato:true,origemMovId:movId,dataCriacao:new Date().toISOString()});
     P_salvarStorage();
     await CONC_conciliar(movId,'pagar|'+id+'|'+mesKey);
   }else{
