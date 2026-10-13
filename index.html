@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261008-b25a202f';
+window.APP_VERSION='20261013-4c72f730';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2334,6 +2334,21 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <!-- Modal transferência entre contas -->
+<!-- Modal: PDF protegido por senha (módulo PDF_) -->
+<div class="modal-bg" id="modalPdfSenha">
+  <div class="modal" style="max-width:420px">
+    <h2>🔒 Este PDF tem senha</h2>
+    <p id="pdfSenhaSub" style="color:#6b7280;font-size:.88rem;margin:-6px 0 14px">O banco protegeu o arquivo. Digite a senha para o app abrir a fatura aqui mesmo.</p>
+    <div class="form-group"><label>Senha do arquivo</label><input type="password" id="pdfSenhaInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="geralmente os primeiros dígitos do CPF" onkeydown="if(event.key==='Enter'){event.preventDefault();PDF_senhaOk();}"/></div>
+    <p id="pdfSenhaErro" style="color:#b91c1c;font-size:.85rem;margin:-4px 0 8px;display:none">Senha incorreta. Confira e tente de novo.</p>
+    <p style="color:#6b7280;font-size:.8rem;margin:0 0 12px">A senha é usada só aqui, no seu navegador, para abrir o arquivo — não é enviada a ninguém nem guardada.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline-b" onclick="PDF_senhaCancelar()">Cancelar</button>
+      <button class="btn btn-purple" onclick="PDF_senhaOk()">Destrancar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="bcTransfBg">
   <div class="modal" style="max-width:420px">
     <h2 id="bcTransfTitulo">🔄 Transferência entre contas</h2>
@@ -6344,6 +6359,107 @@ function IMP_abrir(tipo,alvoId){
   document.getElementById('impModalBg').classList.add('open');
 }
 function IMP_fechar(){document.getElementById('impModalBg').classList.remove('open');IMP_previa=[];}
+// ── PDF_: PDF protegido por senha ────────────────────────────────────────────
+// O PDF ia cru (base64) para a IA. Trancado, o provedor não abre e a leitura falha sem
+// explicação. Aqui ele é destrancado NO NAVEGADOR (pdf.js, carregado só quando um PDF
+// protegido aparece) e cada página vira uma imagem, que segue pelo mesmo caminho que as
+// fotos da fatura já usam. PDF sem senha continua indo exatamente como antes.
+// A senha nunca sai do aparelho: fica em memória até fechar a aba (PDF_senhaSessao), para a
+// próxima fatura do mesmo banco não pedir de novo, e não é gravada em lugar nenhum.
+const PDF_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDF_JS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const PDF_MAX_PAGINAS = 30, PDF_LARGURA = 1400, PDF_QUALIDADE = 0.85;
+let PDF_senhaSessao = null, PDF_senhaPendente = null;
+function PDF_ehPdf(file) { return !!file && (String(file.type || '') === 'application/pdf' || /\.pdf$/i.test(file.name || '')); }
+// PURO: PDF protegido referencia um dicionário /Encrypt no trailer. Varrer os bytes é barato e
+// evita carregar a biblioteca para quem nunca vai precisar dela.
+function PDF_pareceProtegido(bytes) {
+  const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const alvo = [0x2f, 0x45, 0x6e, 0x63, 0x72, 0x79, 0x70, 0x74];   // "/Encrypt"
+  for (let i = 0, n = u.length - alvo.length; i <= n; i++) {
+    if (u[i] !== 0x2f) continue;
+    let k = 1; while (k < alvo.length && u[i + k] === alvo[k]) k++;
+    if (k === alvo.length) return true;
+  }
+  return false;
+}
+function PDF_base64(bytes) {
+  const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function PDF_lib() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = PDF_JS_URL; sc.async = true;
+    sc.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER; res(window.pdfjsLib); } catch (e) { rej(e); } };
+    sc.onerror = () => rej(new Error('Não consegui carregar o leitor de PDF. Confira a internet e tente de novo.'));
+    document.head.appendChild(sc);
+  });
+}
+function PDF_pedirSenha(nome, errada) {
+  return new Promise(resolve => {
+    PDF_senhaPendente = resolve;
+    const sub = document.getElementById('pdfSenhaSub'), inp = document.getElementById('pdfSenhaInput'), erro = document.getElementById('pdfSenhaErro');
+    if (sub) sub.textContent = 'O banco protegeu ' + (nome ? '“' + nome + '”' : 'este arquivo') + '. Digite a senha para o app abrir a fatura aqui mesmo.';
+    if (erro) erro.style.display = errada ? 'block' : 'none';
+    if (inp) inp.value = '';
+    document.getElementById('modalPdfSenha').classList.add('open');
+    setTimeout(() => { try { inp && inp.focus(); } catch (e) {} }, 50);
+  });
+}
+function PDF_senhaFechar(valor) {
+  document.getElementById('modalPdfSenha').classList.remove('open');
+  const inp = document.getElementById('pdfSenhaInput'); if (inp) inp.value = '';
+  const r = PDF_senhaPendente; PDF_senhaPendente = null; if (r) r(valor);
+}
+window.PDF_senhaOk = function () { const inp = document.getElementById('pdfSenhaInput'); const v = inp ? inp.value : ''; if (!v) { try { inp.focus(); } catch (e) {} return; } PDF_senhaFechar(v); };
+window.PDF_senhaCancelar = function () { PDF_senhaFechar(null); };
+// Abre com a senha da sessão; se não houver (ou estiver errada), pergunta até acertar ou cancelar.
+// pdf.js consome o buffer a cada tentativa — por isso a cópia.
+async function PDF_abrir(bytes, nome) {
+  const lib = await PDF_lib();
+  // "Senha incorreta" só aparece para senha que a pessoa digitou — a da sessão falhar em
+  // silêncio é normal (outro banco, outro arquivo).
+  let senha = PDF_senhaSessao, deSessao = senha != null, errada = false;
+  for (;;) {
+    if (senha == null) { senha = await PDF_pedirSenha(nome, errada); if (senha == null) throw new Error('cancelado'); }
+    try {
+      const doc = await lib.getDocument({ data: new Uint8Array(bytes).slice(), password: senha }).promise;
+      PDF_senhaSessao = senha; return doc;
+    } catch (e) {
+      if (e && e.name === 'PasswordException') { errada = !deSessao; deSessao = false; senha = null; continue; }
+      throw e;
+    }
+  }
+}
+async function PDF_paginasComoImagens(doc) {
+  const total = Math.min(doc.numPages || 0, PDF_MAX_PAGINAS), out = [];
+  for (let n = 1; n <= total; n++) {
+    const pg = await doc.getPage(n);
+    const v1 = pg.getViewport({ scale: 1 }), escala = Math.min(3, Math.max(1, PDF_LARGURA / v1.width));
+    const vp = pg.getViewport({ scale: escala });
+    const cv = document.createElement('canvas'); cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+    const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    out.push({ mime: 'image/jpeg', data: cv.toDataURL('image/jpeg', PDF_QUALIDADE).split(',')[1] || '', nome: 'página ' + n });
+    try { pg.cleanup(); } catch (e) {}
+  }
+  if ((doc.numPages || 0) > PDF_MAX_PAGINAS) toast('O PDF tem ' + doc.numPages + ' páginas; li as ' + PDF_MAX_PAGINAS + ' primeiras.', '#6b7280');
+  return out;
+}
+// O que a IA vai receber por um arquivo: imagem/PDF aberto passam como sempre; PDF protegido
+// vira uma imagem por página. Rejeita com Error('cancelado') se a pessoa desistir da senha.
+async function PDF_preparar(file) {
+  const nome = (file && file.name) || 'arquivo';
+  const bytes = await file.arrayBuffer();
+  if (!PDF_ehPdf(file)) return [{ mime: file.type || 'image/jpeg', data: PDF_base64(bytes), nome }];
+  if (!PDF_pareceProtegido(bytes)) return [{ mime: 'application/pdf', data: PDF_base64(bytes), nome }];
+  const doc = await PDF_abrir(bytes, nome);
+  try { return await PDF_paginasComoImagens(doc); } finally { try { doc.destroy(); } catch (e) {} }
+}
+function PDF_cancelou(err) { return !!err && String(err.message || err) === 'cancelado'; }
+
 function IMP_fileB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
 function IMP_fileText(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=rej;r.readAsText(f);});}
 function IMP_parseOFX(text){
@@ -6417,7 +6533,14 @@ async function IMP_gemini(input){
       +'Para cada transação devolva: data ("YYYY-MM-DD"; se só houver dia/mês, use o ano da fatura), descricao (nome do estabelecimento como aparece, mantendo o "X/Y" da parcela se houver), valor (número), parcela ("X/Y" se for parcelada; senão "").\n'
       +(isCartao?'Devolva também "totalFatura": o número do "Valor total desta fatura" (o valor final a pagar, já com créditos/ajustes descontados) impresso no documento; se não achar, use 0.\n':'')
       +'Responda SOMENTE JSON, sem texto fora do JSON: {"totalFatura":0,"itens":[{"data":"","descricao":"","valor":0,"parcela":""}]}';
-    const imagens=[];for(const f of files){const b64=await IMP_fileB64(f);imagens.push({mime:f.type||'image/jpeg',b64});}
+    // PDF com senha é destrancado aqui e vira páginas em imagem (módulo PDF_, espelho do NS);
+    // o resto passa como sempre.
+    const imagens=[];
+    for(const f of files){
+      let partes;try{partes=await PDF_preparar(f);}
+      catch(e){if(PDF_cancelou(e)){IMP_setAviso('Leitura cancelada — o PDF continua trancado.');return;}IMP_setAviso('⚠️ Não consegui abrir '+(f.name||'o arquivo')+': '+(e.message||e));return;}
+      partes.forEach(pt=>imagens.push({mime:pt.mime,b64:pt.data}));
+    }
     let txt;try{txt=await IA_gerarConteudo(prompt,imagens,{json:true});}catch(err){IMP_setAviso('⚠️ '+err.message);return;}
     let dados;try{dados=JSON.parse(txt);}catch(e){dados=null;}
     IMP_totalLido=(dados&&Number(dados.totalFatura))?Math.abs(Number(dados.totalFatura)):null; // total impresso na fatura (p/ conferência)
