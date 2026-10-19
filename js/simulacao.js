@@ -34,6 +34,11 @@ const SIM_LS='wen_sim_cfg';
 const SIM_HORIZONTES=[60,90,180];
 let SIM_cfg={ajustes:{},notas:{},saldoOverride:null,metaMinima:0,catsCortadas:[],horizonte:60};
 let SIM_chartLinha=null, SIM_chartBarras=null;
+// Linhas extras do gráfico de saldo: faturamento e custo ACUMULADOS no horizonte.
+// São preferência de visualização (não é dado), então moram no localStorage mesmo.
+const SIM_LS_LINHAS='wen_sim_linhas';
+let SIM_LINHAS=(()=>{const z={fat:false,cus:false,proj:false};try{return {...z,...JSON.parse(localStorage.getItem(SIM_LS_LINHAS)||'{}')};}catch(e){return z;}})();
+let SIM_ultimoGrafico=null;   // guarda os argumentos pra redesenhar sem recalcular tudo
 let SIM_ajusteAtual=null;
 let SIM_contasProntas=false;   // vira true quando MOD_contasCompleto resolve (ou pelo prazo de segurança)
 let SIM_gravaTimer=null;       // debounce: mexer em 5 coisas seguidas = 1 gravação, não 5
@@ -403,6 +408,15 @@ function SIM_montarNaAba(){
   // ── gráficos
   h+=`<div class="chart-box" style="margin-top:14px">
     <h3>📈 Evolução do saldo — ${DIAS} dias${meta>0?` <span style="font-weight:400;color:#6b7280;font-size:.85rem">· meta mínima ${fmt(meta)}</span>`:''}</h3>
+    <div class="sim-linhas">
+      <button type="button" class="sim-lin${SIM_LINHAS.fat?' on':''}" onclick="SIM_toggleLinha('fat')">
+        <span class="pt" style="background:#0ea5e9"></span>Faturamento acumulado</button>
+      <button type="button" class="sim-lin${SIM_LINHAS.cus?' on':''}" onclick="SIM_toggleLinha('cus')">
+        <span class="pt" style="background:#f97316"></span>Custo acumulado</button>
+      ${incompletos.length?`<button type="button" class="sim-lin${SIM_LINHAS.proj?' on':''}" onclick="SIM_toggleLinha('proj')"
+        title="Soma a receita que historicamente ainda entra nos meses que estão com a agenda pela metade">
+        <span class="pt" style="background:#7c3aed"></span>Projeção com a agenda cheia</button>`:''}
+    </div>
     <canvas id="simChartLinha" height="88"></canvas>
   </div>
   <div class="chart-box" style="margin-top:14px">
@@ -464,7 +478,7 @@ function SIM_montarNaAba(){
   h+=`</div>`;
 
   raiz.innerHTML=h;
-  SIM_desenharGraficos(linha,blocos,pior,meta,DIAS);
+  SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos);
 }
 
 // Cenário rápido para um grupo inteiro de vencidos. Vale mais que ajustar um a um: a pergunta
@@ -514,7 +528,9 @@ function SIM_itemLinha(x){
   </div>`;
 }
 
-function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS){
+function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos){
+  incompletos=incompletos||[];
+  SIM_ultimoGrafico={linha,blocos,pior,meta,DIAS,incompletos};
   if(typeof Chart==='undefined')return;
   try{ if(SIM_chartLinha)SIM_chartLinha.destroy(); }catch(e){} SIM_chartLinha=null;
   try{ if(SIM_chartBarras)SIM_chartBarras.destroy(); }catch(e){} SIM_chartBarras=null;
@@ -528,13 +544,46 @@ function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS){
       segment:{borderColor:c=>c.p1.parsed.y>=0?'#22c55e':'#ef4444'},
       backgroundColor:'rgba(99,102,241,.06)',tension:.35,fill:true,pointRadius:2,borderWidth:2.5,
       pointBackgroundColor:dados.map(v=>v>=0?'#22c55e':'#ef4444')}];
-    if(meta>0)ds.push({label:'Meta mínima',data:dados.map(()=>meta),borderColor:'#f97316',
+    if(meta>0)ds.push({label:'Meta mínima',data:dados.map(()=>meta),borderColor:'#a855f7',
       borderDash:[6,3],borderWidth:1.5,pointRadius:0,fill:false});
+    // Projeção: o saldo como ficaria se os meses de agenda incompleta fechassem na média dos
+    // 3 últimos meses fechados. É a mesma conta do aviso "a agenda ainda está enchendo" — o que
+    // falta em cada mês entra diluído pelos dias daquele mês. Serve pra separar "vou quebrar"
+    // de "ainda não vendi", que é a leitura que a linha crua do saldo não consegue dar.
+    if(SIM_LINHAS.proj&&incompletos.length){
+      const falta={}; incompletos.forEach(x=>{falta[x.mes]=x.falta;});
+      const dias={}; linha.forEach(t=>{const m=MESES_ABREV[t.dt.getMonth()]+'/'+t.dt.getFullYear(); dias[m]=(dias[m]||0)+1;});
+      let acc=0; const proj=[];
+      linha.forEach((t,i)=>{
+        const m=MESES_ABREV[t.dt.getMonth()]+'/'+t.dt.getFullYear();
+        if(falta[m]&&dias[m])acc+=falta[m]/dias[m];
+        if(i%passo===0||i===linha.length-1)proj.push(Math.round((t.saldo+acc)*100)/100);
+      });
+      ds.push({label:'Projeção com a agenda cheia',data:proj.slice(0,pts.length),
+        borderColor:'#7c3aed',borderWidth:2,borderDash:[7,4],pointRadius:0,fill:false,tension:.35});
+    }
+    // Faturamento e custo ACUMULADOS desde hoje. Vão num eixo próprio (direita) porque em
+    // 180 dias eles passam de R$300 mil — no mesmo eixo do saldo, achatariam a linha do saldo
+    // num risco rente ao zero, que é justamente o que a tela existe pra mostrar.
+    if(SIM_LINHAS.fat||SIM_LINHAS.cus){
+      let aR=0,aP=0; const accR=[],accP=[];
+      let k=0;
+      linha.forEach((t,i)=>{ aR+=(Number(t.tR)||0); aP+=(Number(t.tP)||0);
+        if(i===k){ accR.push(aR); accP.push(aP); k+=passo; }
+      });
+      while(accR.length<pts.length){ accR.push(aR); accP.push(aP); }
+      if(SIM_LINHAS.fat)ds.push({label:'Faturamento acumulado',data:accR.slice(0,pts.length),yAxisID:'y2',
+        borderColor:'#0ea5e9',borderWidth:2,borderDash:[4,3],pointRadius:0,fill:false,tension:.3});
+      if(SIM_LINHAS.cus)ds.push({label:'Custo acumulado',data:accP.slice(0,pts.length),yAxisID:'y2',
+        borderColor:'#f97316',borderWidth:2,borderDash:[4,3],pointRadius:0,fill:false,tension:.3});
+    }
     SIM_chartLinha=new Chart(cl,{type:'line',
       data:{labels:pts.map(t=>SIM_dia(t.dt)),datasets:ds},
-      options:{plugins:{legend:{display:meta>0,position:'bottom',labels:{boxWidth:12,font:{size:11}}},
+      options:{plugins:{legend:{display:meta>0||SIM_LINHAS.fat||SIM_LINHAS.cus||(SIM_LINHAS.proj&&incompletos.length>0),position:'bottom',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},
         scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
+                y2:{display:SIM_LINHAS.fat||SIM_LINHAS.cus,position:'right',beginAtZero:true,
+                    ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#94a3b8',font:{size:10}},grid:{display:false}},
                 x:{ticks:{color:'#6b7280',maxTicksLimit:10,font:{size:11}},grid:{display:false}}}}});
   }
   const cb=document.getElementById('simChartBarras');
@@ -560,6 +609,15 @@ function SIM_toggleSecao(id){
   const aberto=el.classList.toggle('aberto'); if(ic)ic.textContent=aberto?'▲':'▼';
 }
 function SIM_toggleDia(uid){ const el=document.getElementById(uid); if(el)el.classList.toggle('aberto'); }
+// Liga/desliga uma das curvas extras. Redesenha só o gráfico — não recalcula a projeção.
+function SIM_toggleLinha(k){
+  SIM_LINHAS[k]=!SIM_LINHAS[k];
+  try{localStorage.setItem(SIM_LS_LINHAS,JSON.stringify(SIM_LINHAS));}catch(e){}
+  const ordem=['fat','cus','proj'];
+  document.querySelectorAll('.sim-linhas .sim-lin').forEach((b,i)=>b.classList.toggle('on',!!SIM_LINHAS[ordem[i]]));
+  const g=SIM_ultimoGrafico;
+  if(g)SIM_desenharGraficos(g.linha,g.blocos,g.pior,g.meta,g.DIAS,g.incompletos);
+}
 
 async function SIM_setHorizonte(d){
   if(SIM_HORIZONTES.indexOf(d)<0)return;
