@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261019-2f45c48c';
+window.APP_VERSION='20261021-69dc6c8d';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -646,6 +646,19 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 .modal-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:18px}
 .calc-preview{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:9px 13px;font-size:.86rem;color:#15803d;font-weight:600;margin-top:7px;display:none}
 .calc-preview.show{display:block}
+.venc-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.venc-data{border:1px solid #e5e7eb;border-radius:7px;padding:8px 10px;font-size:.9rem;outline:none;
+  background:#fff;color:#0f172a;font-family:inherit;min-width:160px}
+.venc-data:focus{border-color:#6d28d9;box-shadow:0 0 0 3px rgba(109,40,217,.1)}
+.venc-chips{display:flex;gap:5px;flex-wrap:wrap}
+.venc-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:5px 11px;
+  font-size:.75rem;font-weight:600;color:#475569;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+.venc-chip:hover{background:#e2e8f0;color:#0f172a}
+.venc-chip.lim{color:#94a3b8}
+.venc-chip.lim:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+.venc-chip:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
+.venc-eco{font-size:.78rem;color:#64748b;margin-top:7px;line-height:1.45}
+.venc-eco.alerta{color:#b45309}
 .data-selects{display:flex;gap:5px}
 .data-selects select{border:1px solid #e5e7eb;border-radius:7px;padding:8px 7px;font-size:.86rem;outline:none;cursor:pointer;background:white}
 
@@ -2041,17 +2054,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="form-group"><label>Descrição</label><input type="text" id="rFDesc" placeholder="1 DIÁRIA DE 2 HORAS"/></div>
     <div class="form-group">
         <label>📅 Vencimento <span style="font-size:.72rem;color:#9ca3af">(vazio = mesma data da gravação)</span></label>
-        <div class="data-selects">
-          <select id="rFVencDia" style="flex:.8"><option value="">Dia</option></select>
-          <select id="rFVencMes" style="flex:1.2">
-            <option value="">Mês</option>
-            <option value="01">Jan</option><option value="02">Fev</option><option value="03">Mar</option>
-            <option value="04">Abr</option><option value="05">Mai</option><option value="06">Jun</option>
-            <option value="07">Jul</option><option value="08">Ago</option><option value="09">Set</option>
-            <option value="10">Out</option><option value="11">Nov</option><option value="12">Dez</option>
-          </select>
-          <select id="rFVencAno" style="flex:1"></select>
+        <div class="venc-linha">
+          <input type="date" id="rFVenc" class="venc-data" onchange="R_vencEco()" oninput="R_vencEco()"/>
+          <div class="venc-chips">
+            <button type="button" class="venc-chip" onclick="R_vencAtalho('grav')">Na gravação</button>
+            <button type="button" class="venc-chip" onclick="R_vencAtalho(15)">+15 dias</button>
+            <button type="button" class="venc-chip" onclick="R_vencAtalho(30)">+30 dias</button>
+            <button type="button" class="venc-chip" onclick="R_vencAtalho('fim')">Fim do mês</button>
+            <button type="button" class="venc-chip lim" onclick="R_vencAtalho('limpar')">Limpar</button>
+          </div>
         </div>
+        <div class="venc-eco" id="rVencEco"></div>
       </div>
       <div class="form-group"><label>Observação</label><textarea id="rFObs" rows="2"></textarea></div>
     <div id="rAgendaEventoInfo" style="display:none;background:#e0e7ff;border-radius:7px;padding:9px 13px;font-size:.8rem;color:#4f46e5;font-weight:600;margin-bottom:7px">📅 Criando a partir da Agenda Google.</div>
@@ -3592,20 +3605,84 @@ async function R_confirmarExcluir(){
 // Modal Receber
 function R_popularSelectsDia(){
   // Popula dias: gravação e vencimento
-  ['rFDia','rFVencDia'].forEach(selId=>{
+  ['rFDia'].forEach(selId=>{
     const sel=document.getElementById(selId);if(!sel)return;
     if(sel.options.length<32){sel.innerHTML='<option value="">Dia</option>';for(let i=1;i<=31;i++){const o=document.createElement('option');o.value=String(i).padStart(2,'0');o.textContent=String(i).padStart(2,'0');sel.appendChild(o);}}
   });
   // Popula anos: gravação e vencimento
-  ['rFAno','rFVencAno'].forEach(selId=>{
+  ['rFAno'].forEach(selId=>{
     const sel=document.getElementById(selId);if(!sel)return;
     if(sel.options.length<4){sel.innerHTML='<option value="">Ano</option>';const ay=new Date().getFullYear();for(let a=ay-1;a<=ay+2;a++){const o=document.createElement('option');o.value=a;o.textContent=a;if(a===ay)o.selected=true;sel.appendChild(o);}}
   });
 }
 
+// ── Vencimento ────────────────────────────────────────────────────────────────
+// Eram três selects (dia/mês/ano). Se faltasse QUALQUER um, o vencimento caía em
+// silêncio para a data da gravação — dava pra escolher "10" e "Dez", esquecer o ano,
+// e salvar com a data errada sem nenhum aviso. Agora é um campo de data só, e o ano
+// vem do exercício (o ano do mês em que o lançamento está entrando), não da digitação.
+function R_vencAnoExercicio(){
+  const a=parseInt(document.getElementById('rFAno')?.value,10);
+  if(a)return a;
+  const p=(R_mesAtual||'').split('/'); const b=parseInt(p[1],10);
+  return b||new Date().getFullYear();
+}
+// Data da gravação montada a partir dos campos do formulário (dia + mês + ano do exercício).
+function R_vencDataGravacao(){
+  const d=parseInt(document.getElementById('rFDia')?.value,10);
+  const m=parseInt(document.getElementById('rFMes')?.value,10);
+  if(!d||!m)return null;
+  const dt=new Date(R_vencAnoExercicio(),m-1,d);
+  return isNaN(dt)?null:dt;
+}
+function R_vencISO(dt){return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+// Guarda e lê no formato do sistema (DD/MM/AAAA); o input trabalha em ISO.
+function R_vencSet(ddmmaaaa){
+  const el=document.getElementById('rFVenc'); if(!el)return;
+  if(ddmmaaaa&&ddmmaaaa!=='-'){const p=String(ddmmaaaa).split('/');
+    el.value=(p.length===3)?(p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0')):'';}
+  else el.value='';
+  R_vencEco();
+}
+function R_vencValor(){
+  const v=document.getElementById('rFVenc')?.value; if(!v)return '';
+  const p=v.split('-'); return (p.length===3)?(p[2]+'/'+p[1]+'/'+p[0]):'';
+}
+window.R_vencAtalho=function(k){
+  const el=document.getElementById('rFVenc'); if(!el)return;
+  if(k==='limpar'){el.value='';R_vencEco();return;}
+  const base=R_vencDataGravacao();
+  if(!base){toast('Preencha a data da gravação primeiro.','#f59e0b');return;}
+  const dt=new Date(base);
+  if(k==='fim')dt.setMonth(dt.getMonth()+1,0);            // último dia do mês da gravação
+  else if(typeof k==='number')dt.setDate(dt.getDate()+k);
+  el.value=R_vencISO(dt);R_vencEco();
+};
+// Diz em palavras o que vai ser salvo — inclusive quando o campo está vazio.
+window.R_vencEco=function(){
+  const eco=document.getElementById('rVencEco'); if(!eco)return;
+  const v=R_vencValor(), base=R_vencDataGravacao(), ano=R_vencAnoExercicio();
+  if(!v){
+    eco.className='venc-eco';
+    eco.innerHTML=base?`Vence junto com a gravação, em <b>${R_dataBR_(base)}</b>.`
+                      :'Sem data: vence junto com a gravação.';
+    return;
+  }
+  const p=v.split('/'), dt=new Date(+p[2],+p[1]-1,+p[0]);
+  const dias=base?Math.round((dt-base)/86400000):null;
+  let txt=`Vence em <b>${v}</b>`;
+  if(dias!==null)txt+=dias===0?' — no dia da gravação.':dias>0?` — <b>${dias}</b> dia(s) depois da gravação.`:` — <b>${-dias}</b> dia(s) <b>antes</b> da gravação.`;
+  let cls='venc-eco';
+  if(dt.getFullYear()!==ano){cls+=' alerta';txt+=`<br>⚠️ Ano <b>${dt.getFullYear()}</b> — o exercício é <b>${ano}</b>. Confira se é isso mesmo.`;}
+  else if(dias!==null&&dias<0){cls+=' alerta';}
+  eco.className=cls;eco.innerHTML=txt;
+};
+function R_dataBR_(dt){return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();}
+
 function atualizarMesDoFormularioR(){
   const mi=document.getElementById('rFMes').value,ano=document.getElementById('rFAno').value,info=document.getElementById('rMesAutoInfo');
   if(mi&&ano){
+    try{R_vencEco();}catch(e){}
     const mesAbrev=MESES_ABREV[parseInt(mi)-1],mesCalc=mesAbrev+'/'+ano,dif=mesCalc!==R_mesAtual;
     info.textContent=dif?'⚠️ Lançando em: '+mesCalc+' (mês diferente)':'✅ Lançando em: '+mesCalc;
     info.style.display='block';info.style.background=dif?'#fef9c3':'#f0fdf4';info.style.color=dif?'#92400e':'#16a34a';info.style.border=dif?'1px solid #fde68a':'1px solid #bbf7d0';
@@ -3642,8 +3719,7 @@ function R_abrirModal(id=null){
     if(data&&data!=='-'){const pts=data.split('/');document.getElementById('rFDia').value=pts[0]||'';}else document.getElementById('rFDia').value='';
     // Carrega vencimento
     const venc=r.vencimento&&r.vencimento!=='-'?r.vencimento:null;
-    if(venc){const vp=venc.split('/');document.getElementById('rFVencDia').value=vp[0]||'';document.getElementById('rFVencMes').value=vp[1]||'';document.getElementById('rFVencAno').value=vp[2]||'';}
-    else{document.getElementById('rFVencDia').value='';document.getElementById('rFVencMes').value='';document.getElementById('rFVencAno').value='';}
+    R_vencSet(venc);
     document.getElementById('rFMes').value=miNum;document.getElementById('rFAno').value=anoR||new Date().getFullYear();
     atualizarMesDoFormularioR();
   }else{
@@ -3660,7 +3736,7 @@ function R_fecharModal(){
   document.getElementById('rModalBg').classList.remove('open');
   R_editandoId=null;
   // Limpa vencimento
-  ['rFVencDia','rFVencMes','rFVencAno'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  R_vencSet(null);
   R_pendingGoogleEventId=null;document.getElementById('rAgendaEventoInfo').style.display='none';}
 async function R_salvarLancamento(){
   const cliente=document.getElementById('rFCliente').value.trim().toUpperCase();if(!cliente){toast('Informe o cliente.','#ef4444');return;}
@@ -3670,10 +3746,7 @@ async function R_salvarLancamento(){
   const dataFmt=dia&&mi?(dia+'/'+mi):'-';
   let mesLanc=R_mesAtual;if(mi&&ano)mesLanc=MESES_ABREV[parseInt(mi)-1]+'/'+ano;
   // Vencimento: se preenchido usa esse, senão usa data de gravação
-  const vDia=document.getElementById('rFVencDia').value;
-  const vMes=document.getElementById('rFVencMes').value;
-  const vAno=document.getElementById('rFVencAno').value;
-  const vencFmt=(vDia&&vMes&&vAno)?(vDia+'/'+vMes+'/'+vAno):dataFmt;
+  const vencFmt=R_vencValor()||dataFmt;
   const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorLocacao:vl,valorEdicao:ve,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
   if(R_pendingGoogleEventId)base.googleEventId=R_pendingGoogleEventId;
   loading(true,R_editandoId?'Atualizando...':'Salvando...');setSyncStatus('saving');
