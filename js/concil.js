@@ -85,36 +85,77 @@ function CX_fixasDoMes(contaId, mesNS) {
       out.push({ tipo: 'receber', id: c.id, mes: mesNS, nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null, pago: false });
     });
   } catch (e) {}
+  // + abertas com saldo que o CONC_ deixou de fora por já terem uma conciliação PARCIAL (o resto ainda precisa casar)
+  try { CX_abertasParciais(contaId, mesNS).forEach(x => { if (!out.some(o => !o.pago && o.tipo === x.tipo && String(o.id) === String(x.id))) out.push(x); }); } catch (e) {}
   // + o que já foi pago/recebido e ainda não foi conciliado (aparece para LIGAR, como no NS)
   try { CX_jaPagosDoMes(contaId, mesNS).forEach(x => out.push(x)); } catch (e) {}
+  // + o que JÁ foi conciliado no mês (só para o filtro "Conciliadas")
+  try { CX_conciliadosDoMes(contaId, mesNS).forEach(x => out.push(x)); } catch (e) {}
+  return out;
+}
+function CX_abertasParciais(contaId, mesNS) {
+  const out = [], naConta = cf => !cf || cf === contaId;
+  try { Object.keys(typeof P_meses !== 'undefined' ? (P_meses || {}) : {}).forEach(wk => { const mNS = CX_mesNS(wk); if (mesNS && mNS !== mesNS) return;
+    (P_meses[wk] || []).forEach(r => { if (!r || r.previa || !r.conciliadoMov || String(r.status).toUpperCase() === 'PAGO' || !naConta(r.contaBancariaId)) return;
+      const saldo = (Number(r.valor) || 0) - (Number(r.valorPago) || 0); if (!(saldo > 0.005)) return;
+      let iso = ''; try { const d = VENC_dataVenc(wk, r.dia); if (d) iso = d.toISOString().slice(0, 10); } catch (e) {}
+      out.push({ tipo: 'pagar', id: r.id, mes: mNS, nome: r.nome || 'conta', valor: Math.round(saldo * 100) / 100, data: iso, conta: r.contaBancariaId || null, pago: false }); }); }); } catch (e) {}
+  try { (typeof R_todosOsDados !== 'undefined' ? (R_todosOsDados || []) : []).forEach(r => { if (!r || !r.conciliadoMov || !naConta(r.contaBancariaId)) return;
+      const saldo = Number(r.saldo) || 0; if (!(saldo > 0.005)) return; const mNS = CX_mesNS(r.mes || ''); if (mesNS && mNS !== mesNS) return;
+      out.push({ tipo: 'receber', id: r.id, mes: mNS, nome: r.cliente || r.desc || 'recebimento', valor: Math.round(saldo * 100) / 100, data: (typeof CONC_brToIso === 'function' ? (CONC_brToIso(r.data) || CONC_brToIso(r.vencimento)) : ''), conta: r.contaBancariaId || null, pago: false }); }); } catch (e) {}
+  return out;
+}
+// Conciliações vivas cujos lançamentos são do mês → cartões "✓ conciliada" (filtro Conciliadas)
+function CX_conciliadosDoMes(contaId, mesNS) {
+  const out = [], vistos = new Set();
+  Object.values(typeof CONC_LINKS !== 'undefined' ? (CONC_LINKS || {}) : {}).forEach(x => {
+    if (!x || x.status !== 'match' || !x.tipo || x.id == null) return;
+    const mov = (typeof BC_MOVS !== 'undefined' ? BC_MOVS : []).find(m => m.id === x.movId); if (mov && mov.contaId && mov.contaId !== contaId) return;
+    const mNS = CX_mesNS(x.mes || ''); if (mesNS && mNS && mNS !== mesNS) return;
+    const k = x.tipo + ':' + x.id; if (vistos.has(k)) return; vistos.add(k);
+    out.push({ tipo: x.tipo, id: x.id, mes: mNS || mesNS || '', nome: x.label || (x.tipo === 'receber' ? 'recebimento' : 'conta'), valor: Number(x.valorLigado || x.valorBaixa) || 0, data: mov ? mov.data : '', conta: contaId, pago: true, conciliadoAntes: true });
+  });
   return out;
 }
 
 // Contas JÁ PAGAS / recebimentos JÁ RECEBIDOS que ainda não foram conciliados com o extrato (como o NS mostra
 // na coluna de contas do mês). mesNS = 'AAAA-MM' ou null (todos os meses). Parear com eles só LIGA (OF_vincularJaNoApp):
 // não dá baixa de novo e não escreve no Receber.
+// Quanto de um lançamento JÁ está casado com o extrato (somando as conciliações vivas): baixa pelo extrato
+// (valorBaixa) + ligações de "já está no sistema" (valorLigado; ligação antiga sem o campo conta o lançamento todo).
+function CX_valorLigado(tipo, id, total) {
+  let s = 0;
+  Object.values(typeof CONC_LINKS !== 'undefined' ? (CONC_LINKS || {}) : {}).forEach(x => {
+    if (!x || x.status !== 'match' || x.tipo !== tipo || String(x.id) !== String(id)) return;
+    s += x.jaNoApp || x.ligadoExtrato ? (x.valorLigado != null ? Number(x.valorLigado) || 0 : (Number(total) || 0)) : (Number(x.valorBaixa) || 0);
+  });
+  return Math.round(s * 100) / 100;
+}
 function CX_jaPagosDoMes(contaId, mesNS) {
   const out = [], naConta = cf => !cf || cf === contaId;
-  const ligados = new Set(Object.values(typeof CONC_LINKS !== 'undefined' ? (CONC_LINKS || {}) : {}).filter(x => x && x.status === 'match').map(x => x.tipo + ':' + x.id));
   try {
     Object.keys(typeof P_meses !== 'undefined' ? (P_meses || {}) : {}).forEach(wk => {
       const mNS = CX_mesNS(wk); if (mesNS && mNS !== mesNS) return;
       (P_meses[wk] || []).forEach(r => {
-        if (!r || r.previa || r.conciliadoMov || ligados.has('pagar:' + r.id) || !naConta(r.contaBancariaId)) return;
-        const pago = String(r.status).toUpperCase() === 'PAGO' || ((Number(r.valorPago) || 0) >= (Number(r.valor) || 0) - 0.005 && (Number(r.valor) || 0) > 0);
-        if (!pago) return;
-        const v = typeof BC_debitoLancamento === 'function' ? BC_debitoLancamento(r) : (Number(r.valorPago) || 0); if (!(v > 0.005)) return;
-        out.push({ tipo: 'pagar', id: r.id, mes: mNS, nome: r.nome || 'conta', valor: Math.round(v * 100) / 100, data: r.dataPagamento || '', conta: r.contaBancariaId || null, pago: true,
-          comBaixa: (typeof BC_MOVS !== 'undefined' ? BC_MOVS : []).some(m => m.id === 'mov_pagar_' + r.id && !m.estornada && m.contaId === contaId) });
+        if (!r || r.previa || !naConta(r.contaBancariaId)) return;
+        const pagoTotal = String(r.status).toUpperCase() === 'PAGO' || ((Number(r.valorPago) || 0) >= (Number(r.valor) || 0) - 0.005 && (Number(r.valor) || 0) > 0);
+        const comBaixa = (typeof BC_MOVS !== 'undefined' ? BC_MOVS : []).some(m => m.id === 'mov_pagar_' + r.id && !m.estornada && m.contaId === contaId);
+        // paga em PARTE só entra sem baixa no banco (com baixa, o débito acumulado já está na conta — ligar pedaço a pedaço não fecha)
+        if (!pagoTotal && (comBaixa || !((Number(r.valorPago) || 0) > 0.005))) return;
+        const pago = typeof BC_debitoLancamento === 'function' ? BC_debitoLancamento(r) : (Number(r.valorPago) || 0);
+        const resta = Math.round((pago - CX_valorLigado('pagar', r.id, pago)) * 100) / 100; if (!(resta > 0.005)) return;
+        out.push({ tipo: 'pagar', id: r.id, mes: mNS, nome: r.nome || 'conta', valor: resta, data: r.dataPagamento || '', conta: r.contaBancariaId || null, pago: true, parcial: !pagoTotal || resta < pago - 0.005, comBaixa: pagoTotal && comBaixa && resta >= pago - 0.005 });
       });
     });
   } catch (e) {}
   try {
     (typeof R_todosOsDados !== 'undefined' ? (R_todosOsDados || []) : []).forEach(r => {
-      if (!r || r.conciliadoMov || ligados.has('receber:' + r.id) || !naConta(r.contaBancariaId)) return;
+      if (!r || !naConta(r.contaBancariaId)) return;
       const rec = Number(r.valorReserva) || 0; if (!(rec > 0.005)) return;
       const mNS = CX_mesNS(r.mes || ''); if (mesNS && mNS !== mesNS) return;
-      out.push({ tipo: 'receber', id: r.id, mes: mNS, nome: r.cliente || r.desc || 'recebimento', valor: Math.round(rec * 100) / 100, data: '', conta: r.contaBancariaId || null, pago: true });
+      // recebido em parte também aparece: o que já entrou e ainda não foi ligado ao extrato (a parte aberta vem pelas abertas)
+      const resta = Math.round((rec - CX_valorLigado('receber', r.id, rec)) * 100) / 100; if (!(resta > 0.005)) return;
+      out.push({ tipo: 'receber', id: r.id, mes: mNS, nome: r.cliente || r.desc || 'recebimento', valor: resta, data: '', conta: r.contaBancariaId || null, pago: true, parcial: (Number(r.saldo) || 0) > 0.005 || resta < rec - 0.005 });
     });
   } catch (e) {}
   return out;
@@ -389,7 +430,7 @@ if (typeof document !== 'undefined') (function () {
   // par já com o valor de baixa certo: nunca tira mais do que sobra na conta nem na movimentação
   function novoPar(fx, restanteMov, jaAplicado) {
     const disp = Math.max(0, (Number(fx.valor) || 0) - (Number(jaAplicado) || 0));
-    return { pago: !!fx.pago, comBaixa: !!fx.comBaixa, tipo: fx.tipo, id: fx.id, mes: fx.mes || '', nome: fx.nome, valor: Number(fx.valor) || 0, valorBaixa: Math.round(Math.min(disp, Math.max(0, Number(restanteMov) || 0)) * 100) / 100, conta: fx.conta || null, viaRegra: !!fx.viaRegra, score: fx.score != null ? fx.score : null, nivel: fx.nivel || null };
+    return { pago: !!fx.pago, comBaixa: !!fx.comBaixa, parcial: !!fx.parcial, tipo: fx.tipo, id: fx.id, mes: fx.mes || '', nome: fx.nome, valor: Number(fx.valor) || 0, valorBaixa: Math.round(Math.min(disp, Math.max(0, Number(restanteMov) || 0)) * 100) / 100, conta: fx.conta || null, viaRegra: !!fx.viaRegra, score: fx.score != null ? fx.score : null, nivel: fx.nivel || null };
   }
   // candidatos que AINDA cabem (descarta os já cobertos por outra movimentação desta sessão)
   function candsLivres(imp, it) {
@@ -419,6 +460,7 @@ if (typeof document !== 'undefined') (function () {
     const out = [], naConta = cf => !cf || cf === contaId;
     try { (typeof CONC_pagarAbertos === 'function' ? CONC_pagarAbertos() : []).forEach(c => { const cf = c.r && c.r.contaBancariaId; if (naConta(cf)) out.push({ tipo: 'pagar', id: c.id, mes: CX_mesNS(c.mes), nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null }); }); } catch (e) {}
     try { (typeof CONC_receberAbertos === 'function' ? CONC_receberAbertos() : []).forEach(c => { const cf = c.r && c.r.contaBancariaId; if (naConta(cf)) out.push({ tipo: 'receber', id: c.id, mes: CX_mesNS(c.mes), nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null }); }); } catch (e) {}
+    try { CX_abertasParciais(contaId, null).forEach(x => { if (!out.some(o => o.tipo === x.tipo && String(o.id) === String(x.id))) out.push(x); }); } catch (e) {}
     if (!opts || !opts.soAbertos) { try { CX_jaPagosDoMes(contaId, null).forEach(x => out.push(x)); } catch (e) {} }
     return out;
   }
@@ -603,9 +645,10 @@ if (typeof document !== 'undefined') (function () {
     if (selSinal) todas = todas.filter(fx => fx.tipo === (selSinal.valor >= 0 ? 'receber' : 'pagar'));
     lancCache = todas;
     const idsAntes = idsConciliadasAntes();
-    const keyOf = fx => fx.tipo + '|' + fx.id + '|' + (fx.mes || '');
-    const pareada = fx => pareaveis.some(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
-    const estado = fx => { if (ignoradas.has(keyOf(fx))) return 'ignorada'; if (pareada(fx) || idsAntes.has(String(fx.id))) return 'conciliada'; return 'aconciliar'; };
+    const keyOf = fx => fx.tipo + '|' + fx.id + '|' + (fx.mes || '') + (fx.conciliadoAntes ? '|conc' : fx.pago ? '|ja' : '');
+    const pareada = fx => pareaveis.some(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo && !!p.pago === !!fx.pago));
+    // conciliada = pareada agora ou conciliada antes (cartão próprio); a parte aberta / já recebida que sobra continua a conciliar
+    const estado = fx => { if (ignoradas.has(keyOf(fx))) return 'ignorada'; if (fx.conciliadoAntes || pareada(fx)) return 'conciliada'; return 'aconciliar'; };
     const grupos = { aconciliar: [], conciliada: [], ignorada: [] }; todas.forEach(fx => grupos[estado(fx)].push(fx));
     const fl = imp.filtroConcil || 'aconciliar', selEsq = selE && imp.itens.find(x => x.id === selE);
     const cardD = fx => {
@@ -618,10 +661,10 @@ if (typeof document !== 'undefined') (function () {
         if (dono) { const donos = pareaveis.filter(x => (x.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo)); const qtd = donos.length > 1 ? `${donos.length} movimentações` : esc((dono.descricao || '').slice(0, 16));
           sub = resta > 0.02 ? `<span style="color:#a16207">◐ ${money(aplicado)} de ${money(fx.valor)} · faltam ${money(resta)}</span> · <a onclick="event.stopPropagation();CX_removerPar('${dono.id}','${key}')" style="color:#dc2626;cursor:pointer">tirar</a>`
             : `<span style="color:#15803d">✓ ${qtd}</span> · <a onclick="event.stopPropagation();CX_removerPar('${dono.id}','${key}')" style="color:#dc2626;cursor:pointer">tirar</a>`; }
-        else if (idsAntes.has(String(fx.id))) sub = `<span style="color:#15803d">✓ conciliada antes</span>`; else sub = `<span style="color:#94a3b8">já paga</span>`;
+        else if (fx.conciliadoAntes || idsAntes.has(String(fx.id))) sub = `<span style="color:#15803d">✓ conciliada antes${fx.valor ? ' · ' + money(fx.valor) : ''}</span>`; else sub = `<span style="color:#94a3b8">já paga</span>`;
       }
       else if (e === 'ignorada') sub = `<span style="color:#94a3b8">ignorada · <a onclick="event.stopPropagation();CX_restaurarFixa('${key}')" style="color:#3b82f6;cursor:pointer">restaurar</a></span>`;
-      else sub = (fx.pago ? `<span style="color:#15803d">✓ já ${fx.tipo === 'receber' ? 'recebido' : 'paga'}${fx.data ? ' em ' + dataBR(fx.data) : ''} — liga sem baixar de novo</span>` : `<span style="color:#94a3b8">vence ${dataBR(fx.data)}</span>`)
+      else sub = (fx.pago ? `<span style="color:#15803d">✓ já ${fx.tipo === 'receber' ? 'recebido' : 'paga'}${fx.parcial ? ' (parte não ligada)' : ''}${fx.data ? ' em ' + dataBR(fx.data) : ''} — liga sem baixar de novo</span>` : `<span style="color:#94a3b8">vence ${dataBR(fx.data)}</span>`)
         + `${buscando && fx.mes ? '<span style="color:#94a3b8"> · ' + esc(CX_mesLabel(fx.mes)) + '</span>' : ''} · <a onclick="event.stopPropagation();CX_ignorarFixa('${key}')" style="color:#94a3b8;cursor:pointer">ignorar</a>`;
       return `<div ${clic ? `onclick="CX_pickD('${key}')" ` : ''}style="${clic ? 'cursor:pointer;' : ''}${e === 'ignorada' ? 'opacity:.6;' : ''}background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${fx.tipo === 'receber' ? '💚' : '💸'} ${esc(fx.nome)}</span><span style="font-size:.82rem;font-weight:700;white-space:nowrap">${money(fx.valor)}</span></div><div style="font-size:.71rem;margin-top:1px">${sub}</div></div>`;
     };
@@ -741,10 +784,11 @@ if (typeof document !== 'undefined') (function () {
   window.CX_pickE = id => { selE = (selE === id) ? null : id; selD = null; renderRevisao(); };
   window.CX_pickD = key => { selD = key; tentarPar(); };
   function tentarPar() {
-    const it = IMP.itens.find(x => x.id === selE), fx = lancCache.find(f => (f.tipo + '|' + f.id + '|' + (f.mes || '')) === selD);
+    const it = IMP.itens.find(x => x.id === selE), fx = lancCache.find(f => (f.tipo + '|' + f.id + '|' + (f.mes || '') + (f.conciliadoAntes ? '|conc' : f.pago ? '|ja' : '')) === selD);
     if (it && fx) {
-      const ent = it.valor >= 0, dirOk = (ent && fx.tipo === 'receber') || (!ent && fx.tipo === 'pagar'), jaTem = (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo);
-      if (jaTem) { it.pares = it.pares.filter(p => !(p.id === fx.id && p.tipo === fx.tipo)); sync(it); aviso('Tirado do rateio', '#6b7280'); }
+      const ent = it.valor >= 0, dirOk = (ent && fx.tipo === 'receber') || (!ent && fx.tipo === 'pagar'), mesmo = p => p.id === fx.id && p.tipo === fx.tipo && !!p.pago === !!fx.pago, jaTem = (it.pares || []).some(mesmo);
+      if (fx.conciliadoAntes) aviso('Esse lançamento já está conciliado.', '#6b7280');
+      else if (jaTem) { it.pares = it.pares.filter(p => !mesmo(p)); sync(it); aviso('Tirado do rateio', '#6b7280'); }
       else if (!dirOk) aviso(ent ? 'Entrada só concilia com conta a receber.' : 'Saída só concilia com conta a pagar.', '#ef4444');
       else {
         // quanto sobra na MOVIMENTAÇÃO e quanto sobra na CONTA (somando o que outras movs já aplicaram nela)
@@ -803,7 +847,7 @@ if (typeof document !== 'undefined') (function () {
           if (vb < 0.005) continue;
           const mov = CX_criarMov(imp.contaId, it.fitid, fx.id, sinal * vb, it.data, it.descricao, '');
           // conta já paga / recebimento já recebido: só LIGA (sem baixar de novo; Receber não é escrito)
-          if (fx.pago && typeof OF_vincularJaNoApp === 'function') { let okj = false; try { okj = await OF_vincularJaNoApp(mov, { tipo: fx.tipo, id: fx.id, mes: fx.tipo === 'pagar' ? CX_mesWEN(fx.mes) : CX_mesWEN(fx.mes), nome: fx.nome, comBaixa: !!fx.comBaixa }); } catch (e) {} if (okj) { concilOk++; baixouAlgo = true; valorConcil += vb; } continue; }
+          if (fx.pago && typeof OF_vincularJaNoApp === 'function') { let okj = false; try { okj = await OF_vincularJaNoApp(mov, { tipo: fx.tipo, id: fx.id, mes: fx.tipo === 'pagar' ? CX_mesWEN(fx.mes) : CX_mesWEN(fx.mes), nome: fx.nome, comBaixa: !!fx.comBaixa, parcial: !!fx.parcial }); } catch (e) {} if (okj) { concilOk++; baixouAlgo = true; valorConcil += vb; } continue; }
           const ok = await CX_conciliarFixa(mov, fx, vb);
           // "parcial" é o RESULTADO (a conta ficou aberta), não a fatia: duas parciais que somam o total
           // quitam a conta e não devem ser contadas como parciais. Igual ao Nossa Semente.

@@ -654,7 +654,7 @@ function OF_jaNoApp(b, contaId) {
   if (v < 0) {
     Object.keys(P_meses || {}).forEach(wk => { const mesNS = C_ymFromWen(wk); if (!meses.has(mesNS)) return;
       (P_meses[wk] || []).forEach(r => {
-        if (!r || r.previa || r.conciliadoMov || ligados.has('pagar:' + r.id)) return;
+        if (!r || r.previa || r.conciliadoMov || ligados.has('pagar:' + r.id)) return;   // automático: só conta paga inteira e ainda não ligada
         const pago = String(r.status).toUpperCase() === 'PAGO' || (Number(r.valorPago) || 0) >= (Number(r.valor) || 0) - 0.005;
         if (!pago || Math.abs(BC_debitoLancamento(r) - abs) >= 0.02) return;
         if (r.contaBancariaId && r.contaBancariaId !== contaId) return;   // paga por outra conta: não é este movimento
@@ -662,8 +662,10 @@ function OF_jaNoApp(b, contaId) {
       }); });
   } else {
     (typeof R_todosOsDados !== 'undefined' ? (R_todosOsDados || []) : []).forEach(r => {
-      if (!r || r.conciliadoMov || ligados.has('receber:' + r.id)) return;
-      const rec = Number(r.valorReserva) || 0; if (!(rec > 0.005) || Math.abs(rec - abs) >= 0.02) return;
+      if (!r) return;
+      // recebido (inteiro ou em parte): casa com o que ainda falta ligar ao extrato
+      const rec = typeof CX_valorLigado === 'function' ? Math.round(((Number(r.valorReserva) || 0) - CX_valorLigado('receber', r.id, Number(r.valorReserva) || 0)) * 100) / 100 : (Number(r.valorReserva) || 0);
+      if (!(rec > 0.005) || Math.abs(rec - abs) >= 0.02) return;
       const mesNS = r.mes ? C_ymFromWen(r.mes) : ''; if (mesNS && !meses.has(mesNS)) return;
       cands.push({ tipo: 'receber', id: r.id, mes: r.mes || '', nome: r.cliente || r.desc || 'recebimento', data: '' });
     });
@@ -676,10 +678,10 @@ async function OF_vincularJaNoApp(mov, ja) {
   if (ja.tipo === 'pagar' && ja.comBaixa) return OF_ligarMov('mov_pagar_' + ja.id, mov.id, { semConfirmar: true, semRender: true });   // a baixa já debitou: tira a duplicidade
   const chave = 'conc_' + mov.id;
   const a = ja.tipo === 'pagar' ? OF_achaPagar(ja.id) : null;
-  const link = { chave, status: 'match', tipo: ja.tipo, id: ja.id, mes: ja.mes || '', movId: mov.id, label: ja.nome || '', jaNoApp: true, valorBaixa: 0, parcial: false, ts: new Date().toISOString() };
+  const link = { chave, status: 'match', tipo: ja.tipo, id: ja.id, mes: ja.mes || '', movId: mov.id, label: ja.nome || '', jaNoApp: true, valorBaixa: 0, valorLigado: Math.round(Math.abs(Number(mov.valor) || 0) * 100) / 100, parcial: false, ts: new Date().toISOString() };
   if (a) { link.statusAntes = a.r.status; link.valorPagoAntes = Number(a.r.valorPago) || 0; }
   CONC_LINKS[chave] = link; await CC_fbSalvar(CONC_COL, chave, link);
-  if (ja.tipo === 'pagar') { mov.conciliadoPagar = ja.id; if (a) { a.r.conciliadoMov = mov.id; P_salvarStorage(); } }
+  if (ja.tipo === 'pagar') { mov.conciliadoPagar = ja.id; if (a && !ja.parcial) { a.r.conciliadoMov = mov.id; P_salvarStorage(); } }
   else mov.conciliadoReceber = ja.id;   // Receber intocável: o vínculo mora só em banco_conciliados
   await BC_fbUpsert(BC_COL_MOV, mov.id, mov);
   return true;

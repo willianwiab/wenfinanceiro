@@ -30,10 +30,10 @@ const r = await page.evaluate(async () => {
   CX_pickE('cx0');   // saída (−77,70)
   out.selNeg = ['ZZ LUZ ABERTA', 'ZZ CONTADOR PAGO', 'ZZ CLIENTE RECEBIDO', 'ZZ CLIENTE ABERTO'].map(n => colD().includes(n));
   // pareia a saída com a conta JÁ PAGA (contador): só liga
-  CX_pickD('pagar|pPaga|' + H.slice(0, 7));
+  CX_pickD('pagar|pPaga|' + H.slice(0, 7) + '|ja');
   CX_pickE('cx1');   // entrada (+12,30)
   out.selPos = ['ZZ LUZ ABERTA', 'ZZ CONTADOR PAGO', 'ZZ CLIENTE RECEBIDO', 'ZZ CLIENTE ABERTO'].map(n => colD().includes(n));
-  CX_pickD('receber|rRec|' + H.slice(0, 7));
+  CX_pickD('receber|rRec|' + H.slice(0, 7) + '|ja');
   await CX_confirmar(); await new Promise(ok => setTimeout(ok, 300));
   const pp = P_meses[WK].find(c => c.id === 'pPaga');
   out.contadorLig = !!pp.conciliadoMov && pp.valorPago === 250 && pp.status === 'PAGO';
