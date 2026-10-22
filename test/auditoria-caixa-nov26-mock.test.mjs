@@ -1,5 +1,6 @@
 // AUDITORIA — fatura NOV26 do cartão Caixa (22/10/2026) com os DADOS REAIS do app da Caixa, em ?mock (só memória).
-// App da Caixa: parcelas antigas R$ 2.090,92 + anuidade 12,50 + compras novas 1.079,14 − crédito 0,10 = R$ 3.182,46.
+// App da Caixa: parcelas antigas R$ 2.090,92 + anuidade 12,50 + compras novas 3.079,14 (com o Google de R$ 2.000 de 19/10)
+// − crédito 0,10 = R$ 5.182,46.
 // O banco escreve a parcela no fim do texto ("03 03"); o WEN tem essas parcelas projetadas pelas faturas anteriores.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -24,7 +25,7 @@ const r = await page.evaluate(async () => {
     ['2026-09-16', 'EC MERCADO 02 03', 145.95], ['2026-09-19', 'ASAAS IGREJA AL 02 03', 70.88], ['2026-09-19', 'MERCADOLIVRE ME 02 02', 67.00], ['2026-09-23', 'MP MERCADOLIVRE 02 03', 631.33],
     ['2026-09-24', 'MERCADOLIVRE ME 02 02', 239.28], ['2026-09-28', 'ASAAS IGREJA LU 02 02', 101.06], ['2026-09-29', 'UBER UBER TRIP HELP UBER', 86.96], ['2026-09-29', '99FOOD DEGUST PIZZAS', 66.14],
     ['2026-09-30', 'EC MELIMAIS', 9.90], ['2026-09-30', '99FOOD BURGER KING', 101.75], ['2026-09-30', 'IFD IFOOD', 12.90], ['2026-10-01', 'DL GOOGLE ADS688', 313.93], ['2026-10-01', 'DL GOOGLE WORKSPACEWE', 385.20],
-    ['2026-10-01', '99FOOD BISTR FARIA L', 62.91], ['2026-10-01', 'MINIEXPRESS CONVENIENC', 39.45], ['2026-10-13', 'AJUSTE CRED PARC S JUROS', 0.10], ['2026-10-30', '12 PARCELA ANUIDADE', 12.50],
+    ['2026-10-01', '99FOOD BISTR FARIA L', 62.91], ['2026-10-01', 'MINIEXPRESS CONVENIENC', 39.45], ['2026-10-19', 'DL GOOGLE ADS688', 2000.00], ['2026-10-13', 'AJUSTE CRED PARC S JUROS', 0.10], ['2026-10-30', '12 PARCELA ANUIDADE', 12.50],
     ['2026-10-15', 'PGTO.BOLETO REGISTRADO', 10067.36]];
   const compras = L.map(([d, desc, v], i) => ({ fitid: 'f' + i, data: d, descricao: desc, valor: v }));
   const out = {};
@@ -53,11 +54,11 @@ await browser.close();
 assert.deepEqual(erros, []);
 // A: 11 linhas do banco são parcelas já projetadas; 9 compras novas esperam rateio; boleto fora
 assert.equal(r.A.casadas, 11, 'as 10 parcelas "NN NN" + a anuidade casam com a projeção');
-assert.equal(r.A.pend, 9); assert.equal(r.A.pendSoma, 1079.14, 'compras novas = R$ 1.079,14');
+assert.equal(r.A.pend, 10); assert.equal(r.A.pendSoma, 3079.14, 'compras novas = R$ 3.079,14 (com o Google de R$ 2.000)');
 assert.equal(r.A.prev, 2103.32, 'antes do rateio: parcelas 2.103,42 − crédito 0,10'); assert.deepEqual(r.A.ign, ['PGTO.BOLETO REGISTRADO']);
 // B: com tudo rateado (como o Will fez), a prévia é EXATAMENTE a fatura do app da Caixa — sem contar parcela duas vezes
-assert.equal(r.B.prev, 3182.46, 'prévia NOV26 = R$ 3.182,46 (app da Caixa)'); assert.equal(r.B.pend, 0);
-assert.equal(r.C.prev, 3182.46, 'com metadado da parcela, o mesmo total');
-assert.match(r.D, /Fatura de NOV26 até agora: R\$\s*3\.182,46/, 'painel: total = app da Caixa'); assert.match(r.D, /11 parcela\(s\) do banco já estavam na previsão/);
-assert.deepEqual(r.E, [3182.46], 'conta prévia no Pagar = R$ 3.182,46');
-console.log('✅ AUDITORIA Caixa NOV26 (dados reais): 11 parcelas casadas, 9 compras novas (1.079,14), boleto fora, crédito −0,10 → prévia R$ 3.182,46 = app da Caixa');
+assert.equal(r.B.prev, 5182.46, 'prévia NOV26 = R$ 5.182,46 (app da Caixa)'); assert.equal(r.B.pend, 0);
+assert.equal(r.C.prev, 5182.46, 'com metadado da parcela, o mesmo total');
+assert.match(r.D, /Fatura de NOV26 até agora: R\$\s*5\.182,46/, 'painel: total = app da Caixa'); assert.match(r.D, /11 parcela\(s\) do banco já estavam na previsão/);
+assert.deepEqual(r.E, [5182.46], 'conta prévia no Pagar = R$ 5.182,46');
+console.log('✅ AUDITORIA Caixa NOV26 (dados reais): 11 parcelas casadas, 10 compras novas (3.079,14), boleto fora, crédito −0,10 → prévia R$ 5.182,46 = app da Caixa');
