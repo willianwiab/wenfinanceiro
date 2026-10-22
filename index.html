@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261022-204f7f10';
+window.APP_VERSION='20261022-33b8dd32';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -5416,7 +5416,12 @@ window.C_renderFaturas=function(){
     const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
     for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');if(C_temFaturaReal(p.cartaoId,k))continue;const key=p.cartaoId+'|'+k;prev[key]=prev[key]||{total:0,itens:0};prev[key].total+=Number(p.valorParcela)||0;prev[key].itens+=1;}
   });
-  const prevArr=Object.entries(prev).map(([key,v])=>{const parts=key.split('|');return {cid:parts[0],mes:parts[1],total:v.total,itens:v.itens};}).sort((a,b)=>a.mes.localeCompare(b.mes));
+  // Open Finance: as próximas somam também as compras em aberto com rateio confirmado (+ créditos) — a MESMA conta da
+  // prévia no Pagar e do detalhe (OF_itensPrevistos). Sem isso, a lista mostrava só as parcelas.
+  if(typeof OF_itensPrevistos==='function'){Object.keys(prev).forEach(k=>delete prev[k]);
+    C_liveCartoes().filter(c=>!filtro||c.id===filtro).forEach(c=>OF_itensPrevistos(c.id).forEach(it=>{if(C_temFaturaReal(c.id,it.mes))return;const key=c.id+'|'+it.mes;prev[key]=prev[key]||{total:0,itens:0,parc:0,compras:0};prev[key].total=Math.round((prev[key].total+(Number(it.valor)||0))*100)/100;prev[key].itens++;if(it.tipo==='parcela')prev[key].parc++;else if(it.tipo==='aberta')prev[key].compras++;}));
+    Object.keys(prev).forEach(k=>{if(!(prev[k].total>0.005))delete prev[k];});}
+  const prevArr=Object.entries(prev).map(([key,v])=>{const parts=key.split('|');return {cid:parts[0],mes:parts[1],total:v.total,itens:v.itens,parc:v.parc,compras:v.compras};}).sort((a,b)=>a.mes.localeCompare(b.mes));
   if(!lista.length&&!prevArr.length){el.innerHTML='<p class="r-vazio">Nenhuma fatura importada ainda.</p>';C_renderDetalhe();return;}
   const impValida=C_faturaAberta&&lista.some(f=>f.id===C_faturaAberta);
   const prevValida=C_previaAberta&&prevArr.some(p=>(p.cid+'|'+p.mes)===C_previaAberta);
@@ -5425,9 +5430,9 @@ window.C_renderFaturas=function(){
       <div><b>${C_esc(nomeCartao(f.cartaoId))}</b> · ${C_mesCurto(f.mesFatura)} <span class="badge-imut">imutável</span><div class="r-pequeno">${(f.itens||[]).length} itens</div></div>
       <div style="font-weight:800;color:var(--neg)">${fmt(f.totalItens)}</div></div>`).join('');
   const prevHtml=prevArr.map(p=>{const key=p.cid+'|'+p.mes;return `<div class="fatura-linha previa ${C_previaAberta===key?'aberta':''}" onclick="C_selPrevia('${p.cid}','${p.mes}')">
-      <div><b>${C_esc(nomeCartao(p.cid))}</b> · ${C_mesCurto(p.mes)} <span class="badge-imut" style="background:var(--alerta-bg);color:#a86b1e">prévia</span><div class="r-pequeno">${p.itens} parcela(s) projetada(s)</div></div>
+      <div><b>${C_esc(nomeCartao(p.cid))}</b> · ${C_mesCurto(p.mes)} <span class="badge-imut" style="background:var(--alerta-bg);color:#a86b1e">prévia</span><div class="r-pequeno">${p.compras!=null?(p.parc+' parcela(s)'+(p.compras?' + '+p.compras+' compra(s) em aberto':'')):(p.itens+' parcela(s) projetada(s)')}</div></div>
       <div style="font-weight:800;color:var(--accent-forte)">${fmt(p.total)}</div></div>`;}).join('');
-  el.innerHTML=(impHtml||'<p class="r-pequeno" style="padding:6px 0">Nenhuma fatura importada.</p>')+(prevHtml?`<div class="fat-sub">🔮 Próximas (previstas pelas parcelas)</div>${prevHtml}`:'');
+  el.innerHTML=(impHtml||'<p class="r-pequeno" style="padding:6px 0">Nenhuma fatura importada.</p>')+(prevHtml?`<div class="fat-sub">🔮 Próximas (parcelas + compras em aberto confirmadas)</div>${prevHtml}`:'');
   C_renderDetalhe();
 };
 function C_renderDetalhe(){
@@ -8766,7 +8771,7 @@ AUTH_bootstrap();
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=6b3816fb"></script>
-<script src="js/openfinance.js?v=104b031b"></script>
+<script src="js/openfinance.js?v=87f2a872"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}

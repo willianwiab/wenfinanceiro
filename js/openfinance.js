@@ -106,7 +106,8 @@ function OF_ofx(transacoes, total) {
   const linhas = (transacoes || []).map(t => {
     const dt = String(t.data || '').replace(/\D/g, '').slice(0, 8);
     const desc = esc(t.descricao) || 'Compra';
-    const memo = (t.parcela && !/\d{1,2}\s*\/\s*\d{1,2}/.test(desc)) ? `${desc} parcela ${t.parcela.atual}/${t.parcela.total}` : desc;
+    const parc = t.parcela || (typeof OF_parcelaDoTexto === 'function' ? OF_parcelaDoTexto(desc) : null);   // Caixa: "… 03 03" no texto
+    const memo = (parc && parc.total && !/\d{1,2}\s*\/\s*\d{1,2}/.test(desc)) ? `${desc} parcela ${parc.atual}/${parc.total}` : desc;
     const tipo = t.pagamento ? 'PAYMENT' : (t.tipo === 'CREDIT' ? 'CREDIT' : 'DEBIT');
     return `<STMTTRN><TRNTYPE>${tipo}<DTPOSTED>${dt}<TRNAMT>${(Number(t.valor) || 0).toFixed(2)}<FITID>PLG${esc(t.fitid)}<NAME>${desc}<MEMO>${esc(memo)}</STMTTRN>`;
   }).join('\n');
@@ -136,14 +137,32 @@ window.OF_trazerFatura = async function () {
     const txt = OF_ofx(r.transacoes, r.fatura && r.fatura.total);
     let previa = IMP_normalizarCartaoOFX(IMP_parseOFX(txt));
     const bal = IMP_ofxTotalDeclarado(txt); IMP_totalLido = (bal == null) ? null : Math.abs(bal);
+    const nCat = OF_categoriasNaFatura(cid, previa, anoMes);
     IMP_previa = previa;
-    IMP_setAviso(`🧾 Fatura de ${C_dataBR(r.fatura.vencimento)} fechada no banco · ${previa.length} lançamento(s) (total ${fmt(r.fatura.total)}).`
+    IMP_setAviso((nCat ? `✓ ${nCat} lançamento(s) já chegaram com a categoria (o rateio que você confirmou nas compras em aberto e o das parcelas já previstas). ` : '') + `🧾 Fatura de ${C_dataBR(r.fatura.vencimento)} fechada no banco · ${previa.length} lançamento(s) (total ${fmt(r.fatura.total)}).`
       + (OF_ehPessoal(cid) ? ' <b>Cartão pessoal:</b> marque <b>🙋 Pessoal do Will</b> no que não é do studio — o resto vira <b>🔁 Reembolsar Will</b>.' : ' Revise e importe.'));
     IMP_renderPreview();
   } catch (e) { IMP_setAviso('⚠️ ' + (e.message || e)); }
   finally { OF_ocupado = false; }
 };
 
+// Fatura FECHADA chega com o rateio já feito (espelho do C_aplicarCategoriasBanco do NS): compra nova = categoria confirmada
+// nas compras em aberto (mesmo id do banco); parcela = categoria da parcela já projetada; senão, o que o WEN aprendeu.
+function OF_categoriasNaFatura(cid, previa, anoMes) {
+  const ab = OF_abertas[cid] || {}, cats = ab.cats || {};
+  const proj = (C_parcelamentos || []).filter(p => p.cartaoId === cid && p.categoria);
+  let n = 0;
+  (previa || []).forEach(m => {
+    if (m.categoria || m.pagamento) return;
+    const raw = String(m.fitid || '').replace(/^PLG/, ''), abs = Math.abs(Number(m.valor) || 0);
+    let cat = cats[raw];
+    if (!cat) { const pc = (typeof IMP_parseParcela === 'function' ? IMP_parseParcela(m.descricao) : null) || OF_parcelaDoTexto(m.descricao);
+      if (pc) { const p = proj.find(x => (!pc.total || Number(x.totalParcelas) === pc.total) && Math.abs((Number(x.valorParcela) || 0) - abs) <= 0.02 && OF_ymAdd(x.mesInicio, pc.atual - 1) === anoMes); if (p) cat = p.categoria; } }
+    if (!cat) { const sg = OF_sugerir(m.descricao); if (sg.cat && sg.origem === 'aprendido') cat = sg.cat; }
+    if (cat && (typeof CATS_P === 'undefined' || CATS_P[cat])) { m.categoria = cat; m.conf = 'alta'; m.origem = 'usuario'; n++; }
+  });
+  return n;
+}
 // ── Cartão pessoal: a fatura vira "Reembolsar Will" (só o que é do studio) ──
 function OF_valorStudio(fatura) {
   return Math.round((fatura.itens || []).filter(it => !OF_ehCatPessoal(it.categoria)).reduce((a, it) => a + (Number(it.valor) || 0), 0) * 100) / 100;
