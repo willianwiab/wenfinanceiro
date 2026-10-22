@@ -562,7 +562,8 @@ if (typeof document !== 'undefined') (function () {
     const busca = (imp.busca || '').trim();
     const mes = imp.mesConcil;
     let todas, buscando = false;
-    if (busca) { buscando = true; let univ = []; try { univ = allAbertos(imp.contaId); } catch (e) {} todas = CE_buscar(univ, busca); }
+    if (busca) { buscando = true; let univ = []; try { univ = allAbertos(imp.contaId); } catch (e) {} todas = CE_buscar(univ, busca);
+      if (imp.buscaMes) todas = todas.filter(fx => (fx.mes || '') === imp.buscaMes); }   // busca: as setas filtram por mês (padrão: todos)
     else todas = fixasDoMes(imp.contaId, mes);
     lancCache = todas;
     const idsAntes = idsConciliadasAntes();
@@ -591,7 +592,10 @@ if (typeof document !== 'undefined') (function () {
     const colD = grupos[fl].length ? grupos[fl].map(cardD).join('') : `<div style="color:#94a3b8;font-size:.84rem;padding:10px">${vazio}</div>`;
     const chip = (id, lbl, n) => `<button class="cx-chip ${fl === id ? 'on' : ''}" style="padding:2px 9px;font-size:.74rem" onclick="CX_setFiltroConcil('${id}')">${lbl} (${n})</button>`;
     const campoBusca = `<div style="display:flex;gap:6px;margin-bottom:6px"><input id="cxBuscaInput" class="cx-sel" style="flex:1;font-size:.78rem;padding:4px 9px" placeholder="🔎 buscar lançamento (nome, valor, 08/2026)…" value="${esc(busca)}" onchange="CX_setBusca(this.value)" onkeydown="if(event.key==='Enter'){CX_setBusca(this.value)}">${busca ? `<button class="cx-btn" style="padding:1px 10px" onclick="CX_limparBusca()">✕</button>` : ''}</div>`;
-    const nav = buscando ? '' : `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><button class="cx-btn" style="padding:1px 10px" onclick="CX_setMesConcil(-1)">‹</button><span style="font-weight:700;font-size:.82rem;flex:1;text-align:center">${esc(CX_mesLabel(mes))}</span><button class="cx-btn" style="padding:1px 10px" onclick="CX_setMesConcil(1)">›</button></div>`;
+    // setas de mês SEMPRE visíveis: no mês navegável trocam o mês; na busca filtram o resultado (ou "todos os meses")
+    const btnNav = d => `<button class="cx-btn" style="padding:4px 14px;font-size:1rem;font-weight:800" onclick="CX_setMesConcil(${d})" title="${d < 0 ? 'mês anterior' : 'próximo mês'}">${d < 0 ? '‹' : '›'}</button>`;
+    const rotNav = buscando ? (imp.buscaMes ? `${esc(CX_mesLabel(imp.buscaMes))} <a onclick="CX_buscaTodosMeses()" style="color:#3b82f6;cursor:pointer;font-weight:600;font-size:.74rem">· todos os meses</a>` : 'Todos os meses') : esc(CX_mesLabel(mes));
+    const nav = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">${btnNav(-1)}<span style="font-weight:700;font-size:.86rem;flex:1;text-align:center">${rotNav}</span>${btnNav(1)}</div>`;
     const filtros = `<div class="cx-chips" style="margin-bottom:6px">${chip('aconciliar', 'A conciliar', grupos.aconciliar.length)}${chip('conciliada', 'Conciliadas', grupos.conciliada.length)}${grupos.ignorada.length ? chip('ignorada', 'Ignoradas', grupos.ignorada.length) : ''}</div>`;
     const nR = pareaveis.filter(it => (it.pares || []).length > 1).length;
     const tituloD = buscando ? '🔎 Resultado da busca' : '📋 Contas do mês';
@@ -693,7 +697,7 @@ if (typeof document !== 'undefined') (function () {
     if (v - (p.valor - outrasMovs) > 0.02) return aviso('Passa do que falta na conta. Sobram ' + money(p.valor - outrasMovs) + '.', '#ef4444');
     p.valorBaixa = Math.round(v * 100) / 100; sync(it); renderRevisao();
   };
-  window.CX_setBusca = v => { if (!IMP) return; IMP.busca = v || ''; if (IMP.busca) IMP.filtroConcil = 'aconciliar'; renderRevisao(); const e = el('cxBuscaInput'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } };
+  window.CX_setBusca = v => { if (!IMP) return; IMP.busca = v || ''; IMP.buscaMes = null; if (IMP.busca) IMP.filtroConcil = 'aconciliar'; renderRevisao(); const e = el('cxBuscaInput'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } };
   window.CX_limparBusca = () => { if (!IMP) return; IMP.busca = ''; renderRevisao(); };
   window.CX_setFoco = on => { if (!IMP) return; IMP.foco = !!on; IMP.focoIdx = 0; renderRevisao(); };
   window.CX_focoNav = d => { if (!IMP) return; IMP.focoIdx = (IMP.focoIdx || 0) + d; renderRevisao(); };
@@ -723,7 +727,11 @@ if (typeof document !== 'undefined') (function () {
   }
   window.CX_desfazerPar = id => { const it = IMP.itens.find(x => x.id === id); if (it) { it.pares = []; sync(it); } selE = null; selD = null; renderRevisao(); };
   window.CX_removerPar = (id, key) => { const it = IMP.itens.find(x => x.id === id); if (it) { it.pares = (it.pares || []).filter(p => (p.tipo + '|' + p.id + '|' + (p.mes || '')) !== key); sync(it); } renderRevisao(); };
-  window.CX_setMesConcil = d => { const [a, m] = IMP.mesConcil.split('-').map(Number); const dt = new Date(a, m - 1 + d, 1); IMP.mesConcil = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); selD = null; renderRevisao(); };
+  window.CX_setMesConcil = d => {
+    // na busca, as setas andam pelo filtro de mês do resultado (partindo do mês da coluna); fora dela, trocam o mês
+    if ((IMP.busca || '').trim()) { const base = IMP.buscaMes || IMP.mesConcil; const [a, m] = base.split('-').map(Number); const dt = new Date(a, m - 1 + (IMP.buscaMes ? d : 0), 1); IMP.buscaMes = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); selD = null; renderRevisao(); return; }
+    const [a, m] = IMP.mesConcil.split('-').map(Number); const dt = new Date(a, m - 1 + d, 1); IMP.mesConcil = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); selD = null; renderRevisao(); };
+  window.CX_buscaTodosMeses = () => { if (!IMP) return; IMP.buscaMes = null; selD = null; renderRevisao(); };
   window.CX_setFiltroConcil = f => { IMP.filtroConcil = f; renderRevisao(); };
   window.CX_ignorarFixa = key => { ignoradas.add(key); selD = null; renderRevisao(); };
   window.CX_restaurarFixa = key => { ignoradas.delete(key); renderRevisao(); };
