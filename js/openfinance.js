@@ -509,33 +509,55 @@ function OF_abertaJaNaFatura(cid, compras) {
   });
   return out;
 }
-// Itens previstos de um cartão (espelho do C_itensPrevistos do NS): parcelas projetadas + compras em aberto
-// com rateio CONFIRMADO. Mês com fatura real nunca tem previsão.
-function OF_itensPrevistos(cid) {
-  const itens = [];
+// Parcela no TEXTO quando o banco não manda o metadado (Caixa: "FAM CENTRO U ME 03 03", "EBN CANVA04 07 12",
+// "12 PARCELA ANUIDADE" — este último só com o número da parcela).
+function OF_parcelaDoTexto(desc) {
+  const t = String(desc || '').trim();
+  let m = t.match(/(?:^|\s)(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\s*$/i) || t.match(/(?:^|\s)(\d{2})\s+(\d{2})\s*$/);
+  if (m) { const a = +m[1], n = +m[2]; if (n >= 2 && a >= 1 && a <= n) return { atual: a, total: n }; }
+  m = t.match(/(?:^|\s)(\d{1,2})\s*(?:ª|a)?\s*parcela\b/i); if (m && +m[1] >= 1) return { atual: +m[1], total: null };
+  return null;
+}
+function OF_ehCreditoCartao(desc) { return /\bajuste\s+cred|\bcred(?:ito)?\.?\s+parc|\bestorno\b/i.test(String(desc || '')); }
+function OF_ehPagamentoCartao(desc) { const t = String(desc || ''); return OF_ehPagCartao(t) || /\bpg?to\.?\s*boleto|\bpagto\.?\s*boleto|pagamento\s+(?:de\s+)?boleto|\bpg?to\.?\s*fatura/i.test(t); }
+// Classifica cada linha do ciclo aberto (espelho do C_itensPrevistos do NS + formato da Caixa):
+//  parcelas  → projeções das faturas importadas;  casadas → linha do banco que É uma parcela já projetada (não soma de novo,
+//  não pede rateio);  creditos → abatem sozinhos;  confirmadas/pendentes → compras novas, com/sem rateio confirmado.
+function OF_classificarAberta(cid) {
+  const out = { parcelas: [], casadas: new Set(), creditos: [], confirmadas: [], pendentes: [], ignoradas: [] };
   (C_parcelamentos || []).filter(p => p.ativo && p.cartaoId === cid).forEach(p => {
     const [ay, am] = String(p.mesInicio || '').split('-').map(Number); if (!ay) return;
     for (let n = (Number(p.parcelaAtual) || 0) + 1; n <= (Number(p.totalParcelas) || 0); n++) {
       const k = OF_ymAdd(ay + '-' + String(am).padStart(2, '0'), n - 1); if (C_temFaturaReal(cid, k)) continue;
-      itens.push({ mes: k, desc: p.descricao || 'Parcela', categoria: p.categoria || '', valor: Number(p.valorParcela) || 0, n, total: p.totalParcelas, tipo: 'parcela', ref: 'p:' + p.id });
+      out.parcelas.push({ mes: k, desc: p.descricao || 'Parcela', categoria: p.categoria || '', valor: Number(p.valorParcela) || 0, n, total: p.totalParcelas, tipo: 'parcela', ref: 'p:' + p.id });
     }
   });
   const ab = OF_abertas[cid];
-  if (ab && /^\d{4}-\d{2}$/.test(ab.mes || '') && !C_temFaturaReal(cid, ab.mes)) {
-    const ja = OF_abertaJaNaFatura(cid, ab.compras || []);
-    for (const c of (ab.compras || [])) {
-      if (ja.has(c.fitid) || OF_naoCompraCartao(c.descricao)) continue;
-      const cat = (ab.cats || {})[c.fitid]; if (!(typeof cat === 'string' && cat)) continue;   // só depois do rateio confirmado
-      const valor = Math.round((Number(c.valor) || 0) * 100) / 100; if (!valor) continue;
-      const parc = c.parcela && c.parcela.total >= 2 && c.parcela.atual >= 1 && c.parcela.atual <= c.parcela.total ? c.parcela : null;
-      if (!parc) { itens.push({ mes: ab.mes, desc: c.descricao || 'Compra', categoria: cat, valor, n: null, total: null, tipo: 'aberta', ref: 'a:' + c.fitid }); continue; }
-      const proj = itens.find(it => it.tipo === 'parcela' && it.mes === ab.mes && !it._casada && it.n === parc.atual && it.total === parc.total && Math.abs((it.valor || 0) - Math.abs(valor)) <= 0.02);
-      if (proj) { proj._casada = true; continue; }   // a mesma parcela já projetada pela fatura anterior
-      for (let n = parc.atual; n <= parc.total; n++) { const k = OF_ymAdd(ab.mes, n - parc.atual); if (C_temFaturaReal(cid, k)) continue;
-        itens.push({ mes: k, desc: c.descricao || 'Compra', categoria: cat, valor: Math.abs(valor), n, total: parc.total, tipo: 'aberta', ref: 'a:' + c.fitid }); }
+  if (!ab || !/^\d{4}-\d{2}$/.test(ab.mes || '') || C_temFaturaReal(cid, ab.mes)) return out;
+  const ja = OF_abertaJaNaFatura(cid, ab.compras || []), usadas = new Set();
+  for (const c of (ab.compras || [])) {
+    const desc = c.descricao || '', abs = Math.round(Math.abs(Number(c.valor) || 0) * 100) / 100;
+    if (ja.has(c.fitid) || OF_ehPagamentoCartao(desc) || !abs || OF_ehPagCartao(desc)) { out.ignoradas.push(c); continue; }
+    if (OF_ehCreditoCartao(desc) || (Number(c.valor) || 0) < 0) { out.creditos.push({ mes: ab.mes, desc, categoria: '', valor: -abs, tipo: 'credito', ref: 'a:' + c.fitid }); continue; }
+    const parc = (c.parcela && c.parcela.total >= 2) ? c.parcela : OF_parcelaDoTexto(desc);
+    if (parc) {   // é a parcela de uma compra antiga que já está projetada? casa por nº da parcela (+ total) e valor
+      const proj = out.parcelas.find((it, i) => !usadas.has(i) && it.mes === ab.mes && it.n === parc.atual && (!parc.total || it.total === parc.total) && Math.abs((it.valor || 0) - abs) <= 0.02);
+      if (proj) { usadas.add(out.parcelas.indexOf(proj)); out.casadas.add(c.fitid); continue; }
     }
+    const cat = (ab.cats || {})[c.fitid];
+    if (typeof cat === 'string' && cat) out.confirmadas.push({ c, cat, parc: parc && parc.total ? parc : null, abs }); else out.pendentes.push(c);
   }
-  itens.forEach(it => { delete it._casada; });
+  return out;
+}
+// Itens previstos de um cartão: parcelas projetadas + compras em aberto confirmadas (+ créditos que abatem sozinhos).
+function OF_itensPrevistos(cid) {
+  const k = OF_classificarAberta(cid), itens = k.parcelas.slice(), ab = OF_abertas[cid] || {};
+  k.creditos.forEach(x => itens.push(x));
+  k.confirmadas.forEach(({ c, cat, parc, abs }) => {
+    if (!parc) { itens.push({ mes: ab.mes, desc: c.descricao || 'Compra', categoria: cat, valor: abs, n: null, total: null, tipo: 'aberta', ref: 'a:' + c.fitid }); return; }
+    for (let n = parc.atual; n <= parc.total; n++) { const m = OF_ymAdd(ab.mes, n - parc.atual); if (C_temFaturaReal(cid, m)) continue;
+      itens.push({ mes: m, desc: c.descricao || 'Compra', categoria: cat, valor: abs, n, total: parc.total, tipo: 'aberta', ref: 'a:' + c.fitid }); }
+  });
   return itens;
 }
 // Totais da prévia por mês (cartão pessoal: só o que é do studio — o "🙋 Pessoal do Will" não é reembolsado).
@@ -546,12 +568,8 @@ function OF_porMesPrevia(cid) {
   return pm;
 }
 // Compras em aberto CONFIRMADAS de um mês, no formato do C_parcelasDaPrevia do WEN (rateio e detalhe da prévia).
-function OF_abertasDoMes(cid, mes) { return OF_itensPrevistos(cid).filter(it => it.tipo === 'aberta' && it.mes === mes).map(it => ({ desc: it.desc, categoria: it.categoria, valor: it.valor, n: it.n, total: it.total })); }
-function OF_pendentesAberta(cid) {
-  const ab = OF_abertas[cid]; if (!ab) return [];
-  const ja = OF_abertaJaNaFatura(cid, ab.compras || []);
-  return (ab.compras || []).filter(c => !ja.has(c.fitid) && !OF_naoCompraCartao(c.descricao) && !(ab.cats || {})[c.fitid] && Math.abs(Number(c.valor) || 0) > 0.005);
-}
+function OF_abertasDoMes(cid, mes) { return OF_itensPrevistos(cid).filter(it => (it.tipo === 'aberta' || it.tipo === 'credito') && it.mes === mes).map(it => ({ desc: it.desc, categoria: it.categoria, valor: it.valor, n: it.n, total: it.total })); }
+function OF_pendentesAberta(cid) { return OF_classificarAberta(cid).pendentes; }
 // 🔄 Atualizar cartão: compras em aberto (rateio a confirmar) + a fatura fechada mais recente, se ainda não está aqui.
 window.OF_atualizarCartao = async function () {
   if (OF_ocupado) return;
@@ -592,6 +610,7 @@ function OF_renderAberta(cid) {
   const vistos = new Set(ab.vistos || []);
   const prev = (ab.mes ? OF_itensPrevistos(cid).filter(it => it.mes === ab.mes) : []);
   const vConf = prev.filter(it => it.tipo === 'aberta').reduce((a, it) => a + it.valor, 0), vParc = prev.filter(it => it.tipo === 'parcela').reduce((a, it) => a + it.valor, 0);
+  const vCred = prev.filter(it => it.tipo === 'credito').reduce((a, it) => a + it.valor, 0), nCasadas = OF_classificarAberta(cid).casadas.size;
   const vPend = pend.reduce((a, c) => a + Math.abs(Number(c.valor) || 0), 0);
   const r2 = v => Math.round(v * 100) / 100;
   const nSug = pend.filter(c => (sug[c.fitid] || {}).cat).length, nSem = pend.length - nSug;
@@ -608,9 +627,10 @@ function OF_renderAberta(cid) {
   el.innerHTML = `
     ${faltaFatura ? `<div style="background:#fef3c7;border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:.84rem">🧾 A fatura de <b>${C_dataBR(uf.vencimento)}</b> (${fmt(uf.total || 0)}) já fechou no banco e ainda não está aqui. <button class="btn btn-outline" style="width:auto;padding:3px 10px" onclick="OF_fechar();document.getElementById('cImpMes').value='${mesUF}';OF_trazerFatura()">Trazer essa fatura</button></div>` : ''}
     <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px 16px">
-      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><b style="font-size:1.05rem">💳 ${C_esc(C_card(cid).nome || '')}</b><span style="font-size:.8rem;color:#64748b">fatura de ${C_esc(mesC)} se montando · ${(ab.compras || []).filter(c => !OF_naoCompraCartao(c.descricao)).length} lançamento(s)</span></div>
-      <div style="font-weight:800;font-size:1.1rem;margin-top:6px">Fatura de ${C_esc(mesC)} até agora: ${fmt(r2(vConf + vParc + vPend))}</div>
-      <div style="font-size:.8rem;color:#64748b">compras confirmadas ${fmt(r2(vConf))} · parcelas ${fmt(r2(vParc))}${pend.length ? ` · <b>+ ${fmt(r2(vPend))} aguardando rateio (${pend.length})</b>` : ''}</div>
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><b style="font-size:1.05rem">💳 ${C_esc(C_card(cid).nome || '')}</b><span style="font-size:.8rem;color:#64748b">fatura de ${C_esc(mesC)} se montando · ${(ab.compras || []).filter(c => !OF_ehPagamentoCartao(c.descricao)).length} lançamento(s)</span></div>
+      <div style="font-weight:800;font-size:1.1rem;margin-top:6px">Fatura de ${C_esc(mesC)} até agora: ${fmt(r2(vConf + vParc + vCred + vPend))}</div>
+      <div style="font-size:.8rem;color:#64748b">compras confirmadas ${fmt(r2(vConf))} · parcelas ${fmt(r2(vParc))}${vCred ? ` · créditos ${fmt(r2(vCred))}` : ''}${pend.length ? ` · <b>+ ${fmt(r2(vPend))} aguardando rateio (${pend.length})</b>` : ''}</div>
+      ${nCasadas ? `<div style="font-size:.76rem;color:#15803d;margin-top:2px">✓ ${nCasadas} parcela(s) do banco já estavam na previsão (compras de meses anteriores) — não contam de novo</div>` : ''}
       ${pess ? '<div style="font-size:.78rem;color:#7c3aed;margin-top:4px">🙋 Cartão pessoal: o que for do studio vira <b>🔁 Reembolsar Will (prévia)</b>; o resto marque <b>🙋 Pessoal do Will</b>.</div>' : ''}
       ${pend.length ? `<div style="font-weight:800;margin-top:8px">Total a sincronizar: ${fmt(r2(vPend))} <span style="font-weight:400;color:#64748b">(${pend.length} compra${pend.length > 1 ? 's' : ''} sem categoria confirmada)</span></div>
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px"><span style="font-size:.8rem;color:#64748b">${nSem} sem categoria · confira as marcadas como <b>revisar</b> e <b>baixa</b></span>

@@ -50,7 +50,7 @@ const r = await page.evaluate(async () => {
 });
 await browser.close();
 assert.deepEqual(erros, [], 'sem erro de página');
-assert.deepEqual(r.nov, [['🔁 Reembolsar Will · Nubank Will (prévia) · NOV/2026', 300, true]], 'NOV: Adobe 200 + Loja 2/3 100 (sem Mercado pessoal, sem a não confirmada, sem a que já está na fatura)');
+assert.deepEqual(r.nov, [['🔁 Reembolsar Will · Nubank Will (prévia) · NOV/2026', 299.9, true]], 'NOV: Adobe 200 + Loja 2/3 100 − crédito 0,10 (sem Mercado pessoal, sem a não confirmada, sem a que já está na fatura, sem os boletos)');
 assert.deepEqual(r.dez, [['🔁 Reembolsar Will · Nubank Will (prévia) · DEZ/2026', 100, true]], 'DEZ: Loja 3/3');
 assert.deepEqual(r.pend, ['d'], 'só a sem rateio fica esperando confirmação');
 assert.deepEqual(r.rateioNov, ['ADOBE', 'LOJA'], 'rateio do studio em NOV sem o pessoal');
