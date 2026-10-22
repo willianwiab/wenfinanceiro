@@ -587,7 +587,7 @@ function OF_porMesPrevia(cid) {
   return pm;
 }
 // Compras em aberto CONFIRMADAS de um mês, no formato do C_parcelasDaPrevia do WEN (rateio e detalhe da prévia).
-function OF_abertasDoMes(cid, mes) { return OF_itensPrevistos(cid).filter(it => (it.tipo === 'aberta' || it.tipo === 'credito') && it.mes === mes).map(it => ({ desc: it.desc, categoria: it.categoria, valor: it.valor, n: it.n, total: it.total })); }
+function OF_abertasDoMes(cid, mes) { return OF_itensPrevistos(cid).filter(it => (it.tipo === 'aberta' || it.tipo === 'credito') && it.mes === mes).map(it => ({ desc: it.desc, categoria: it.categoria, valor: it.valor, n: it.n, total: it.total, ref: it.ref })); }
 function OF_pendentesAberta(cid) { return OF_classificarAberta(cid).pendentes; }
 // 🔄 Atualizar cartão: compras em aberto (rateio a confirmar) + a fatura fechada mais recente, se ainda não está aqui.
 window.OF_atualizarCartao = async function () {
