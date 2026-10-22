@@ -848,6 +848,17 @@ if (typeof document !== 'undefined') (function () {
     const m = el('cxModalBg'); if (m) m.style.display = 'flex';
   }
   window.CX_abrir = abrir;
+  // Open Finance (22/10/2026): os movimentos do banco entram pela MESMA revisão do OFX. ENTRADAS não são pareadas
+  // sozinhas com o Receber — o Will recebe por Pix e não concilia a maioria: viram só movimento da conta (o saldo
+  // bate) e o Receber não é tocado. Parear à mão continua possível na revisão.
+  window.CX_montarDoBanco = (brutos, saldoFinal) => {
+    montar(brutos, { saldoFinal: (saldoFinal == null ? null : saldoFinal) }, 'pluggy');
+    if (!IMP) return 0;
+    let n = 0;
+    IMP.itens.forEach(it => { if (it.valor > 0 && it.pares && it.pares.length) { it.pares = []; it.conciliar = false; n++; try { sync(it); } catch (e) {} } });
+    renderRevisao();
+    return IMP.itens.length;
+  };
 
 })();
 

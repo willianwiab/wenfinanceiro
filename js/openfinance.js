@@ -17,7 +17,7 @@
 const OF_URL = 'https://nossasemente-motor.vercel.app/api/pluggy-wen';
 const OF_CAT_PESSOAL = 'fora_pessoal';
 const OF_CAT_DADOS = { label: 'Pessoal do Will (fora do WEN)', icon: '🙋', color: '#a855f7', bg: '#f3e8ff' };
-let OF_cfg = { cartoes: {}, pessoais: {} }, OF_cfgCarregado = false, OF_contas = null, OF_ocupado = false;
+let OF_cfg = { cartoes: {}, pessoais: {}, contas: {} }, OF_cfgCarregado = false, OF_contas = null, OF_ocupado = false;
 
 function OF_ehCatPessoal(cat) { return cat === OF_CAT_PESSOAL; }
 function OF_ehPessoal(cartaoId) { return !!(OF_cfg.pessoais || {})[cartaoId]; }
@@ -38,12 +38,12 @@ async function OF_chamar(corpo) {
 async function OF_carregarCfg() {
   try {
     const res = await fetch(`${FS_URL}/open_finance/config?key=${FB_API_KEY}`);
-    if (res.ok) { const j = await res.json(); const f = j.fields || {}; const o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_cfg = { cartoes: o.cartoes || {}, pessoais: o.pessoais || {} }; }
+    if (res.ok) { const j = await res.json(); const f = j.fields || {}; const o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_cfg = { cartoes: o.cartoes || {}, pessoais: o.pessoais || {}, contas: o.contas || {} }; }
   } catch (e) { /* sem rede: segue sem vínculos */ }
   OF_cfgCarregado = true;
   return OF_cfg;
 }
-async function OF_salvarCfg() { await BC_fbUpsert('open_finance', 'config', { cartoes: OF_cfg.cartoes || {}, pessoais: OF_cfg.pessoais || {} }); }
+async function OF_salvarCfg() { await BC_fbUpsert('open_finance', 'config', { cartoes: OF_cfg.cartoes || {}, pessoais: OF_cfg.pessoais || {}, contas: OF_cfg.contas || {} }); }
 // Chamado pelo C_ativar: carrega os vínculos e redesenha os cartões.
 async function OF_iniciar() {
   OF_garantirCategoria();
@@ -164,3 +164,50 @@ function OF_lancarReembolso(fatura, cartao) {
   if (anterior && anterior.contaBancariaId) nova.contaBancariaId = anterior.contaBancariaId;
   semEsta.push(nova); P_meses[wk] = semEsta; P_salvarStorage();
 }
+
+// ═══ Fase 2: EXTRATO da conta do studio (Caixa) ═══
+// Conta do WEN ↔ conta do banco em open_finance/config.contas. Os movimentos entram pela revisão do concil.js
+// (CX_montarDoBanco): saídas podem casar com Contas a Pagar; ENTRADAS viram só movimento da conta (Receber intocado).
+function OF_contaBancoDe(contaId) { return (OF_cfg.contas || {})[contaId] || ''; }
+function OF_isoMenosDias(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+window.OF_ligarConta = async function (contaId, depois) {
+  const c = (typeof BC_CONTAS !== 'undefined' ? BC_CONTAS : {})[contaId] || {};
+  OF_modal(`<h2 style="margin:0 0 6px">🔗 Ligar ${C_esc((c.banco || '') + ' · ' + (c.nome || 'conta'))} ao banco</h2><div id="ofCorpo" class="card-sub">🔄 Buscando as contas no banco…</div>`);
+  try { OF_contas = (await OF_chamar({ acao: 'contas' })).contas || []; }
+  catch (e) { document.getElementById('ofCorpo').innerHTML = `<div style="color:#ef4444">⚠️ Não consegui falar com o banco (${C_esc(e.message)}).</div><div style="text-align:right;margin-top:12px"><button class="btn btn-outline" onclick="OF_fechar()">Fechar</button></div>`; return; }
+  const usados = new Set(Object.entries(OF_cfg.contas || {}).filter(([id]) => id !== contaId).map(([, a]) => a));
+  const banc = OF_contas.filter(a => a.tipo === 'BANK');
+  const opts = banc.map(a => `<option value="${C_esc(a.id)}" ${usados.has(a.id) ? 'disabled' : ''}>${C_esc(a.nome)}${a.numero ? ' · ' + C_esc(a.numero) : ''}${a.titular ? ' · ' + C_esc(a.titular) : ''}${usados.has(a.id) ? ' (já ligada)' : ''}</option>`).join('');
+  document.getElementById('ofCorpo').innerHTML = banc.length ? `
+    <div class="form-group"><label>Qual conta do banco é esta? (confira o número)</label><select id="ofContaBanco"><option value="">— escolha —</option>${opts}</select></div>
+    <div class="card-sub" style="margin-top:6px">As <b>entradas</b> (Pix de clientes) entram só como movimento da conta — o saldo bate sozinho e o <b>Contas a Receber não é tocado</b>.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn btn-outline" onclick="OF_fechar()">Cancelar</button><button class="btn btn-primary" onclick="OF_ligarContaConfirmar('${C_jsAttr(contaId)}', ${depois ? 'true' : 'false'})">Ligar</button></div>`
+    : '<div>Nenhuma conta corrente apareceu nas conexões do banco liberadas para o WEN.</div><div style="text-align:right;margin-top:12px"><button class="btn btn-outline" onclick="OF_fechar()">Fechar</button></div>';
+};
+window.OF_ligarContaConfirmar = async function (contaId, depois) {
+  const acc = (document.getElementById('ofContaBanco') || {}).value; if (!acc) { toast('Escolha qual conta do banco é esta.', '#ef4444'); return; }
+  OF_cfg.contas = { ...(OF_cfg.contas || {}), [contaId]: acc };
+  try { await OF_salvarCfg(); OF_fechar(); toast('🔗 Conta ligada ao banco'); if (depois) OF_trazerExtrato(); }
+  catch (e) { toast('Não consegui salvar o vínculo: ' + (e.message || e), '#ef4444'); }
+};
+// Botão "🏦 Trazer do banco" no modal do extrato: usa a conta e o período escolhidos (padrão: últimos 30 dias).
+window.OF_trazerExtrato = async function () {
+  if (OF_ocupado) return;
+  if (!OF_cfgCarregado) await OF_carregarCfg();
+  const contaId = (document.getElementById('cxConta') || {}).value; if (!contaId) { toast('Escolha a conta do extrato.', '#ef4444'); return; }
+  const acc = OF_contaBancoDe(contaId); if (!acc) { OF_ligarConta(contaId, true); return; }
+  const deEl = document.getElementById('cxDe'), ateEl = document.getElementById('cxAte');
+  const de = (deEl && deEl.value) || OF_isoMenosDias(30), ate = (ateEl && ateEl.value) || OF_isoMenosDias(0);
+  OF_ocupado = true; toast('🔄 Buscando o extrato no banco…');
+  try {
+    const r = await OF_chamar({ acao: 'transacoes', accountId: acc, de, ate });
+    const brutos = (r.transacoes || []).map(t => ({ fitid: t.fitid, data: t.data, valor: Number(t.valor) || 0, descricao: t.descricao || '' }));
+    if (!brutos.length) { toast('O banco não trouxe movimentos nesse período.', '#f59e0b'); return; }
+    if (deEl && !deEl.value) deEl.value = de; if (ateEl && !ateEl.value) ateEl.value = ate;
+    // saldo de AGORA no banco: só serve de conferência quando o período vai até hoje
+    const saldo = (ate >= OF_isoMenosDias(0) && r.conta && typeof r.conta.saldo === 'number') ? r.conta.saldo : null;
+    const n = window.CX_montarDoBanco(brutos, saldo);
+    toast('🏦 ' + n + ' movimento(s) do banco para revisar' + ((r.pendentes || []).length ? ' · ' + r.pendentes.length + ' ainda pendente(s) no banco ficam para a próxima' : ''));
+  } catch (e) { toast('⚠️ ' + (e.message || e), '#ef4444'); }
+  finally { OF_ocupado = false; }
+};

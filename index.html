@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261022-21c82e8e';
+window.APP_VERSION='20261022-5af5b28e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -8751,11 +8751,11 @@ async function CONC_desfazer(chave){
 AUTH_bootstrap();
 </script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
-<script src="js/concil.js?v=cf232cb4"></script>
+<script src="js/concil.js?v=2321f5f6"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=6b3816fb"></script>
-<script src="js/openfinance.js?v=e2febea9"></script>
+<script src="js/openfinance.js?v=5000af9e"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -8799,7 +8799,8 @@ AUTH_bootstrap();
       <input type="file" id="cxFotoInput" accept="image/*" multiple style="display:none" onchange="CX_arquivoFoto(event)">
       <input type="file" id="cxCamInput" accept="image/*" capture="environment" style="display:none" onchange="CX_arquivoFoto(event)">
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-        <button class="cx-btn prim" onclick="document.getElementById('cxOfxInput').click()">📄 Arquivo OFX</button>
+        <button class="cx-btn prim" onclick="OF_trazerExtrato()">🏦 Trazer do banco</button>
+        <button class="cx-btn" onclick="document.getElementById('cxOfxInput').click()">📄 Arquivo OFX</button>
         <button class="cx-btn" onclick="document.getElementById('cxPdfInput').click()">📕 PDF do extrato</button>
         <button class="cx-btn" onclick="document.getElementById('cxFotoInput').click()">🖼️ Foto da galeria</button>
         <button class="cx-btn" onclick="document.getElementById('cxCamInput').click()">📸 Tirar foto</button>
