@@ -38,12 +38,12 @@ async function OF_chamar(corpo) {
 async function OF_carregarCfg() {
   try {
     const res = await fetch(`${FS_URL}/open_finance/config?key=${FB_API_KEY}`);
-    if (res.ok) { const j = await res.json(); const f = j.fields || {}; const o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_cfg = { cartoes: o.cartoes || {}, pessoais: o.pessoais || {}, contas: o.contas || {}, passagem: o.passagem || [] }; }
+    if (res.ok) { const j = await res.json(); const f = j.fields || {}; const o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_cfg = { cartoes: o.cartoes || {}, pessoais: o.pessoais || {}, contas: o.contas || {}, passagem: o.passagem || [], regrasCat: o.regrasCat || {} }; }
   } catch (e) { /* sem rede: segue sem vínculos */ }
   OF_cfgCarregado = true;
   return OF_cfg;
 }
-async function OF_salvarCfg() { await BC_fbUpsert('open_finance', 'config', { cartoes: OF_cfg.cartoes || {}, pessoais: OF_cfg.pessoais || {}, contas: OF_cfg.contas || {}, passagem: OF_cfg.passagem || [] }); }
+async function OF_salvarCfg() { await BC_fbUpsert('open_finance', 'config', { cartoes: OF_cfg.cartoes || {}, pessoais: OF_cfg.pessoais || {}, contas: OF_cfg.contas || {}, passagem: OF_cfg.passagem || [], regrasCat: OF_cfg.regrasCat || {} }); }
 // Chamado pelo C_ativar: carrega os vínculos e redesenha os cartões.
 async function OF_iniciar() {
   OF_garantirCategoria();
@@ -67,10 +67,10 @@ function OF_htmlCartao(c) {
 }
 
 // ── Ligar cartão do WEN ↔ cartão do banco ──
-function OF_modal(html) {
+function OF_modal(html, largura) {
   let m = document.getElementById('ofModal');
   if (!m) { m = document.createElement('div'); m.id = 'ofModal'; m.className = 'modal-bg'; m.onclick = e => { if (e.target === m) OF_fechar(); }; document.body.appendChild(m); }
-  m.innerHTML = `<div class="modal" style="max-width:480px">${html}</div>`;
+  m.innerHTML = `<div class="modal" style="max-width:${largura || 480}px;width:100%;max-height:90vh;overflow:auto;border-radius:20px">${html}</div>`;
   m.classList.add('open'); m.style.display = 'flex';
 }
 window.OF_fechar = function () { const m = document.getElementById('ofModal'); if (m) { m.classList.remove('open'); m.style.display = 'none'; } };
@@ -233,7 +233,7 @@ let OF_extratoBanco = {}, OF_conexoes = {}, OF_ligandoMov = '';
 function OF_norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\d+/g, ' ').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function OF_mpChave(desc) { return OF_norm(String(desc || '').replace(/^📥\s*/, '')).split(' ').slice(0, 4).join(' '); }
 function OF_ehPixNoCredito(t) { t = String(t || ''); return /pix\s+(?:no\s+)?cr[eé]dito|cr[eé]dito\s+(?:via\s+)?pix|pix\s+parcelado|valor\s+adicionado.{0,40}cart[aã]o\s+de\s+cr[eé]dito/i.test(t) && !/juros|iof|encargo|multa|tarifa/i.test(t); }
-function OF_ehPagCartao(t) { t = String(t || ''); return /pagamento\s+(?:de\s+)?fatura|pagamento\s+recebido|pagamento.{0,25}fatura|fatura.{0,25}cart[aã]o/i.test(t) || /\bdeb(?:ito)?\.?\s+aut(?:om(?:[aá]tico)?)?\b/i.test(t); }
+function OF_ehPagCartao(t) { t = String(t || ''); if (/total\s+da\s+fatura\s+anterior|saldo\s+(?:da\s+)?fatura\s+anterior|saldo\s+anterior/i.test(t)) return true; return /pagamento\s+(?:de\s+)?fatura|pagamento\s+recebido|pagamento.{0,25}fatura|fatura.{0,25}cart[aã]o/i.test(t) || /\bdeb(?:ito)?\.?\s+aut(?:om(?:[aá]tico)?)?\b/i.test(t); }
 function OF_mpTexto(desc, valor) {
   const t = String(desc || ''), v = Number(valor) || 0;
   if (OF_ehPixNoCredito(t)) return 'credito';
@@ -469,7 +469,7 @@ window.OF_abrirSync = async function () {
   const secK = id => { const c = C_card(id); return `<div style="border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>💳 ${C_esc(c.nome)}</b>${OF_ehPessoal(id) ? '<span style="font-size:.78rem">🙋 pessoal → Reembolsar Will</span>' : ''}</div><div style="margin-top:8px"><button class="btn btn-outline" style="width:auto" onclick="OF_fechar();showMain&&showMain('cartoes');setTimeout(()=>OF_irImportar('${C_jsAttr(id)}'),300)">Trazer fatura do banco</button></div></div>`; };
   const render = () => OF_modal(`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">🔄 Sincronizar com o banco</h2><button class="btn btn-outline" style="width:auto" onclick="OF_fechar()">✕</button></div>
     <p class="card-sub" style="margin:6px 0 10px">O que chegou do banco em cada conta e cartão ligados. Tudo passa por uma revisão antes de lançar.</p>
-    ${contas.length || cartoes.length ? contas.map(secC).join('') + cartoes.map(secK).join('') : 'Nenhuma conta ou cartão ligado ainda. Ligue em <b>Contas bancárias → extrato</b> e em <b>Cartões → Meus cartões</b>.'}`);
+    ${contas.length || cartoes.length ? contas.map(secC).join('') + cartoes.map(secK).join('') : 'Nenhuma conta ou cartão ligado ainda. Ligue em <b>Contas bancárias → extrato</b> e em <b>Cartões → Meus cartões</b>.'}`, 760);
   render();
   for (const id of contas) { OF_extratoBanco[id] = { ...(OF_extratoBanco[id] || {}), carregando: true }; }
   render();
@@ -485,10 +485,10 @@ let OF_abertas = {};   // cartaoId → { mes, compras:[{fitid,data,descricao,val
 function OF_ymAdd(ym, n) { const [y, m] = String(ym).split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 async function OF_carregarAberta(cid) {
   try { const res = await fetch(`${FS_URL}/open_finance/aberta_${encodeURIComponent(cid)}?key=${FB_API_KEY}`);
-    if (res.ok) { const j = await res.json(), f = j.fields || {}, o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_abertas[cid] = { mes: o.mes || '', compras: o.compras || [], cats: o.cats || {}, ultimaFatura: o.ultimaFatura || null }; } } catch (e) {}
+    if (res.ok) { const j = await res.json(), f = j.fields || {}, o = {}; Object.keys(f).forEach(k => o[k] = fromFV(f[k])); OF_abertas[cid] = { mes: o.mes || '', compras: o.compras || [], cats: o.cats || {}, ultimaFatura: o.ultimaFatura || null, vistos: o.vistos || [] }; } } catch (e) {}
   return OF_abertas[cid];
 }
-async function OF_salvarAberta(cid) { const a = OF_abertas[cid] || {}; await BC_fbUpsert('open_finance', 'aberta_' + cid, { mes: a.mes || '', compras: a.compras || [], cats: a.cats || {}, ultimaFatura: a.ultimaFatura || null }); }
+async function OF_salvarAberta(cid) { const a = OF_abertas[cid] || {}; await BC_fbUpsert('open_finance', 'aberta_' + cid, { mes: a.mes || '', compras: a.compras || [], cats: a.cats || {}, ultimaFatura: a.ultimaFatura || null, vistos: a.vistos || [] }); }
 // Compra do ciclo aberto que já está numa fatura importada (mesmo id do banco, ou mesmo valor ±5 dias).
 function OF_abertaJaNaFatura(cid, compras) {
   const out = new Set(), usados = new Set(), itens = [];
@@ -552,40 +552,98 @@ window.OF_atualizarCartao = async function () {
   if (!OF_cfgCarregado) await OF_carregarCfg();
   const acc = OF_contaDoCartao(cid); if (!acc) { OF_ligar(cid); return; }
   OF_ocupado = true;
-  OF_modal(`<h2 style="margin:0 0 6px">🔄 ${C_esc(C_card(cid).nome)} — compras no banco</h2><div id="ofCorpo" class="card-sub">🔄 Buscando no banco…</div>`);
+  OF_modal(`<h2 style="margin:0 0 10px">🔄 Sincronizar com o banco · cartão</h2><div id="ofCorpo" class="card-sub">🔄 Buscando no banco…</div>`, 760);
   try {
     const r = await OF_chamar({ acao: 'aberta', accountId: acc });
     const ant = OF_abertas[cid] || (await OF_carregarAberta(cid)) || {};
-    OF_abertas[cid] = { mes: r.mes || '', compras: (r.compras || []).map(c => ({ fitid: c.fitid, data: c.data, descricao: c.descricao, valor: Number(c.valor) || 0, parcela: c.parcela || null })), cats: ant.cats || {}, ultimaFatura: r.ultimaFatura ? { vencimento: r.ultimaFatura.vencimento, total: r.ultimaFatura.total } : null };
+    OF_abertas[cid] = { mes: r.mes || '', compras: (r.compras || []).map(c => ({ fitid: c.fitid, data: c.data, descricao: c.descricao, valor: Number(c.valor) || 0, parcela: c.parcela || null })), cats: ant.cats || {}, vistos: ant.vistos || [], sug: ant.sug || {}, ultimaFatura: r.ultimaFatura ? { vencimento: r.ultimaFatura.vencimento, total: r.ultimaFatura.total } : null };
     await OF_salvarAberta(cid);
     C_sincronizarFaturasPrevias(cid); try { C_renderTudo(); } catch (e) {}
     OF_renderAberta(cid);
   } catch (e) { const el = document.getElementById('ofCorpo'); if (el) el.innerHTML = `<div style="color:#ef4444">⚠️ ${C_esc(e.message || e)}</div><div style="text-align:right;margin-top:12px"><button class="btn btn-outline" onclick="OF_fechar()">Fechar</button></div>`; }
   finally { OF_ocupado = false; }
 };
+// Sugestão de categoria (igual ao NS: aprendido → regras/palavras-chave → SophIA quando pedida)
+function OF_chaveDesc(d) { return OF_norm(String(d || '').replace(/^📥\s*/, '')).split(' ').filter(w => w.length > 2).slice(0, 3).join(' '); }
+function OF_sugerir(desc) {
+  const ap = (OF_cfg.regrasCat || {})[OF_chaveDesc(desc)];
+  if (ap && (typeof CATS_P === 'undefined' || CATS_P[ap])) return { cat: ap, conf: 'alta', origem: 'aprendido' };
+  if (typeof IMP_sugerirCatConf === 'function') { const s = IMP_sugerirCatConf(desc); if (s && s.cat) return s; }
+  return { cat: '', conf: 'revisar', origem: null };
+}
+function OF_pill(conf) {
+  const m = { alta: ['alta', '#dcfce7', '#15803d'], media: ['média', '#fef9c3', '#a16207'], baixa: ['baixa', '#ffedd5', '#c2410c'], revisar: ['revisar', '#fee2e2', '#b91c1c'] }[conf || 'revisar'] || ['revisar', '#fee2e2', '#b91c1c'];
+  return `<span style="background:${m[1]};color:${m[2]};border-radius:999px;padding:2px 8px;font-size:.7rem;font-weight:800;white-space:nowrap">${m[0]}</span>`;
+}
+// Tela do cartão no padrão do "Sincronizar com o banco" do NS: fatura se montando, total a sincronizar,
+// SophIA completa, Confirmar sugestões, NOVO, e cada compra com a categoria sugerida + confiança.
 function OF_renderAberta(cid) {
   const el = document.getElementById('ofCorpo'); if (!el) return;
   const ab = OF_abertas[cid] || {}, pend = OF_pendentesAberta(cid), pess = OF_ehPessoal(cid);
-  const conf = (ab.compras || []).filter(c => (ab.cats || {})[c.fitid]);
+  const sug = ab.sug || (ab.sug = {});
+  pend.forEach(c => { if (!sug[c.fitid]) sug[c.fitid] = OF_sugerir(c.descricao); });
+  const vistos = new Set(ab.vistos || []);
+  const prev = (ab.mes ? OF_itensPrevistos(cid).filter(it => it.mes === ab.mes) : []);
+  const vConf = prev.filter(it => it.tipo === 'aberta').reduce((a, it) => a + it.valor, 0), vParc = prev.filter(it => it.tipo === 'parcela').reduce((a, it) => a + it.valor, 0);
+  const vPend = pend.reduce((a, c) => a + Math.abs(Number(c.valor) || 0), 0);
+  const r2 = v => Math.round(v * 100) / 100;
+  const nSug = pend.filter(c => (sug[c.fitid] || {}).cat).length, nSem = pend.length - nSug;
   const uf = ab.ultimaFatura, mesUF = uf && uf.vencimento ? String(uf.vencimento).slice(0, 7) : '';
   const faltaFatura = mesUF && !C_temFaturaReal(cid, mesUF);
+  const mesC = ab.mes ? C_mesCurto(ab.mes) : '—';
   const opts = sel => (typeof C_optsCategorias === 'function' ? C_optsCategorias(sel || '') : '');
+  const linha = c => { const sg = sug[c.fitid] || {}; const novo = !vistos.has(c.fitid);
+    return `<div style="display:flex;gap:10px;align-items:center;border-bottom:1px solid #e5e7eb;padding:9px 0">
+      <div style="flex:1;min-width:0"><div style="font-size:.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${C_esc(c.descricao)}</div>
+        <div style="font-size:.74rem;color:#94a3b8;display:flex;gap:6px;align-items:center;margin-top:2px">${novo ? '<span style="background:#dcfce7;color:#15803d;border-radius:6px;padding:0 6px;font-weight:800;font-size:.66rem">NOVO</span>' : ''}${C_dataBR(c.data)}${c.parcela ? ' · parcela ' + c.parcela.atual + '/' + c.parcela.total : ''}</div></div>
+      <select data-of-fit="${C_esc(c.fitid)}" onchange="OF_setSug('${C_jsAttr(cid)}','${C_jsAttr(c.fitid)}',this.value)" style="max-width:190px;border-radius:10px;padding:6px 8px;border:1px solid #e5e7eb;background:#fafaf9">${opts(sg.cat)}</select>
+      <b style="white-space:nowrap;font-size:.92rem">${fmt(Math.abs(c.valor))}</b>${OF_pill(sg.cat ? sg.conf : 'revisar')}</div>`; };
   el.innerHTML = `
-    ${faltaFatura ? `<div style="background:#fef3c7;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:.84rem">🧾 A fatura de <b>${C_dataBR(uf.vencimento)}</b> (${fmt(uf.total || 0)}) já fechou no banco e ainda não está aqui. <button class="btn btn-outline" style="width:auto;padding:3px 10px" onclick="OF_fechar();document.getElementById('cImpMes').value='${mesUF}';OF_trazerFatura()">Trazer essa fatura</button></div>` : ''}
-    <div class="card-sub" style="margin-bottom:6px">Ciclo aberto · fatura de <b>${C_esc(ab.mes || '—')}</b> · ${conf.length} compra(s) já na previsão${pess ? ' · cartão pessoal: o que for do studio vira <b>🔁 Reembolsar Will (prévia)</b>' : ''}.</div>
-    ${pend.length ? `<div style="font-weight:700;margin:6px 0">Confirme o rateio (${pend.length}) — só entra na previsão depois de confirmar</div>
-      <div style="max-height:46vh;overflow:auto">${pend.map(c => `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #e5e7eb;padding:6px 0;font-size:.84rem"><span style="flex:1;min-width:0">${C_esc(c.descricao)}<span style="display:block;font-size:.72rem;color:#94a3b8">${C_dataBR(c.data)}${c.parcela ? ' · parcela ' + c.parcela.atual + '/' + c.parcela.total : ''}</span></span><b style="white-space:nowrap">${fmt(Math.abs(c.valor))}</b><select data-of-fit="${C_esc(c.fitid)}" style="max-width:170px">${opts(pess ? '' : '')}</select></div>`).join('')}</div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-outline" onclick="OF_fechar()">Depois</button><button class="btn btn-primary" onclick="OF_confirmarAberta('${C_jsAttr(cid)}')">✓ Confirmar rateio</button></div>`
-      : `<div style="font-size:.86rem">✓ Nenhuma compra esperando rateio.</div><div style="text-align:right;margin-top:12px"><button class="btn btn-outline" onclick="OF_fechar()">Fechar</button></div>`}`;
+    ${faltaFatura ? `<div style="background:#fef3c7;border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:.84rem">🧾 A fatura de <b>${C_dataBR(uf.vencimento)}</b> (${fmt(uf.total || 0)}) já fechou no banco e ainda não está aqui. <button class="btn btn-outline" style="width:auto;padding:3px 10px" onclick="OF_fechar();document.getElementById('cImpMes').value='${mesUF}';OF_trazerFatura()">Trazer essa fatura</button></div>` : ''}
+    <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><b style="font-size:1.05rem">💳 ${C_esc(C_card(cid).nome || '')}</b><span style="font-size:.8rem;color:#64748b">fatura de ${C_esc(mesC)} se montando · ${(ab.compras || []).filter(c => !OF_ehPagCartao(c.descricao)).length} lançamento(s)</span></div>
+      <div style="font-weight:800;font-size:1.1rem;margin-top:6px">Fatura de ${C_esc(mesC)} até agora: ${fmt(r2(vConf + vParc + vPend))}</div>
+      <div style="font-size:.8rem;color:#64748b">compras confirmadas ${fmt(r2(vConf))} · parcelas ${fmt(r2(vParc))}${pend.length ? ` · <b>+ ${fmt(r2(vPend))} aguardando rateio (${pend.length})</b>` : ''}</div>
+      ${pess ? '<div style="font-size:.78rem;color:#7c3aed;margin-top:4px">🙋 Cartão pessoal: o que for do studio vira <b>🔁 Reembolsar Will (prévia)</b>; o resto marque <b>🙋 Pessoal do Will</b>.</div>' : ''}
+      ${pend.length ? `<div style="font-weight:800;margin-top:8px">Total a sincronizar: ${fmt(r2(vPend))} <span style="font-weight:400;color:#64748b">(${pend.length} compra${pend.length > 1 ? 's' : ''} sem categoria confirmada)</span></div>
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px"><span style="font-size:.8rem;color:#64748b">${nSem} sem categoria · confira as marcadas como <b>revisar</b> e <b>baixa</b></span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-outline" style="width:auto" id="ofBtnSophia" onclick="OF_sophiaAberta('${C_jsAttr(cid)}')">✨ SophIA completa (${nSem})</button>${nSug ? `<button class="btn btn-primary" style="width:auto" onclick="OF_confirmarAberta('${C_jsAttr(cid)}')">✓ Confirmar sugestões (${nSug})</button>` : ''}</span></div>
+        <div style="max-height:46vh;overflow:auto">${pend.map(linha).join('')}</div>`
+      : '<div style="font-size:.88rem;margin-top:8px;color:#15803d">✓ Nenhuma compra esperando rateio — a previsão está em dia.</div>'}
+    </div>
+    <div style="text-align:right;margin-top:12px"><button class="btn btn-outline" style="width:auto" onclick="OF_fecharAberta('${C_jsAttr(cid)}')">Fechar</button></div>`;
 }
+window.OF_setSug = function (cid, fitid, cat) { const ab = OF_abertas[cid]; if (!ab) return; ab.sug = ab.sug || {}; ab.sug[fitid] = cat ? { cat, conf: 'alta', origem: 'usuario' } : { cat: '', conf: 'revisar', origem: null }; OF_renderAberta(cid); };
+// Fechar marca o que já foi visto (o NOVO some na próxima vez)
+window.OF_fecharAberta = async function (cid) {
+  const ab = OF_abertas[cid]; if (ab) { ab.vistos = (ab.compras || []).map(c => c.fitid); try { await BC_fbUpsert('open_finance', 'aberta_' + cid, { mes: ab.mes || '', compras: ab.compras || [], cats: ab.cats || {}, ultimaFatura: ab.ultimaFatura || null, vistos: ab.vistos }); } catch (e) {} }
+  OF_fechar();
+};
+window.OF_sophiaAberta = async function (cid) {
+  const ab = OF_abertas[cid]; if (!ab) return;
+  if (typeof IA_temChave === 'function' && !IA_temChave()) { toast('Conecte a chave da IA em Config → Inteligência Artificial.', '#f59e0b'); return; }
+  const alvo = OF_pendentesAberta(cid).filter(c => !((ab.sug || {})[c.fitid] || {}).cat);
+  if (!alvo.length) { toast('Todas já têm sugestão 💚'); return; }
+  const btn = document.getElementById('ofBtnSophia'); if (btn) { btn.disabled = true; btn.textContent = '✨ Categorizando…'; }
+  try {
+    const res = await IMP_categorizarIA(alvo.map(c => c.descricao || '')); let n = 0;
+    alvo.forEach((c, k) => { if (res[k]) { ab.sug[c.fitid] = { cat: res[k], conf: 'baixa', origem: 'ia' }; n++; } });
+    toast(n ? `✨ A SophIA sugeriu ${n} de ${alvo.length} — confira as marcadas como "baixa".` : 'A SophIA não teve certeza desta vez.');
+  } catch (e) { toast(e.message || 'Não consegui categorizar agora.', '#ef4444'); }
+  OF_renderAberta(cid);
+};
+// Confirma as compras com categoria escolhida/sugerida → entram na previsão; o escolhido ensina os próximos parecidos.
 window.OF_confirmarAberta = async function (cid) {
   const ab = OF_abertas[cid]; if (!ab) return;
-  let n = 0; document.querySelectorAll('#ofModal select[data-of-fit]').forEach(s => { if (s.value) { ab.cats = { ...(ab.cats || {}), [s.getAttribute('data-of-fit')]: s.value }; n++; } });
+  let n = 0; const regras = { ...(OF_cfg.regrasCat || {}) };
+  OF_pendentesAberta(cid).forEach(c => { const sg = (ab.sug || {})[c.fitid]; if (sg && sg.cat) { ab.cats = { ...(ab.cats || {}), [c.fitid]: sg.cat }; regras[OF_chaveDesc(c.descricao)] = sg.cat; n++; } });
   if (!n) { toast('Escolha a categoria de pelo menos uma compra.', '#f59e0b'); return; }
-  try { await OF_salvarAberta(cid); C_sincronizarFaturasPrevias(cid); try { C_renderTudo(); } catch (e) {} toast('✓ ' + n + ' compra(s) na previsão'); OF_renderAberta(cid); }
-  catch (e) { toast('Não consegui salvar: ' + (e.message || e), '#ef4444'); }
+  try {
+    await OF_salvarAberta(cid); OF_cfg.regrasCat = regras; await OF_salvarCfg();
+    C_sincronizarFaturasPrevias(cid); try { C_renderTudo(); } catch (e) {}
+    toast('✓ ' + n + ' compra(s) na previsão'); OF_renderAberta(cid);
+  } catch (e) { toast('Não consegui salvar: ' + (e.message || e), '#ef4444'); }
 };
-
 // ── Extrato: "✓ Já está no sistema" (conta já paga / recebimento já recebido) ──
 function OF_mesAnterior(ym) { return OF_ymAdd(ym, -1); }
 function OF_jaNoApp(b, contaId) {

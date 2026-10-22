@@ -85,6 +85,38 @@ function CX_fixasDoMes(contaId, mesNS) {
       out.push({ tipo: 'receber', id: c.id, mes: mesNS, nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null, pago: false });
     });
   } catch (e) {}
+  // + o que já foi pago/recebido e ainda não foi conciliado (aparece para LIGAR, como no NS)
+  try { CX_jaPagosDoMes(contaId, mesNS).forEach(x => out.push(x)); } catch (e) {}
+  return out;
+}
+
+// Contas JÁ PAGAS / recebimentos JÁ RECEBIDOS que ainda não foram conciliados com o extrato (como o NS mostra
+// na coluna de contas do mês). mesNS = 'AAAA-MM' ou null (todos os meses). Parear com eles só LIGA (OF_vincularJaNoApp):
+// não dá baixa de novo e não escreve no Receber.
+function CX_jaPagosDoMes(contaId, mesNS) {
+  const out = [], naConta = cf => !cf || cf === contaId;
+  const ligados = new Set(Object.values(typeof CONC_LINKS !== 'undefined' ? (CONC_LINKS || {}) : {}).filter(x => x && x.status === 'match').map(x => x.tipo + ':' + x.id));
+  try {
+    Object.keys(typeof P_meses !== 'undefined' ? (P_meses || {}) : {}).forEach(wk => {
+      const mNS = CX_mesNS(wk); if (mesNS && mNS !== mesNS) return;
+      (P_meses[wk] || []).forEach(r => {
+        if (!r || r.previa || r.conciliadoMov || ligados.has('pagar:' + r.id) || !naConta(r.contaBancariaId)) return;
+        const pago = String(r.status).toUpperCase() === 'PAGO' || ((Number(r.valorPago) || 0) >= (Number(r.valor) || 0) - 0.005 && (Number(r.valor) || 0) > 0);
+        if (!pago) return;
+        const v = typeof BC_debitoLancamento === 'function' ? BC_debitoLancamento(r) : (Number(r.valorPago) || 0); if (!(v > 0.005)) return;
+        out.push({ tipo: 'pagar', id: r.id, mes: mNS, nome: r.nome || 'conta', valor: Math.round(v * 100) / 100, data: r.dataPagamento || '', conta: r.contaBancariaId || null, pago: true,
+          comBaixa: (typeof BC_MOVS !== 'undefined' ? BC_MOVS : []).some(m => m.id === 'mov_pagar_' + r.id && !m.estornada && m.contaId === contaId) });
+      });
+    });
+  } catch (e) {}
+  try {
+    (typeof R_todosOsDados !== 'undefined' ? (R_todosOsDados || []) : []).forEach(r => {
+      if (!r || r.conciliadoMov || ligados.has('receber:' + r.id) || !naConta(r.contaBancariaId)) return;
+      const rec = Number(r.valorReserva) || 0; if (!(rec > 0.005)) return;
+      const mNS = CX_mesNS(r.mes || ''); if (mesNS && mNS !== mesNS) return;
+      out.push({ tipo: 'receber', id: r.id, mes: mNS, nome: r.cliente || r.desc || 'recebimento', valor: Math.round(rec * 100) / 100, data: '', conta: r.contaBancariaId || null, pago: true });
+    });
+  } catch (e) {}
   return out;
 }
 
@@ -357,7 +389,7 @@ if (typeof document !== 'undefined') (function () {
   // par já com o valor de baixa certo: nunca tira mais do que sobra na conta nem na movimentação
   function novoPar(fx, restanteMov, jaAplicado) {
     const disp = Math.max(0, (Number(fx.valor) || 0) - (Number(jaAplicado) || 0));
-    return { tipo: fx.tipo, id: fx.id, mes: fx.mes || '', nome: fx.nome, valor: Number(fx.valor) || 0, valorBaixa: Math.round(Math.min(disp, Math.max(0, Number(restanteMov) || 0)) * 100) / 100, conta: fx.conta || null, viaRegra: !!fx.viaRegra, score: fx.score != null ? fx.score : null, nivel: fx.nivel || null };
+    return { pago: !!fx.pago, comBaixa: !!fx.comBaixa, tipo: fx.tipo, id: fx.id, mes: fx.mes || '', nome: fx.nome, valor: Number(fx.valor) || 0, valorBaixa: Math.round(Math.min(disp, Math.max(0, Number(restanteMov) || 0)) * 100) / 100, conta: fx.conta || null, viaRegra: !!fx.viaRegra, score: fx.score != null ? fx.score : null, nivel: fx.nivel || null };
   }
   // candidatos que AINDA cabem (descarta os já cobertos por outra movimentação desta sessão)
   function candsLivres(imp, it) {
@@ -383,16 +415,17 @@ if (typeof document !== 'undefined') (function () {
   }
   function concilCand(item, contaId) { const r = ranking(item, contaId); return r.length ? r[0] : null; }
   // todas as fixas/receber abertas (qualquer mês) da conta/sem conta — em shape NS
-  function allAbertos(contaId) {
+  function allAbertos(contaId, opts) {
     const out = [], naConta = cf => !cf || cf === contaId;
     try { (typeof CONC_pagarAbertos === 'function' ? CONC_pagarAbertos() : []).forEach(c => { const cf = c.r && c.r.contaBancariaId; if (naConta(cf)) out.push({ tipo: 'pagar', id: c.id, mes: CX_mesNS(c.mes), nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null }); }); } catch (e) {}
     try { (typeof CONC_receberAbertos === 'function' ? CONC_receberAbertos() : []).forEach(c => { const cf = c.r && c.r.contaBancariaId; if (naConta(cf)) out.push({ tipo: 'receber', id: c.id, mes: CX_mesNS(c.mes), nome: c.nome, valor: c.valor, data: c.iso, conta: cf || null }); }); } catch (e) {}
+    if (!opts || !opts.soAbertos) { try { CX_jaPagosDoMes(contaId, null).forEach(x => out.push(x)); } catch (e) {} }
     return out;
   }
   // fixas pendentes do(s) mês(es) do extrato que NÃO casaram (rodapé)
   function pendentesSemExtrato(contaId, idsCasados, mesesNS) {
     const set = mesesNS instanceof Set ? mesesNS : new Set(mesesNS || []);
-    return allAbertos(contaId).filter(fx => (!set.size || set.has(fx.mes)) && !idsCasados.has(fx.id));
+    return allAbertos(contaId, { soAbertos: true }).filter(fx => (!set.size || set.has(fx.mes)) && !idsCasados.has(fx.id));
   }
 
   // saldo final do extrato (LEDGERBAL) — alimenta o banner "saldo do extrato × saldo cadastrado"
@@ -475,6 +508,7 @@ if (typeof document !== 'undefined') (function () {
       <div class="cx-resumo">${box(imp.itens.length, 'encontradas')}${box(money(totEnt), 'entradas', 'ok')}${box(money(totSai), 'saídas', 'rem')}${box(money(liquido), 'líquido', liquido >= 0 ? 'ok' : 'rem')}${box(res.conciliados, 'conciliadas', 'ok')}${res.parciais ? box(res.parciais, 'parciais') : ''}${box(res.semPar, 'sem correspondência', res.semPar ? 'rem' : '')}${res.ignorados ? box(res.ignorados, 'ignoradas') : ''}${box(dupN, 'duplicidades', dupN ? 'dup' : '')}</div>
       ${barra}
       ${saldoBloco}
+      ${(() => { const n = imp.itens.filter(i => i.incluir && !i.dup && !i.ignorado && !(i.pares || []).length && !i.jaNoApp && !i.categoria).length; return n ? `<div style="display:flex;justify-content:flex-end;margin:4px 0"><button class="cx-btn" id="cxBtnSophia" onclick="CX_sophia()">✨ SophIA categoriza (${n})</button></div>` : ''; })()}
       <div class="cx-chips">${chip('todos', 'Todos', imp.itens.length)}${nSug ? chip('sugestoes', '🟢 Sugestões', nSug) : ''}${nRevisar ? chip('revisar', '🟠 Revisar', nRevisar) : ''}${chip('sempar', 'Sem correspondência', res.semPar)}${chip('conciliados', 'Conciliadas', res.conciliados + res.parciais)}${chip('entradas', 'Entradas')}${chip('saidas', 'Saídas')}${chip('duplicidades', 'Duplicidades', dupN)}${res.ignorados ? chip('ignorados', 'Ignoradas', res.ignorados) : ''}${chip('excluidos', 'Excluídos', imp.itens.filter(i => !i.incluir).length)}</div>
       ${nExatas ? `<div style="margin:2px 0 8px"><button class="cx-btn" onclick="CX_conciliarLote()">⚡ Conciliar as ${nExatas} correspondência(s) exata(s)</button> <span style="font-size:.74rem;color:#64748b">— mostra o resumo antes; nada é gravado sem o Confirmar.</span></div>` : ''}
       ${mostraConcil ? renderLadoALado(imp) : `
@@ -561,15 +595,17 @@ if (typeof document !== 'undefined') (function () {
     // coluna direita: busca livre (qualquer mês) OU o mês navegável
     const busca = (imp.busca || '').trim();
     const mes = imp.mesConcil;
+    const selSinal = selE && imp.itens.find(x => x.id === selE);   // negativo → só Contas a Pagar; positivo → só Contas a Receber
     let todas, buscando = false;
     if (busca) { buscando = true; let univ = []; try { univ = allAbertos(imp.contaId); } catch (e) {} todas = CE_buscar(univ, busca);
       if (imp.buscaMes) todas = todas.filter(fx => (fx.mes || '') === imp.buscaMes); }   // busca: as setas filtram por mês (padrão: todos)
     else todas = fixasDoMes(imp.contaId, mes);
+    if (selSinal) todas = todas.filter(fx => fx.tipo === (selSinal.valor >= 0 ? 'receber' : 'pagar'));
     lancCache = todas;
     const idsAntes = idsConciliadasAntes();
     const keyOf = fx => fx.tipo + '|' + fx.id + '|' + (fx.mes || '');
     const pareada = fx => pareaveis.some(it => (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo));
-    const estado = fx => { if (ignoradas.has(keyOf(fx))) return 'ignorada'; if (pareada(fx) || idsAntes.has(String(fx.id)) || fx.pago) return 'conciliada'; return 'aconciliar'; };
+    const estado = fx => { if (ignoradas.has(keyOf(fx))) return 'ignorada'; if (pareada(fx) || idsAntes.has(String(fx.id))) return 'conciliada'; return 'aconciliar'; };
     const grupos = { aconciliar: [], conciliada: [], ignorada: [] }; todas.forEach(fx => grupos[estado(fx)].push(fx));
     const fl = imp.filtroConcil || 'aconciliar', selEsq = selE && imp.itens.find(x => x.id === selE);
     const cardD = fx => {
@@ -585,7 +621,8 @@ if (typeof document !== 'undefined') (function () {
         else if (idsAntes.has(String(fx.id))) sub = `<span style="color:#15803d">✓ conciliada antes</span>`; else sub = `<span style="color:#94a3b8">já paga</span>`;
       }
       else if (e === 'ignorada') sub = `<span style="color:#94a3b8">ignorada · <a onclick="event.stopPropagation();CX_restaurarFixa('${key}')" style="color:#3b82f6;cursor:pointer">restaurar</a></span>`;
-      else sub = `<span style="color:#94a3b8">vence ${dataBR(fx.data)}${buscando && fx.mes ? ' · ' + esc(CX_mesLabel(fx.mes)) : ''}</span> · <a onclick="event.stopPropagation();CX_ignorarFixa('${key}')" style="color:#94a3b8;cursor:pointer">ignorar</a>`;
+      else sub = (fx.pago ? `<span style="color:#15803d">✓ já ${fx.tipo === 'receber' ? 'recebido' : 'paga'}${fx.data ? ' em ' + dataBR(fx.data) : ''} — liga sem baixar de novo</span>` : `<span style="color:#94a3b8">vence ${dataBR(fx.data)}</span>`)
+        + `${buscando && fx.mes ? '<span style="color:#94a3b8"> · ' + esc(CX_mesLabel(fx.mes)) + '</span>' : ''} · <a onclick="event.stopPropagation();CX_ignorarFixa('${key}')" style="color:#94a3b8;cursor:pointer">ignorar</a>`;
       return `<div ${clic ? `onclick="CX_pickD('${key}')" ` : ''}style="${clic ? 'cursor:pointer;' : ''}${e === 'ignorada' ? 'opacity:.6;' : ''}background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${fx.tipo === 'receber' ? '💚' : '💸'} ${esc(fx.nome)}</span><span style="font-size:.82rem;font-weight:700;white-space:nowrap">${money(fx.valor)}</span></div><div style="font-size:.71rem;margin-top:1px">${sub}</div></div>`;
     };
     const vazio = buscando ? 'Nenhum lançamento encontrado para essa busca.' : { aconciliar: 'Nada a conciliar neste mês.', conciliada: 'Nada conciliado neste mês.', ignorada: 'Nenhuma conta ignorada.' }[fl];
@@ -598,7 +635,7 @@ if (typeof document !== 'undefined') (function () {
     const nav = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">${btnNav(-1)}<span style="font-weight:700;font-size:.86rem;flex:1;text-align:center">${rotNav}</span>${btnNav(1)}</div>`;
     const filtros = `<div class="cx-chips" style="margin-bottom:6px">${chip('aconciliar', 'A conciliar', grupos.aconciliar.length)}${chip('conciliada', 'Conciliadas', grupos.conciliada.length)}${grupos.ignorada.length ? chip('ignorada', 'Ignoradas', grupos.ignorada.length) : ''}</div>`;
     const nR = pareaveis.filter(it => (it.pares || []).length > 1).length;
-    const tituloD = buscando ? '🔎 Resultado da busca' : '📋 Contas do mês';
+    const tituloD = (buscando ? '🔎 Resultado da busca' : '📋 Contas do mês') + (selSinal ? (selSinal.valor >= 0 ? ' · 💚 a receber' : ' · 💸 a pagar') : '');
     const dica = selEsq ? `Selecionado <b>${esc(selEsq.descricao)}</b> (${money(Math.abs(selEsq.valor))}). Toque em cada conta que ele quita — pode ser mais de uma.${soma(selEsq) ? ` Faltam ${money(falta(selEsq))}.` : ''}` : `Toque num item do extrato e depois em cada conta que ele paga. Um débito pode quitar <b>várias contas</b>, e uma conta pode ser paga por <b>várias movimentações</b>. Use a busca 🔎 pra achar lançamento de qualquer mês.`;
     return `<style>@media(max-width:640px){.cx-grid{grid-template-columns:1fr !important}}</style>
       <div class="cx-dica">👆 ${dica}${nR ? ` <span style="color:#15803d">· ${nR} rateio(s)</span>` : ''}</div>
@@ -708,7 +745,6 @@ if (typeof document !== 'undefined') (function () {
     if (it && fx) {
       const ent = it.valor >= 0, dirOk = (ent && fx.tipo === 'receber') || (!ent && fx.tipo === 'pagar'), jaTem = (it.pares || []).some(p => p.id === fx.id && p.tipo === fx.tipo);
       if (jaTem) { it.pares = it.pares.filter(p => !(p.id === fx.id && p.tipo === fx.tipo)); sync(it); aviso('Tirado do rateio', '#6b7280'); }
-      else if (fx.pago) aviso('Essa conta já está paga.', '#ef4444');
       else if (!dirOk) aviso(ent ? 'Entrada só concilia com conta a receber.' : 'Saída só concilia com conta a pagar.', '#ef4444');
       else {
         // quanto sobra na MOVIMENTAÇÃO e quanto sobra na CONTA (somando o que outras movs já aplicaram nela)
@@ -766,6 +802,8 @@ if (typeof document !== 'undefined') (function () {
           const vb = CE_valorBaixa(fx);
           if (vb < 0.005) continue;
           const mov = CX_criarMov(imp.contaId, it.fitid, fx.id, sinal * vb, it.data, it.descricao, '');
+          // conta já paga / recebimento já recebido: só LIGA (sem baixar de novo; Receber não é escrito)
+          if (fx.pago && typeof OF_vincularJaNoApp === 'function') { let okj = false; try { okj = await OF_vincularJaNoApp(mov, { tipo: fx.tipo, id: fx.id, mes: fx.tipo === 'pagar' ? CX_mesWEN(fx.mes) : CX_mesWEN(fx.mes), nome: fx.nome, comBaixa: !!fx.comBaixa }); } catch (e) {} if (okj) { concilOk++; baixouAlgo = true; valorConcil += vb; } continue; }
           const ok = await CX_conciliarFixa(mov, fx, vb);
           // "parcial" é o RESULTADO (a conta ficou aberta), não a fatia: duas parciais que somam o total
           // quitam a conta e não devem ser contadas como parciais. Igual ao Nossa Semente.
@@ -859,6 +897,27 @@ if (typeof document !== 'undefined') (function () {
     const m = el('cxModalBg'); if (m) m.style.display = 'flex';
   }
   window.CX_abrir = abrir;
+  // ✨ SophIA categoriza os movimentos sem par e sem categoria (saídas: categorias de despesa; entradas: de receita).
+  window.CX_sophia = async () => {
+    if (!IMP) return;
+    if (typeof IA_temChave === 'function' && !IA_temChave()) return aviso('Conecte a chave da IA em Config → Inteligência Artificial.', '#f59e0b');
+    const alvo = IMP.itens.filter(i => i.incluir && !i.dup && !i.ignorado && !(i.pares || []).length && !i.jaNoApp && !i.categoria);
+    if (!alvo.length) return aviso('Todos já têm categoria 💚', '#16a34a');
+    const btn = el('cxBtnSophia'); if (btn) { btn.disabled = true; btn.textContent = '✨ Categorizando…'; }
+    let n = 0;
+    try {
+      const sai = alvo.filter(i => i.valor < 0), ent = alvo.filter(i => i.valor >= 0);
+      if (sai.length && typeof IMP_categorizarIA === 'function') { const sug = await IMP_categorizarIA(sai.map(i => String(i.descricao || '').replace(/^📥\s*/, ''))); sai.forEach((it, k) => { if (sug[k]) { it.categoria = sug[k]; it.confianca = 'baixa'; n++; } }); }
+      if (ent.length && typeof IA_gerarConteudo === 'function') {
+        const cats = CX_catsReceita(); const lista = ent.map((it, k) => k + ': ' + String(it.descricao || '').slice(0, 120)).join('\n');
+        const txt = await IA_gerarConteudo('Você categoriza ENTRADAS de dinheiro na conta de uma produtora de audiovisual (empresa brasileira). Para cada item escolha a melhor categoria da lista (texto EXATO). Sem confiança, devolva "". Lista: ' + cats.map(c => c.label).join(' | ') + '. Responda JSON {"itens":[{"i":0,"categoria":"..."}]}.\nItens:\n' + lista, [], { json: true });
+        let d = {}; try { d = JSON.parse(txt || '{}'); } catch (e) { try { d = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (e2) {} }
+        (d.itens || []).forEach(x => { const it = ent[Number(x && x.i)], c = cats.find(c => c.label === (x && x.categoria)); if (it && c) { it.categoria = c.id; it.confianca = 'baixa'; n++; } });
+      }
+      aviso(n ? `✨ A SophIA categorizou ${n} de ${alvo.length} — confira as marcadas como "baixa".` : 'A SophIA não teve certeza desta vez.', n ? '#16a34a' : '#f59e0b');
+    } catch (e) { aviso(e.message || 'Não consegui categorizar agora.', '#ef4444'); }
+    renderRevisao();
+  };
   // Open Finance (22/10/2026): os movimentos do banco entram pela MESMA revisão do OFX. ENTRADAS não são pareadas
   // sozinhas com o Receber — o Will recebe por Pix e não concilia a maioria: viram só movimento da conta (o saldo
   // bate) e o Receber não é tocado. Parear à mão continua possível na revisão.
