@@ -686,3 +686,25 @@ async function OF_vincularJaNoApp(mov, ja) {
   await BC_fbUpsert(BC_COL_MOV, mov.id, mov);
   return true;
 }
+
+// ⚖️ Ajustar saldo (menu da conta e fim da importação): abre a conferência do WEN já com o saldo do banco.
+// `valor` conhecido (saldo final do extrato) vem pronto; senão, com a conta ligada, busca o saldo de agora no banco.
+window.OF_ajustarSaldo = async function (contaId, valor) {
+  const c = (typeof BC_CONTAS !== 'undefined' ? BC_CONTAS : {})[contaId]; if (!c) return;
+  BC_conferir(contaId);
+  if (!c.saldoConfigurado) return;   // o BC_conferir já pediu o saldo inicial
+  const inp = document.getElementById('bcConfBanco'), sub = document.getElementById('bcConfSub');
+  const linha = html => { if (!sub) return; let el = sub.querySelector('.of-conf'); if (!el) { sub.insertAdjacentHTML('beforeend', '<br><span class="of-conf" style="font-size:.84rem"></span>'); el = sub.querySelector('.of-conf'); } el.innerHTML = html; };
+  const preencher = (v, origem) => { if (inp && typeof v === 'number' && isFinite(v)) { inp.value = v.toFixed(2); try { BC_conferirCalc(); } catch (e) {} linha('🏦 ' + origem + ': <b>' + fmt(v) + '</b>'); } };
+  if (typeof valor === 'number' && isFinite(valor)) { preencher(valor, 'Saldo final do extrato'); return; }
+  if (!OF_cfgCarregado) await OF_carregarCfg();
+  const acc = OF_contaBancoDe(contaId);
+  if (!acc) { linha('🏦 Conta sem ligação com o banco — digite o saldo que aparece no app do banco.'); return; }
+  linha('🏦 Consultando o saldo no banco…');
+  try {
+    const contas = (await OF_chamar({ acao: 'contas' })).contas || []; OF_contas = contas;
+    const a = contas.find(x => x.id === acc);
+    if (a && typeof a.saldo === 'number') { if (!inp || !inp.value) preencher(a.saldo, 'Saldo no banco agora (Open Finance)'); else linha('🏦 Saldo no banco agora: <b>' + fmt(a.saldo) + '</b>'); }
+    else linha('🏦 O banco não informou o saldo agora — digite o que aparece no app do banco.');
+  } catch (e) { linha('🏦 Não consegui consultar o banco agora (' + C_esc(e.message || e) + '). Digite o saldo.'); }
+};

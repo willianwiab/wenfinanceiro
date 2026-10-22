@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261022-bd062c9c';
+window.APP_VERSION='20261022-12b31ab8';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -4949,7 +4949,7 @@ function BC_renderPainel(){
 function BC_cardHTML(id){
   const c=BC_CONTAS[id];const cor=c.cor||'#16a34a';const saldo=BC_saldoConta(id);
   const chips=[c.principal?'<span class="bc-chip principal">⭐ Principal</span>':'','<span class="bc-chip">'+(c.titular||'WEN')+'</span>','<span class="bc-chip">'+BC_tipoInfo(c.tipo).label+'</span>',c.arquivada?'<span class="bc-chip">🗄️ Arquivada</span>':''].join('');
-  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();IMP_abrir('conta','${id}')">📥 Importar extrato</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
+  const menu=(c.arquivada?`<button onclick="event.stopPropagation();BC_reativar('${id}')">♻️ Reativar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`:(c.principal?'':`<button onclick="event.stopPropagation();BC_definirPrincipal('${id}')">⭐ Tornar principal</button>`)+`<button onclick="event.stopPropagation();BC_toggleDashboard('${id}')">${c.incluirNoDashboard!==false?'🙈 Tirar do dashboard':'📊 Incluir no dashboard'}</button><button onclick="event.stopPropagation();IMP_abrir('conta','${id}')">📥 Importar extrato</button><button onclick="event.stopPropagation();(typeof OF_ajustarSaldo==='function'?OF_ajustarSaldo:BC_conferir)('${id}')">⚖️ Ajustar saldo</button><button onclick="event.stopPropagation();BC_arquivar('${id}')">🗄️ Arquivar</button><button onclick="event.stopPropagation();BC_excluirConta('${id}')" style="color:#b91c1c">🗑️ Excluir conta</button>`)+`<button onclick="event.stopPropagation();BC_abrirModal('${id}')">✏️ Editar</button>`;
   return `<div class="bc-card${c.arquivada?' arquivada':''}" onclick="BC_abrirExtrato('${id}')">
     <div class="bc-faixa" style="background:${cor}"></div>
     <div class="bc-body">
@@ -8762,11 +8762,11 @@ async function CONC_desfazer(chave){
 AUTH_bootstrap();
 </script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
-<script src="js/concil.js?v=b687ae64"></script>
+<script src="js/concil.js?v=b41f5ba3"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=6b3816fb"></script>
-<script src="js/openfinance.js?v=5c3fa67e"></script>
+<script src="js/openfinance.js?v=2ad59cf6"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}

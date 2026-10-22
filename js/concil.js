@@ -542,7 +542,7 @@ if (typeof document !== 'undefined') (function () {
     let saldoBloco = '';
     if (imp.saldoFinal != null) {
       const sAtual = contaSaldo(imp.contaId), bate = sAtual != null && Math.abs(imp.saldoFinal - sAtual) < 0.02;
-      saldoBloco = `<div style="border-radius:10px;padding:9px 12px;margin:6px 0;font-size:.84rem;${bate ? 'background:#f0fdf4;border:1px solid #16a34a;color:#15803d' : 'background:#fffbeb;border:1px solid #f59e0b;color:#92400e'}">Saldo final no extrato: <b>${money(imp.saldoFinal)}</b> · Saldo cadastrado hoje: <b>${sAtual == null ? 'não informado' : money(sAtual)}</b>. ${bate ? '✓ conferem.' : (sAtual == null ? 'Informe o saldo da conta para conciliar.' : 'O saldo do extrato está diferente do saldo no sistema.')}</div>`;
+      saldoBloco = `<div style="border-radius:10px;padding:9px 12px;margin:6px 0;font-size:.84rem;${bate ? 'background:#f0fdf4;border:1px solid #16a34a;color:#15803d' : 'background:#fffbeb;border:1px solid #f59e0b;color:#92400e'}">Saldo final no extrato: <b>${money(imp.saldoFinal)}</b> · Saldo cadastrado hoje: <b>${sAtual == null ? 'não informado' : money(sAtual)}</b>. ${bate ? '✓ conferem.' : (sAtual == null ? 'Informe o saldo da conta para conciliar.' : 'O saldo do extrato está diferente do saldo no sistema. Confirme a importação — no fim aparece ⚖️ Ajustar saldo para o do banco.')}</div>`;
     }
     cont.innerHTML = `<div class="cx-card">
       <h3 style="margin:0 0 2px">Revisar movimentações</h3>
@@ -881,6 +881,8 @@ if (typeof document !== 'undefined') (function () {
           ${nIgn ? ln('🚫', 'Ignoradas por você', nIgn, '#94a3b8') : ''}
           ${ln('💚', 'Total conciliado', money(Math.round(valorConcil * 100) / 100), '#15803d')}
         </div>
+        ${(() => { if (imp.saldoFinal == null) return ''; const sNovo = contaSaldo(imp.contaId); if (sNovo == null || Math.abs(sNovo - imp.saldoFinal) < 0.02) return `<div style="margin-top:10px;font-size:.84rem;color:#15803d">✓ Saldo do sistema igual ao do banco (${money(imp.saldoFinal)}).</div>`;
+          return `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:.84rem;color:#92400e">Saldo no banco <b>${money(imp.saldoFinal)}</b> · no sistema <b>${money(sNovo)}</b> · diferença <b>${money(imp.saldoFinal - sNovo)}</b><div style="margin-top:8px"><button class="cx-btn" onclick="CX_fechar();OF_ajustarSaldo('${imp.contaId}', ${Number(imp.saldoFinal)})">⚖️ Ajustar saldo para o do banco</button></div></div>`; })()}
         <button class="cx-btn prim" style="margin-top:12px" onclick="CX_fechar()">Fechar</button></div>`;
       IMP = null; aviso('Extrato importado 💚', '#16a34a');
     } catch (e) { aviso('Erro: ' + e.message, '#ef4444'); if (btn) { btn.disabled = false; btn.textContent = 'Confirmar'; } }
