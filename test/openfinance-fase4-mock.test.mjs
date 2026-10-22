@@ -14,7 +14,8 @@ const r = await page.evaluate(async () => {
   const cid = 'nuTeste'; CC_CARTOES[cid] = { nome: 'Nubank Will', diaVencimento: 28, status: 'ativo' };
   OF_cfgCarregado = true; OF_cfg = { cartoes: { [cid]: 'accNu' }, pessoais: { [cid]: true }, contas: {}, passagem: [] };
   C_faturas.push({ id: cid + '_2026-10', cartaoId: cid, mesFatura: '2026-10', totalItens: 500, fechada: true, itens: [{ fitid: 'PLGjaFat', dataCompra: '2026-09-25', descricao: 'JA NA FATURA', valor: 80, categoria: 'servicos' }] });
-  OF_abertas[cid] = { mes: '2026-11', cats: { a: 'servicos', b: 'fora_pessoal', c: 'servicos', jaFat: 'servicos' }, compras: [
+  OF_abertas[cid] = { mes: '2026-11', cats: { a: 'servicos', b: 'fora_pessoal', c: 'servicos', jaFat: 'servicos', bol: 'fora_pessoal', aj: 'impostos' }, compras: [
+    { fitid: 'bol', data: '2026-10-15', descricao: 'PGTO.BOLETO REGISTRADO', valor: 10067.36 }, { fitid: 'aj', data: '2026-10-13', descricao: 'AJUSTE CRED PARC S/ JUROS', valor: 0.1 }, { fitid: 'bol2', data: '2026-10-16', descricao: 'PGTO BOLETO', valor: 50 },
     { fitid: 'a', data: '2026-10-20', descricao: 'ADOBE', valor: 200 }, { fitid: 'b', data: '2026-10-21', descricao: 'MERCADO', valor: 300 },
     { fitid: 'c', data: '2026-10-22', descricao: 'LOJA', valor: 100, parcela: { atual: 2, total: 3 } }, { fitid: 'd', data: '2026-10-23', descricao: 'SEM RATEIO', valor: 50 },
     { fitid: 'jaFat', data: '2026-09-25', descricao: 'JA NA FATURA', valor: 80 }, { fitid: 'pg', data: '2026-10-15', descricao: 'Pagamento recebido', valor: -500 } ] };

@@ -234,6 +234,13 @@ function OF_norm(s) { return String(s || '').toLowerCase().normalize('NFD').repl
 function OF_mpChave(desc) { return OF_norm(String(desc || '').replace(/^📥\s*/, '')).split(' ').slice(0, 4).join(' '); }
 function OF_ehPixNoCredito(t) { t = String(t || ''); return /pix\s+(?:no\s+)?cr[eé]dito|cr[eé]dito\s+(?:via\s+)?pix|pix\s+parcelado|valor\s+adicionado.{0,40}cart[aã]o\s+de\s+cr[eé]dito/i.test(t) && !/juros|iof|encargo|multa|tarifa/i.test(t); }
 function OF_ehPagCartao(t) { t = String(t || ''); if (/total\s+da\s+fatura\s+anterior|saldo\s+(?:da\s+)?fatura\s+anterior|saldo\s+anterior/i.test(t)) return true; return /pagamento\s+(?:de\s+)?fatura|pagamento\s+recebido|pagamento.{0,25}fatura|fatura.{0,25}cart[aã]o/i.test(t) || /\bdeb(?:ito)?\.?\s+aut(?:om(?:[aá]tico)?)?\b/i.test(t); }
+// Só para transação de CARTÃO (no extrato da conta, "PGTO BOLETO" é conta paga de verdade): pagamento da fatura por
+// boleto (Caixa: "PGTO.BOLETO REGISTRADO") e crédito com sinal de compra ("AJUSTE CRED PARC S/ JUROS") não são compra.
+function OF_naoCompraCartao(desc) {
+  const t = String(desc || '');
+  return OF_ehPagCartao(t) || /\bpg?to\.?\s*boleto|\bpagto\.?\s*boleto|pagamento\s+(?:de\s+)?boleto|\bpg?to\.?\s*fatura/i.test(t)
+    || /\bajuste\s+cred|\bcred(?:ito)?\.?\s+parc|\bestorno\b/i.test(t);
+}
 function OF_mpTexto(desc, valor) {
   const t = String(desc || ''), v = Number(valor) || 0;
   if (OF_ehPixNoCredito(t)) return 'credito';
@@ -517,7 +524,7 @@ function OF_itensPrevistos(cid) {
   if (ab && /^\d{4}-\d{2}$/.test(ab.mes || '') && !C_temFaturaReal(cid, ab.mes)) {
     const ja = OF_abertaJaNaFatura(cid, ab.compras || []);
     for (const c of (ab.compras || [])) {
-      if (ja.has(c.fitid) || OF_ehPagCartao(c.descricao)) continue;
+      if (ja.has(c.fitid) || OF_naoCompraCartao(c.descricao)) continue;
       const cat = (ab.cats || {})[c.fitid]; if (!(typeof cat === 'string' && cat)) continue;   // só depois do rateio confirmado
       const valor = Math.round((Number(c.valor) || 0) * 100) / 100; if (!valor) continue;
       const parc = c.parcela && c.parcela.total >= 2 && c.parcela.atual >= 1 && c.parcela.atual <= c.parcela.total ? c.parcela : null;
@@ -543,7 +550,7 @@ function OF_abertasDoMes(cid, mes) { return OF_itensPrevistos(cid).filter(it => 
 function OF_pendentesAberta(cid) {
   const ab = OF_abertas[cid]; if (!ab) return [];
   const ja = OF_abertaJaNaFatura(cid, ab.compras || []);
-  return (ab.compras || []).filter(c => !ja.has(c.fitid) && !OF_ehPagCartao(c.descricao) && !(ab.cats || {})[c.fitid] && Math.abs(Number(c.valor) || 0) > 0.005);
+  return (ab.compras || []).filter(c => !ja.has(c.fitid) && !OF_naoCompraCartao(c.descricao) && !(ab.cats || {})[c.fitid] && Math.abs(Number(c.valor) || 0) > 0.005);
 }
 // 🔄 Atualizar cartão: compras em aberto (rateio a confirmar) + a fatura fechada mais recente, se ainda não está aqui.
 window.OF_atualizarCartao = async function () {
@@ -601,7 +608,7 @@ function OF_renderAberta(cid) {
   el.innerHTML = `
     ${faltaFatura ? `<div style="background:#fef3c7;border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:.84rem">🧾 A fatura de <b>${C_dataBR(uf.vencimento)}</b> (${fmt(uf.total || 0)}) já fechou no banco e ainda não está aqui. <button class="btn btn-outline" style="width:auto;padding:3px 10px" onclick="OF_fechar();document.getElementById('cImpMes').value='${mesUF}';OF_trazerFatura()">Trazer essa fatura</button></div>` : ''}
     <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px 16px">
-      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><b style="font-size:1.05rem">💳 ${C_esc(C_card(cid).nome || '')}</b><span style="font-size:.8rem;color:#64748b">fatura de ${C_esc(mesC)} se montando · ${(ab.compras || []).filter(c => !OF_ehPagCartao(c.descricao)).length} lançamento(s)</span></div>
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline"><b style="font-size:1.05rem">💳 ${C_esc(C_card(cid).nome || '')}</b><span style="font-size:.8rem;color:#64748b">fatura de ${C_esc(mesC)} se montando · ${(ab.compras || []).filter(c => !OF_naoCompraCartao(c.descricao)).length} lançamento(s)</span></div>
       <div style="font-weight:800;font-size:1.1rem;margin-top:6px">Fatura de ${C_esc(mesC)} até agora: ${fmt(r2(vConf + vParc + vPend))}</div>
       <div style="font-size:.8rem;color:#64748b">compras confirmadas ${fmt(r2(vConf))} · parcelas ${fmt(r2(vParc))}${pend.length ? ` · <b>+ ${fmt(r2(vPend))} aguardando rateio (${pend.length})</b>` : ''}</div>
       ${pess ? '<div style="font-size:.78rem;color:#7c3aed;margin-top:4px">🙋 Cartão pessoal: o que for do studio vira <b>🔁 Reembolsar Will (prévia)</b>; o resto marque <b>🙋 Pessoal do Will</b>.</div>' : ''}
