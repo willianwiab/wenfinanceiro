@@ -58,14 +58,19 @@ function EV_meioCartao(cartaoId) {
 // parcelas projetadas), pra o total bater com o rateio. `modo`: competencia | pagamento | compromissos.
 function EV_coleta(anoMes, modo) {
   const m = modo || 'competencia', itens = [];
-  const add = o => { if ((o.valor || 0) > 0 && !C_foraDoGasto(o.categoria)) itens.push(o); };
+  // família com Open Finance: as MESMAS regras do rateio (D_gasto) — gastos do extrato entram, Pix no Crédito da fatura
+  // sai, estornos abatem e item sem categoria é "Sem categoria". Outras famílias: como sempre.
+  const of = typeof EX_pluggyLiberado === 'function' && EX_pluggyLiberado();
+  const SC = of ? 'Sem categoria' : 'Outros';
+  const add = o => { if ((of ? Math.abs(o.valor || 0) > 0.005 : (o.valor || 0) > 0) && !C_foraDoGasto(o.categoria)) itens.push(o); };
+  const pixFora = it => of && typeof D_pixCreditoFora === 'function' && D_pixCreditoFora(it.descricao);
   (typeof P_meses !== 'undefined' ? (P_meses[anoMes] || []) : []).forEach(c => {
     if (c.faturaId) return;
-    add({ fonte: 'conta', categoria: c.categoria || 'Outros', valor: Number(c.valor) || 0, meio: EV_meioConta(c.contaFinanceiraId), integrante: c.criadoPor || null, desc: c.nome || '', parcela: null });
+    add({ fonte: 'conta', categoria: c.categoria || SC, valor: Number(c.valor) || 0, meio: EV_meioConta(c.contaFinanceiraId), integrante: c.criadoPor || null, desc: c.nome || '', parcela: null });
   });
   const faturas = (typeof C_faturas !== 'undefined' ? C_faturas : []);
   if (m === 'pagamento') {
-    faturas.filter(f => f.mesFatura === anoMes).forEach(f => (f.itens || []).forEach(it => add({ fonte: 'fat', categoria: it.categoria || 'Outros', valor: Number(it.valor) || 0, meio: EV_meioCartao(f.cartaoId), integrante: f.criadoPor || null, desc: it.descricao || '', parcela: it.parcela || null })));
+    faturas.filter(f => f.mesFatura === anoMes).forEach(f => (f.itens || []).forEach(it => !pixFora(it) && add({ fonte: 'fat', categoria: it.categoria || SC, valor: Number(it.valor) || 0, meio: EV_meioCartao(f.cartaoId), integrante: f.criadoPor || null, desc: it.descricao || '', parcela: it.parcela || null })));
   } else if (m === 'compromissos') {
     // valor TOTAL contratado no mês da compra (parcelada = valor da parcela × nº de parcelas), contado uma vez
     faturas.forEach(f => (f.itens || []).forEach(it => {
@@ -75,7 +80,7 @@ function EV_coleta(anoMes, modo) {
       add({ fonte: 'fat', categoria: it.categoria || 'Outros', valor: tot, meio: EV_meioCartao(f.cartaoId), integrante: f.criadoPor || null, desc: it.descricao || '', parcela: it.parcela || null, contratado: true });
     }));
   } else {
-    faturas.forEach(f => (f.itens || []).forEach(it => { if ((it.dataCompra || '').slice(0, 7) === anoMes) add({ fonte: 'fat', categoria: it.categoria || 'Outros', valor: Number(it.valor) || 0, meio: EV_meioCartao(f.cartaoId), integrante: f.criadoPor || null, desc: it.descricao || '', parcela: it.parcela || null }); }));
+    faturas.forEach(f => (f.itens || []).forEach(it => { if ((it.dataCompra || '').slice(0, 7) === anoMes && !pixFora(it)) add({ fonte: 'fat', categoria: it.categoria || SC, valor: Number(it.valor) || 0, meio: EV_meioCartao(f.cartaoId), integrante: f.criadoPor || null, desc: it.descricao || '', parcela: it.parcela || null }); }));
   }
   // parcelas projetadas de meses ainda sem fatura importada (não entram no modo compromissos: já contadas na compra)
   if (m !== 'compromissos') {
@@ -83,10 +88,12 @@ function EV_coleta(anoMes, modo) {
       const [ay, am] = (p.mesInicio || '').split('-').map(Number); if (!ay) return;
       for (let n = (p.parcelaAtual || 0) + 1; n <= (p.totalParcelas || 0); n++) {
         const d = new Date(ay, am - 1 + (n - 1), 1), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        if (k === anoMes && !C_temFaturaReal(p.cartaoId, k)) add({ fonte: 'parc', categoria: p.categoria || 'Outros', valor: Number(p.valorParcela) || 0, meio: EV_meioCartao(p.cartaoId), integrante: p.criadoPor || null, desc: p.descricao || '', parcela: { atual: n, total: p.totalParcelas } });
+        if (k === anoMes && !C_temFaturaReal(p.cartaoId, k)) add({ fonte: 'parc', categoria: p.categoria || SC, valor: Number(p.valorParcela) || 0, meio: EV_meioCartao(p.cartaoId), integrante: p.criadoPor || null, desc: p.descricao || '', parcela: { atual: n, total: p.totalParcelas } });
       }
     });
   }
+  // gastos do EXTRATO sem conta lançada (como no rateio); no modo compromissos não entram (só compras parceladas)
+  if (of && m !== 'compromissos' && typeof D_saidasExtrato === 'function') D_saidasExtrato(anoMes).forEach(mv => add({ fonte: 'ext', categoria: mv.categoria || SC, valor: Number(mv.valor) || 0, meio: EV_meioConta(mv.contaFinanceiraId), integrante: mv.criadoPor || null, desc: mv.descricao || '', parcela: null }));
   return itens;
 }
 // Aplica os filtros combinados (§7) sobre os itens coletados.

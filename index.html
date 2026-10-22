@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261021-69dc6c8d';
+window.APP_VERSION='20261022-21c82e8e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1687,6 +1687,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <label class="btn btn-outline" style="cursor:pointer;width:auto">📸 Foto / PDF<input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="C_impUpload(this,'foto')"></label>
           <label class="btn btn-outline" style="cursor:pointer;width:auto">⬆ Arquivo OFX (.ofx)<input type="file" accept=".ofx,.qfx" style="display:none" onchange="C_impUpload(this,'ofx')"></label>
+          <button class="btn btn-outline" style="width:auto" onclick="OF_trazerFatura()">🏦 Trazer do banco (Open Finance)</button>
         </div>
         <p class="card-sub" style="margin:8px 0 0">Todos os itens caem no <b>mês escolhido</b>; a fatura fica <b>imutável</b> (valor exato). As parcelas futuras entram como <b>prévia</b> nos próximos meses.</p>
         <div id="cImpAviso2" style="margin-top:10px"></div>
@@ -5094,10 +5095,11 @@ function C_temFaturaReal(cartaoId,mes){return (C_faturas||[]).some(f=>f.cartaoId
 function C_itensCartaoMesWen(wenKey){
   const ym=C_ymFromWen(wenKey);const out=[];
   const reais=(C_faturas||[]).filter(f=>f.mesFatura===ym);
-  reais.forEach(f=>(f.itens||[]).forEach(it=>out.push({desc:it.descricao,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:it.fitid})));
+  const forado=cat=>typeof OF_ehCatPessoal==='function'&&OF_ehCatPessoal(cat); // 🙋 Pessoal do Will: fora do rateio do studio (Open Finance)
+  reais.forEach(f=>(f.itens||[]).forEach(it=>{if(forado(it.categoria))return;out.push({desc:it.descricao,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:it.fitid});}));
   (typeof C_liveCartoes==='function'?C_liveCartoes():[]).forEach(c=>{
     if(reais.some(f=>f.cartaoId===c.id))return; // já tem fatura real nesse mês
-    (typeof C_parcelasDaPrevia==='function'?C_parcelasDaPrevia(c.id,ym):[]).forEach(it=>out.push({desc:it.desc,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:c.id+'_prev'}));
+    (typeof C_parcelasDaPrevia==='function'?C_parcelasDaPrevia(c.id,ym):[]).forEach(it=>{if(forado(it.categoria))return;out.push({desc:it.desc,valor:Number(it.valor)||0,categoria:it.categoria||'outros',lancId:c.id+'_prev'});});
   });
   return out;
 }
@@ -5209,6 +5211,8 @@ async function C_reconstruirParcelamentos(){
 
 // Posta 1 conta agregada IMUTÁVEL da fatura no Pagar (dedup por faturaId; preserva pagamento no reimport)
 function C_lancarFaturaEmPagar(fatura,cartao){
+  // cartão pessoal do Will (Open Finance): a fatura não é conta do studio — vira "Reembolsar Will" só com o que é do studio
+  if(typeof OF_ehPessoal==='function'&&OF_ehPessoal(fatura.cartaoId)){OF_lancarReembolso(fatura,cartao);return;}
   const wk=C_ymToWen(fatura.mesFatura); if(!wk)return;
   if(!P_meses[wk])P_meses[wk]=[];
   const contas=P_meses[wk];
@@ -5248,6 +5252,10 @@ function C_lancarFaturaEmPagar(fatura,cartao){
 // PODA (importante): remove prévias que deixaram de ser projetadas (parcela quitada) e prévias de meses que
 // já têm fatura REAL — assim importar a PRÓXIMA fatura apaga a prévia duplicada em vez de somar duas.
 function C_sincronizarFaturasPrevias(cartaoId){
+  if(typeof OF_ehPessoal==='function'&&OF_ehPessoal(cartaoId)){ // cartão pessoal: nada de prévia de fatura no Pagar do studio
+    let mudou=false;Object.keys(P_meses||{}).forEach(wk=>{const a=P_meses[wk]||[];const b=a.filter(c=>!(c&&c.previa&&c.faturaCartao&&c.faturaCartao.cartaoId===cartaoId&&!(Number(c.valorPago)>0)));if(b.length!==a.length){P_meses[wk]=b;mudou=true;}});
+    if(mudou)P_salvarStorage();return;
+  }
   const c0=(typeof C_card==='function')?C_card(cartaoId):null; // usa o store VIVO (CC_CARTOES), não C_cartoes (vazio com 429)
   const cartao=(c0&&c0.nome)?c0:C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
   // 1) meses/valores que AINDA devem ter prévia (parcelas futuras das compras ativas)
@@ -5334,6 +5342,7 @@ async function C_ativar(){
   let ok=true;
   if(!C_carregado){try{ok=await C_carregarTudo();if(ok){C_migrarFaturasAntigas();await C_reconstruirParcelamentos();C_sincronizarTodasPrevias();C_carregado=true;}}catch(e){ok=false;console.warn('C_ativar',e.message);}}
   C_popularSelects(); C_renderTudo();
+  if(typeof OF_iniciar==='function')OF_iniciar();
   return ok;
 }
 window.C_aba=function(aba,btn){
@@ -5365,7 +5374,7 @@ function C_renderCartoes(){
       <div class="cc-acoes"><button onclick="event.stopPropagation();C_abrirCartao('${c.id}')" title="Editar">✏️</button><button onclick="event.stopPropagation();C_excluirCartao('${c.id}')" title="Excluir">🗑️</button></div></div>
       <div class="cc-final">•••• •••• •••• ${C_esc(c.final||'----')}</div>
       <div class="cc-meta"><span>Vence dia ${c.diaVencimento||'—'}</span>${c.diaFechamento?`<span>Fecha dia ${c.diaFechamento}</span>`:''}<span>Limite ${c.limite?fmt(c.limite):'—'}</span></div>
-      <div class="cc-bottom">${parcVir>0?`<span class="cc-parc">🔮 Parcelas a vir: ${fmt(parcVir)}</span>`:''}<span class="cc-hint">ver faturas ›</span></div></div>`;
+      <div class="cc-bottom">${parcVir>0?`<span class="cc-parc">🔮 Parcelas a vir: ${fmt(parcVir)}</span>`:''}<span class="cc-hint">ver faturas ›</span></div>${typeof OF_htmlCartao==='function'?OF_htmlCartao(c):''}</div>`;
   }).join('')+'</div>';
 }
 window.C_verFaturasDo=function(cid){
@@ -8743,9 +8752,10 @@ AUTH_bootstrap();
 </script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
 <script src="js/concil.js?v=cf232cb4"></script>
-<script src="js/evolucao.js?v=a207e335"></script>
+<script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=6b3816fb"></script>
+<script src="js/openfinance.js?v=e2febea9"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
