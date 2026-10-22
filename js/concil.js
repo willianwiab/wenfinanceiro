@@ -421,7 +421,9 @@ if (typeof document !== 'undefined') (function () {
       const cc = rank.length ? rank[0] : null, amb = CE_ambiguo(rank);
       // só pareia sozinho com correspondência forte E sem empate — ambíguo é você quem decide
       const auto = !!cc && cc.nivel !== 'revisao' && !amb;
-      return { id: 'cx' + idx, fitid: b.fitid, chave, data: b.data, valor: b.valor, descricao: b.descricao, categoria: (b.valor < 0 ? (CX_categoria(b.descricao) || null) : null), confianca: 'revisar', tipoMov, dup, concilCand: cc, rank: rank.slice(0, 5), ambiguo: amb, pares: auto ? [novoPar(cc, Math.abs(b.valor), 0)] : [], conciliar: auto, incluir: !dup, ignorado: null };
+      // Open Finance: o que JÁ está pago/recebido no sistema (sem par aberto) é ligado na confirmação, sem lançar de novo
+      const jaNoApp = (!dup && !auto && typeof OF_jaNoApp === 'function') ? OF_jaNoApp(b, contaId) : null;
+      return { id: 'cx' + idx, fitid: b.fitid, chave, data: b.data, valor: b.valor, descricao: b.descricao, categoria: (b.valor < 0 ? (CX_categoria(b.descricao) || null) : null), confianca: 'revisar', tipoMov, dup, concilCand: cc, rank: rank.slice(0, 5), ambiguo: amb, pares: auto ? [novoPar(cc, Math.abs(b.valor), 0)] : [], conciliar: auto, incluir: !dup, ignorado: null, jaNoApp };
     });
     const datas = itens.map(i => i.data).filter(Boolean).sort();
     if (datas.length) { const de = el('cxDe'), ate = el('cxAte'); if (de && !de.value) de.value = datas[0]; if (ate && !ate.value) ate.value = datas[datas.length - 1]; }
@@ -483,7 +485,8 @@ if (typeof document !== 'undefined') (function () {
   }
 
   function linha(it, i) {
-    const dupB = it.dup ? ` <span class="cx-badge">${it.dup.tipo === 'existente' ? 'já importada' : 'duplicidade'}</span>` : '';
+    const dupB = (it.dup ? ` <span class="cx-badge">${it.dup.tipo === 'existente' ? 'já importada' : 'duplicidade'}</span>` : '')
+      + (it.jaNoApp ? ` <span class="cx-badge" style="background:#dcfce7;color:#15803d">✓ já está no sistema: ${esc(it.jaNoApp.nome)} (${it.jaNoApp.tipo === 'receber' ? 'recebido' : 'pago'})</span>` : '');
     let concilB = '';
     if (it.pares && it.pares.length) { const nomes = it.pares.map(p => esc(p.nome)).join(' + '); concilB = `<div style="margin-top:2px;font-size:.72rem;color:#15803d">🟢 ${it.pares.length > 1 ? 'rateio' : 'concilia'}: <b>${nomes}</b> · <a onclick="CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a></div>`; }
     else if (it.concilCand) { const mao = it.concilCand.viaRegra ? ' 🧠 aprendida' : ''; concilB = `<div style="margin-top:2px"><label style="font-size:.72rem;color:#15803d;cursor:pointer"><input type="checkbox" onchange="CX_toggleConciliar(${i})"> 🟢 Conciliar${mao} com <b>${esc(it.concilCand.nome)}</b></label></div>`; }
@@ -551,7 +554,7 @@ if (typeof document !== 'undefined') (function () {
           <select class="cx-sel" style="font-size:.7rem;padding:2px 6px;min-width:92px" onchange="CX_setTipo(${idx},this.value)">${optsTipo(it.tipoMov)}</select>
           <label style="font-size:.68rem;color:#64748b;display:inline-flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" ${it.incluir ? 'checked' : ''} onchange="CX_toggleIncluir(${idx})">lançar</label>
         </div>` : '';
-      return `<div onclick="CX_pickE('${it.id}')" style="cursor:pointer;background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px;${(it.incluir || np) ? '' : 'opacity:.55;'}"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${esc(it.descricao)}</span><span style="font-size:.82rem;font-weight:700;color:${ent ? '#16a34a' : '#dc2626'};white-space:nowrap">${ent ? '+' : '−'}${money(Math.abs(it.valor))}</span></div><div style="font-size:.71rem;margin-top:1px">${dataBR(it.data)} · ${sub}</div>${linhaNovo}${acoes}</div>`;
+      return `<div onclick="CX_pickE('${it.id}')" style="cursor:pointer;background:${bg};border:1px solid ${bd};border-radius:9px;padding:5px 9px;margin-bottom:4px;${(it.incluir || np) ? '' : 'opacity:.55;'}"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:.82rem;font-weight:600">${esc(it.descricao)}</span><span style="font-size:.82rem;font-weight:700;color:${ent ? '#16a34a' : '#dc2626'};white-space:nowrap">${ent ? '+' : '−'}${money(Math.abs(it.valor))}</span></div><div style="font-size:.71rem;margin-top:1px">${dataBR(it.data)} · ${sub}</div>${it.jaNoApp ? `<div style="font-size:.71rem;margin-top:2px;color:#15803d;font-weight:700">✓ já está no sistema: ${esc(it.jaNoApp.nome)} (${it.jaNoApp.tipo === 'receber' ? 'recebido' : 'pago'}) — liga sem lançar de novo</div>` : ''}${linhaNovo}${acoes}</div>`;
     };
     const navFoco = foco ? `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><button class="cx-btn" style="padding:1px 10px" onclick="CX_focoNav(-1)">‹</button><span style="font-weight:700;font-size:.8rem;flex:1;text-align:center">movimentação ${imp.focoIdx + 1} de ${itensTodos.length}</span><button class="cx-btn" style="padding:1px 10px" onclick="CX_focoNav(1)">›</button></div>` : '';
     const colE = itensE.length ? navFoco + itensE.map(cardE).join('') : `<div style="color:#94a3b8;font-size:.84rem;padding:10px">Nada a revisar neste filtro.</div>`;
@@ -746,7 +749,7 @@ if (typeof document !== 'undefined') (function () {
       // devem contar como parcial. Guardo o último acumulado de cada conta e confiro no fim.
       const estadoConta = new Map();
       // itens crus → 1 movimento cada
-      for (const it of rawIncl) CX_criarMov(imp.contaId, it.fitid, '', it.valor, it.data, it.descricao, it.categoria || '');
+      for (const it of rawIncl) { const mv = CX_criarMov(imp.contaId, it.fitid, '', it.valor, it.data, it.descricao, it.categoria || ''); if (it.jaNoApp && typeof OF_vincularJaNoApp === 'function') { try { await OF_vincularJaNoApp(mv, it.jaNoApp); } catch (e) {} } }
       // itens conciliados → 1 mov por conta (rateio) + baixa via CONC_conciliar, agora pelo valorBaixa
       for (const it of concilIncl) {
         const sinal = it.valor >= 0 ? 1 : -1;

@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261022-5af5b28e';
+window.APP_VERSION='20261022-bd07d6af';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1575,6 +1575,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="bcFiltros" style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 12px">
       <button class="bc-fil active" onclick="BC_filtrar('ativas',this)">Ativas</button>
       <button class="bc-fil" onclick="BC_filtrar('arquivadas',this)">Arquivadas</button>
+      <button class="bc-fil" style="margin-left:auto" onclick="OF_abrirSync()">🔄 Sincronizar com o banco</button>
     </div>
     <div id="bcLista" class="bc-grid"></div>
     <div id="bcTransfs" style="display:none;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;margin-top:16px"></div>
@@ -1687,7 +1688,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <label class="btn btn-outline" style="cursor:pointer;width:auto">📸 Foto / PDF<input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="C_impUpload(this,'foto')"></label>
           <label class="btn btn-outline" style="cursor:pointer;width:auto">⬆ Arquivo OFX (.ofx)<input type="file" accept=".ofx,.qfx" style="display:none" onchange="C_impUpload(this,'ofx')"></label>
-          <button class="btn btn-outline" style="width:auto" onclick="OF_trazerFatura()">🏦 Trazer do banco (Open Finance)</button>
+          <button class="btn btn-outline" style="width:auto" onclick="OF_atualizarCartao()">🔄 Atualizar cartão (compras em aberto)</button>
+          <button class="btn btn-outline" style="width:auto" onclick="OF_trazerFatura()">🏦 Trazer fatura fechada</button>
         </div>
         <p class="card-sub" style="margin:8px 0 0">Todos os itens caem no <b>mês escolhido</b>; a fatura fica <b>imutável</b> (valor exato). As parcelas futuras entram como <b>prévia</b> nos próximos meses.</p>
         <div id="cImpAviso2" style="margin-top:10px"></div>
@@ -2338,10 +2340,11 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div id="bcExtratoHeader" style="margin-bottom:12px"></div>
     <div class="cards-p" id="bcExtratoSaldos" style="margin-bottom:10px"></div>
     <div id="bcExtratoResumo" style="font-size:.82rem;color:#6b7280;margin-bottom:10px"></div>
+    <div id="bcExtratoOF"></div>
     <div id="bcExtratoFiltros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
     <div id="bcExtratoLista" style="max-height:44vh;overflow-y:auto"></div>
     <div class="modal-actions" style="margin-top:14px">
-      <button class="btn btn-outline-b" onclick="BC_conferir(bcExtratoConta)">⚖️ Conferir saldo</button>
+      <button class="btn btn-outline-b" onclick="(typeof OF_conferirComBanco==='function'?OF_conferirComBanco:BC_conferir)(bcExtratoConta)">⚖️ Conferir saldo</button>
       <button class="btn btn-purple" onclick="document.getElementById('bcExtratoBg').classList.remove('open')">Fechar</button>
     </div>
   </div>
@@ -4879,16 +4882,21 @@ function BC_renderExtrato(){
   const movs=BC_movsDaConta(id);const mesAtual=BC_hoje().slice(0,7);
   // Índice montado UMA vez por render, não por linha — ver BC_concilIndice.
   const cix=BC_concilIndice();
+  // Open Finance (22/10): banco ao vivo, ligar, passagem e resumo Studio × Fora — tudo em js/openfinance.js
+  const ofOn=typeof OF_htmlExtratoTopo==='function';
+  {const t=document.getElementById('bcExtratoOF');if(t)t.innerHTML=ofOn?OF_htmlExtratoTopo(id):'';}
   const nExtrato=movs.filter(BC_movDoExtrato).length;
   const nConcil=movs.filter(m=>BC_movConciliado(m,cix)).length;
   const nPend=cix.ok?movs.filter(m=>BC_movConciliavel(m)&&!BC_movDecidida(m,cix)).length:0;
   const sufixo=n=>n?` <span style="opacity:.65;font-weight:600">${n}</span>`:'';
   const entMes=movs.filter(m=>(m.data||'').slice(0,7)===mesAtual&&BC_movContrib(m)>0).reduce((s,m)=>s+BC_movContrib(m),0);
   const saiMes=movs.filter(m=>(m.data||'').slice(0,7)===mesAtual&&BC_movContrib(m)<0).reduce((s,m)=>s-BC_movContrib(m),0);
-  document.getElementById('bcExtratoResumo').innerHTML=`Este mês: <b style="color:#16a34a">+${fmt(entMes)}</b> de entradas · <b style="color:#ef4444">−${fmt(saiMes)}</b> de saídas`+(nPend?` · <b style="color:#b45309">⏳ ${nPend}</b> a conciliar`:'')+(saldo===null?` · <button class="bc-fil" onclick="document.getElementById('bcExtratoBg').classList.remove('open');BC_abrirModal('${id}')">Informar saldo</button>`:'');
+  const rsOF=ofOn?OF_resumoMes(movs,mesAtual):null;
+  document.getElementById('bcExtratoResumo').innerHTML=(rsOF?`Studio este mês: <b style="color:#16a34a">+${fmt(rsOF.ent)}</b> de entradas · <b style="color:#ef4444">−${fmt(rsOF.sai)}</b> de saídas`+((rsOF.foraEnt||rsOF.foraSai)?`<div style="font-size:.74rem;opacity:.8">Fora do studio (transferências, ajustes, passagem, pessoal): +${fmt(rsOF.foraEnt)} · −${fmt(rsOF.foraSai)}</div>`:''):`Este mês: <b style="color:#16a34a">+${fmt(entMes)}</b> de entradas · <b style="color:#ef4444">−${fmt(saiMes)}</b> de saídas`)+(nPend?` · <b style="color:#b45309">⏳ ${nPend}</b> a conciliar`:'')+(saldo===null?` · <button class="bc-fil" onclick="document.getElementById('bcExtratoBg').classList.remove('open');BC_abrirModal('${id}')">Informar saldo</button>`:'');
   const filtros=[['todas','Todas',''],['entradas','Entradas',''],['saidas','Saídas',''],['transferencia','Transferências',''],['ajuste','Ajustes',''],['extrato','📥 Extrato',sufixo(nExtrato)]];
   if(cix.ok)filtros.push(['conciliadas','✅ Conciliadas',sufixo(nConcil)],['naoconciliadas','⏳ A conciliar',sufixo(nPend)]);
   else filtros.push(['conciliadas','✅ Conciliadas <span style="opacity:.6;font-weight:600">carregando…</span>','']);
+  if(ofOn)filtros.push(['sempar','⚠️ Sem par no banco',sufixo(movs.filter(m=>OF_estado(m,cix)==='sempar').length)]);
   document.getElementById('bcExtratoFiltros').innerHTML=filtros.map(([k,l,sf])=>`<button class="bc-fil${BC_extratoFiltro===k?' active':''}" onclick="BC_extratoFil('${k}')">${l}${sf}</button>`).join('');
   let lista=movs.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));const f=BC_extratoFiltro;
   if(f==='entradas')lista=lista.filter(m=>BC_movContrib(m)>0);else if(f==='saidas')lista=lista.filter(m=>BC_movContrib(m)<0);
@@ -4896,6 +4904,7 @@ function BC_renderExtrato(){
   else if(f==='extrato')lista=lista.filter(BC_movDoExtrato);
   else if(f==='conciliadas')lista=lista.filter(m=>BC_movConciliado(m,cix));
   else if(f==='naoconciliadas')lista=lista.filter(m=>BC_movConciliavel(m)&&!BC_movDecidida(m,cix));
+  else if(f==='sempar'&&ofOn)lista=lista.filter(m=>OF_estado(m,cix)==='sempar');
   const el=document.getElementById('bcExtratoLista');
   if(!lista.length){el.innerHTML='<p style="color:#9ca3af;font-size:.85rem;padding:14px 0;text-align:center">Nenhuma movimentação'+(f==='todas'?' ainda — aparecem quando você paga, recebe ou transfere.':' nesse filtro.')+'</p>';return;}
   el.innerHTML=lista.map(m=>{const v=BC_movContrib(m);
@@ -4906,7 +4915,7 @@ function BC_renderExtrato(){
       :(cix.ok&&BC_movConciliavel(m)&&!BC_movDecidida(m,cix)?'<span title="ainda não conciliada" style="opacity:.6">⏳</span>':'');
     const origem=BC_movDoExtrato(m)?'<span title="importada do extrato bancário" style="font-size:.68rem;background:#eff6ff;color:#1e40af;border-radius:7px;padding:1px 6px;font-weight:700">extrato</span>':'';
     const marcas=(selo||origem)?`<span style="display:flex;align-items:center;gap:4px;flex-shrink:0">${selo}${origem}</span>`:'';
-    return `<div class="bc-mov"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.descricao||'Movimento'}</span>${marcas}</div><div style="font-size:.73rem;color:#9ca3af">${BC_dataBR(m.data)}${m.categoria?' · '+m.categoria:''}</div></div><div style="font-weight:800;flex-shrink:0;color:${v>=0?'#16a34a':'#ef4444'}">${v>=0?'+':'−'} ${fmt(Math.abs(v))}</div></div>`;}).join('');
+    return `<div class="bc-mov"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.descricao||'Movimento'}</span>${marcas}</div><div style="font-size:.73rem;color:#9ca3af">${BC_dataBR(m.data)}${m.categoria?' · '+m.categoria:''}</div></div><div style="font-weight:800;flex-shrink:0;color:${v>=0?'#16a34a':'#ef4444'}">${v>=0?'+':'−'} ${fmt(Math.abs(v))}</div></div>${ofOn?OF_htmlMov(m,cix):''}`;}).join('');
 }
 
 // ── Filtro + render ──
@@ -5252,10 +5261,7 @@ function C_lancarFaturaEmPagar(fatura,cartao){
 // PODA (importante): remove prévias que deixaram de ser projetadas (parcela quitada) e prévias de meses que
 // já têm fatura REAL — assim importar a PRÓXIMA fatura apaga a prévia duplicada em vez de somar duas.
 function C_sincronizarFaturasPrevias(cartaoId){
-  if(typeof OF_ehPessoal==='function'&&OF_ehPessoal(cartaoId)){ // cartão pessoal: nada de prévia de fatura no Pagar do studio
-    let mudou=false;Object.keys(P_meses||{}).forEach(wk=>{const a=P_meses[wk]||[];const b=a.filter(c=>!(c&&c.previa&&c.faturaCartao&&c.faturaCartao.cartaoId===cartaoId&&!(Number(c.valorPago)>0)));if(b.length!==a.length){P_meses[wk]=b;mudou=true;}});
-    if(mudou)P_salvarStorage();return;
-  }
+  const pessoalOF=typeof OF_ehPessoal==='function'&&OF_ehPessoal(cartaoId); // cartão pessoal: a prévia é o "Reembolsar Will" (só o do studio)
   const c0=(typeof C_card==='function')?C_card(cartaoId):null; // usa o store VIVO (CC_CARTOES), não C_cartoes (vazio com 429)
   const cartao=(c0&&c0.nome)?c0:C_cartoes.find(c=>c.id===cartaoId); if(!cartao)return;
   // 1) meses/valores que AINDA devem ter prévia (parcelas futuras das compras ativas)
@@ -5267,6 +5273,8 @@ function C_sincronizarFaturasPrevias(cartaoId){
       porMes[k]=Math.round(((porMes[k]||0)+(Number(p.valorParcela)||0))*100)/100;
     }
   });
+  // Open Finance: compras em aberto com rateio confirmado também entram (espelho do C_itensPrevistos do NS)
+  if(typeof OF_porMesPrevia==='function'){const pm=OF_porMesPrevia(cartaoId);Object.keys(porMes).forEach(k=>delete porMes[k]);Object.assign(porMes,pm);}
   // 2) meses que já têm fatura REAL importada desse cartão → prévia nunca pode coexistir
   const mesesComReal=new Set();
   (C_faturas||[]).filter(f=>f.cartaoId===cartaoId).forEach(f=>{if(f.mesFatura)mesesComReal.add(f.mesFatura);});
@@ -5302,6 +5310,7 @@ function C_sincronizarFaturasPrevias(cartaoId){
     const base={id:'fat_'+fid,faturaId:fid,previa:true,faturaCartao:{cartaoId,mes:wk},
       nome:'💳 Fatura '+cartao.nome+' (prévia) · '+wk,categoria:'cartoes',dia:cartao.diaVencimento||null,mes:wk,
       valor:total,valorPago:0,status:'PENDENTE',fixa:false,obs:'Fatura prévia (parcelas projetadas).',competencia:wk};
+    if(pessoalOF){base.id='reemb_'+fid;base.reembolsoWill=true;base.faturaCartao.reembolso=true;base.nome='🔁 Reembolsar Will · '+cartao.nome+' (prévia) · '+wk;base.obs='Prévia do reembolso: compras do studio no cartão pessoal do Will.';}
     if(idx>=0){const prev=contas[idx];base.valorPago=Number(prev.valorPago)||0;base.status=prev.status||'PENDENTE';contas[idx]=base;}
     else contas.push(base);
     mudou=true;
@@ -5393,6 +5402,8 @@ function C_parcelasDaPrevia(cid,mes){
     const pr=String(p.mesInicio||'').split('-').map(Number);const ay=pr[0],am=pr[1];if(!ay)return;
     for(let n=(Number(p.parcelaAtual)||0)+1;n<=(Number(p.totalParcelas)||0);n++){const d=new Date(ay,am-1+(n-1),1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');if(k===mes)itens.push({desc:p.descricao||'Parcela',categoria:p.categoria||'',valor:Number(p.valorParcela)||0,n,total:p.totalParcelas});}
   });
+  // Open Finance: compras em aberto com rateio confirmado (rateio do mês e detalhe da prévia)
+  if(typeof OF_abertasDoMes==='function')OF_abertasDoMes(cid,mes).forEach(it=>{if(it.n&&itens.some(x=>x.n===it.n&&x.total===it.total&&Math.abs((x.valor||0)-it.valor)<=0.02))return;itens.push(it);});
   return itens.sort((a,b)=>b.valor-a.valor);
 }
 window.C_renderFaturas=function(){
@@ -8751,11 +8762,11 @@ async function CONC_desfazer(chave){
 AUTH_bootstrap();
 </script>
 <!-- ═══ Conciliação "Trazer extrato" portada do Nossa Semente (lado a lado, rateio, mês, filtros, aprende) ═══ -->
-<script src="js/concil.js?v=2321f5f6"></script>
+<script src="js/concil.js?v=51d8f914"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
 <script src="js/simulacao.js?v=6b3816fb"></script>
-<script src="js/openfinance.js?v=5000af9e"></script>
+<script src="js/openfinance.js?v=b830cc79"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
   #cxModalBg .cx-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}

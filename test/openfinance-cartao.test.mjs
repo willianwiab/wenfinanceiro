@@ -65,7 +65,7 @@ t('OFX gerado do banco: compra DEBIT, estorno CREDIT, pagamento PAYMENT, parcela
 });
 t('ligações no index.html do WEN (aditivas)', () => {
   assert.match(IDX, /if\(typeof OF_ehPessoal==='function'&&OF_ehPessoal\(fatura\.cartaoId\)\)\{OF_lancarReembolso\(fatura,cartao\);return;\}/);
-  assert.match(IDX, /onclick="OF_trazerFatura\(\)">🏦 Trazer do banco \(Open Finance\)</);
+  assert.match(IDX, /onclick="OF_trazerFatura\(\)">🏦 Trazer fatura fechada</); assert.match(IDX, /onclick="OF_atualizarCartao\(\)">🔄 Atualizar cartão/);
   assert.match(IDX, /<script src="js\/openfinance\.js\?v=[0-9a-f]{8}"><\/script>/);
 });
 console.log(`\n✅ ${ok}/${ok} Open Finance no WEN (cartão pessoal → Reembolsar Will)\n`);
