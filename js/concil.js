@@ -485,13 +485,31 @@ if (typeof document !== 'undefined') (function () {
     const movsConta = (typeof BC_MOVS !== 'undefined' ? BC_MOVS : []).filter(m => m.contaId === contaId);
     const idsMov = new Set(movsConta.map(m => m.id));
     const idsConc = idsConciliadasAntes();
+    // linha do extrato que JÁ foi conciliada: a mov gravada leva o sufixo da conta (mov_ofx_<conta>_<fitid>_<fixa>),
+    // então a chave simples não a encontra — quem identifica é o origemId (= fitid). Espelho do B_conciliados do NS.
+    const movsImport = movsConta.filter(m => m.origemTipo === 'import' && m.origemId != null);
+    const fitsConciliados = new Set(movsImport.filter(m => String(m.id).startsWith('mov_ofx_' + contaId + '_' + m.origemId + '_')).map(m => String(m.origemId)));
+    const fitsImportados = new Set(movsImport.map(m => String(m.origemId)));   // inclui o "Trazer extrato" antigo (IMP_), que limpa o id
     const vistos = new Set();
+    const vistosFit = new Set();   // FITID real repetido dentro do lote = duplicata de verdade
     const itens = brutos.map((b, idx) => {
       const chave = 'mov_ofx_' + contaId + '_' + b.fitid;
       const tipoMov = classificarTipo(b.descricao, b.valor);
+      // FITID do banco (OFX/Open Finance) é real; os gerados aqui (ofx_<data>_<valor> sem FITID, ia_ da leitura por IA) não
+      const fitidReal = (b.fitidReal != null) ? !!b.fitidReal : !/^(ofx_|ia_)/.test(String(b.fitid || ''));
       let dup = null;
       if (idsMov.has(chave)) dup = { tipo: 'existente' };
+      else if (fitsConciliados.has(String(b.fitid))) dup = { tipo: 'conciliada' };
+      else if (fitsImportados.has(String(b.fitid))) dup = { tipo: 'existente' };
+      // Com FITID do banco, a identidade é o FITID: dois movimentos legítimos iguais no mesmo dia
+      // não são duplicidade. A heurística data+valor+descrição fica só para leitura por IA/PDF/foto,
+      // onde não há id confiável e o risco real é o modelo ler a mesma linha duas vezes.
+      else if (fitidReal) { if (vistosFit.has(String(b.fitid))) dup = { tipo: 'lote' }; else vistosFit.add(String(b.fitid)); }
       else { const k = b.data + '|' + Math.round(b.valor * 100) + '|' + CX_norm(b.descricao); if (vistos.has(k)) dup = { tipo: 'lote' }; else vistos.add(k); }
+      // já está na conta por outro caminho (arquivo × "Trazer do banco" × PDF/foto): mesma data, valor e descrição.
+      // Só contra linhas que vieram de extrato: a mov criada pela BAIXA de uma conta não é duplicata — é o
+      // "já está no sistema" (OF_jaNoApp), que liga a linha do banco ao pagamento sem lançar de novo.
+      if (!dup) { const bateu = movsImport.some(m => { const mv = (Number(m.valor) || 0) * ((m.tipo === 'saida' || m.tipo === 'transferencia_saida') ? -1 : 1); return Math.abs(mv - b.valor) < 0.005 && (m.data || '') === b.data && CX_norm(m.descricao || '') === CX_norm(b.descricao); }); if (bateu) dup = { tipo: 'existente' }; }
       const rank = !dup ? ranking({ valor: b.valor, data: b.data, descricao: b.descricao }, contaId) : [];
       const cc = rank.length ? rank[0] : null, amb = CE_ambiguo(rank);
       // só pareia sozinho com correspondência forte E sem empate — ambíguo é você quem decide
@@ -561,7 +579,7 @@ if (typeof document !== 'undefined') (function () {
   }
 
   function linha(it, i) {
-    const dupB = (it.dup ? ` <span class="cx-badge">${it.dup.tipo === 'existente' ? 'já importada' : 'duplicidade'}</span>` : '')
+    const dupB = (it.dup ? ` <span class="cx-badge">${it.dup.tipo === 'existente' ? 'já importada' : it.dup.tipo === 'conciliada' ? 'já conciliada' : 'possível duplicidade'}</span>` : '')
       + (it.jaNoApp ? ` <span class="cx-badge" style="background:#dcfce7;color:#15803d">✓ já está no sistema: ${esc(it.jaNoApp.nome)} (${it.jaNoApp.tipo === 'receber' ? 'recebido' : 'pago'})</span>` : '');
     let concilB = '';
     if (it.pares && it.pares.length) { const nomes = it.pares.map(p => esc(p.nome)).join(' + '); concilB = `<div style="margin-top:2px;font-size:.72rem;color:#15803d">🟢 ${it.pares.length > 1 ? 'rateio' : 'concilia'}: <b>${nomes}</b> · <a onclick="CX_desfazerPar('${it.id}')" style="color:#dc2626;cursor:pointer">desfazer</a></div>`; }
