@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261023-c705c002';
+window.APP_VERSION='20261023-4c9cb7e8';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -3389,7 +3389,77 @@ function DP_aReceber(data){
   return Object.values(por).filter(c=>Math.abs(c.valor)>0.005).map(c=>({nome:c.nome,valor:Math.round(c.valor*100)/100,quitado:false,
     nota:c.abertos+(c.abertos===1?' lançamento em aberto':' lançamentos em aberto')+(c.pago>0.005?' · já pagou '+fmt(Math.round(c.pago*100)/100):'')})).sort((a,b)=>b.valor-a.valor);
 }
+// ── Lado PAGAR ───────────────────────────────────────────────────────────────
+// Cada linha é uma conta (não agrupa, como o Receber faz por cliente): no Pagar o
+// que interessa é QUAL conta vence, não quanto um fornecedor soma.
+const DP_PAGAR={
+  'p-apagar':      {tit:'🔴 A pagar em ',       ic:'🔴', vazio:'Tudo pago neste mês 🎉'},
+  'p-vencendo':    {tit:'⚠️ Vencendo em 3 dias — ', ic:'⚠️', vazio:'Nada vencendo nos próximos 3 dias.'},
+  'p-atraso-mes':  {tit:'🔴 Atrasadas em ',     ic:'⏰', vazio:'Nenhuma conta atrasada neste mês 🎉'},
+  'p-atraso-ano':  {tit:'⚠️ Atrasadas em ',     ic:'⏰', vazio:'Nenhuma conta atrasada no ano 🎉'},
+};
+// Devolve as contas de cada recorte, com a MESMA regra dos cards — se divergir, o
+// link deixa de ser confiável.
+function DP_pagarItens(tipo){
+  const hoje=getDia(), mesesOrd=P_getMesesOrdenados(), idxAtual=mesesOrd.indexOf(P_mesAtual);
+  const naoPago=r=>String(r.status||'').toUpperCase()!=='PAGO';
+  const saldo=r=>Math.round(((Number(r.valor)||0)-(Number(r.valorPago)||0))*100)/100;
+  const linha=(r,mes)=>{
+    const cat=(typeof catInfoP==='function')?catInfoP(r.categoria):{icon:'',label:''};
+    const parcial=(Number(r.valorPago)||0)>0;
+    const atrasoDias=(mes===P_mesAtual&&r.dia)?hoje-r.dia:null;
+    const partes=[];
+    partes.push(r.dia?('vence dia '+r.dia):'sem dia');
+    if(mes&&mes!==P_mesAtual)partes.push(mes);
+    if(atrasoDias!==null&&atrasoDias>0)partes.push(atrasoDias+(atrasoDias===1?' dia em atraso':' dias em atraso'));
+    if(cat.label)partes.push(cat.icon+' '+cat.label);
+    if(parcial)partes.push('já pago '+fmt(Number(r.valorPago)||0));
+    return {nome:r.nome||'(sem nome)',valor:Number(r.valor)||0,saldo:saldo(r),parcial,
+            dia:r.dia||99,mes:mes||P_mesAtual,nota:partes.join(' · ')};
+  };
+  const data=P_getData();
+  if(tipo==='p-apagar')     return data.filter(naoPago).map(r=>linha(r,P_mesAtual)).sort((a,b)=>b.valor-a.valor);
+  if(tipo==='p-vencendo')   return data.filter(r=>naoPago(r)&&r.dia&&r.dia-hoje<=3&&r.dia>=hoje).map(r=>linha(r,P_mesAtual)).sort((a,b)=>a.dia-b.dia);
+  if(tipo==='p-atraso-mes') return data.filter(r=>naoPago(r)&&r.dia&&r.dia<hoje).map(r=>linha(r,P_mesAtual)).sort((a,b)=>a.dia-b.dia);
+  if(tipo==='p-atraso-ano'){
+    const ano=P_mesAtual.split('/')[1]||String(new Date().getFullYear());
+    const out=[];
+    Object.keys(P_meses).filter(m=>m.endsWith('/'+ano)).forEach(m=>{
+      const passado=mesesOrd.indexOf(m)<idxAtual, atual=m===P_mesAtual;
+      (P_meses[m]||[]).forEach(r=>{
+        if(!naoPago(r))return;
+        if(passado||(atual&&r.dia&&r.dia<hoje))out.push(linha(r,m));
+      });
+    });
+    return out.sort((a,b)=>{const k=x=>mesesOrd.indexOf(x.mes);return k(a)-k(b)||a.dia-b.dia;});
+  }
+  return [];
+}
+function DP_abrirPagar(tipo){
+  const cfg=DP_PAGAR[tipo]; if(!cfg)return;
+  DP_focoAnterior=document.activeElement;
+  const itens=DP_pagarItens(tipo);
+  const ano=P_mesAtual.split('/')[1]||'';
+  // "A pagar" é valor CHEIO das contas não pagas — é assim que o card soma. Os outros
+  // recortes mostram o que falta (valor − já pago), que é o que o sub dos cards mostra.
+  const cheio=tipo==='p-apagar';
+  const soma=itens.reduce((a,i)=>a+(cheio?i.valor:i.saldo),0);
+  const parciais=itens.filter(i=>i.parcial);
+  const faltaReal=itens.reduce((a,i)=>a+i.saldo,0);
+  const row=i=>'<div class="dp-row"><span class="dp-ic">'+cfg.ic+'</span><div class="dp-txt">'
+    +'<div class="dp-nome" title="'+DP_esc(i.nome)+'">'+DP_esc(i.nome)+'</div><small>'+DP_esc(i.nota)+'</small></div>'
+    +'<strong style="color:#b91c1c">'+fmt(cheio?i.valor:i.saldo)+'</strong></div>';
+  document.getElementById('dpTitulo').textContent=cfg.tit+(tipo==='p-atraso-ano'?ano:P_mesAtual);
+  const qtd=itens.length;
+  let html='<div class="dp-total dp-neg"><b>'+fmt(soma)+'</b><span>'+qtd+' '+(qtd===1?'conta':'contas')+'</span></div>';
+  if(cheio&&parciais.length)html+='<p class="dp-vazio" style="text-align:left;color:#b45309">⚠️ '+parciais.length+' conta(s) com pagamento parcial. O card soma o valor cheio; descontando o que já foi pago, faltam <b>'+fmt(faltaReal)+'</b>.</p>';
+  html+=(qtd?itens.map(row).join(''):'<p class="dp-vazio">'+cfg.vazio+'</p>');
+  document.getElementById('dpConteudo').innerHTML=html;
+  document.getElementById('modalDetalhePainel').classList.add('open');
+  const b=document.querySelector('#modalDetalhePainel button');if(b)b.focus();
+}
 function DP_abrir(tipo){
+  if(DP_PAGAR[tipo])return DP_abrirPagar(tipo);
   if(tipo!=='recebido'&&tipo!=='areceber')return;
   DP_focoAnterior=document.activeElement;
   const rec=tipo==='recebido',data=R_getMesData(),itens=rec?DP_recebidos(data):DP_aReceber(data);
@@ -7475,7 +7545,7 @@ function renderDashboardP(){
     <div class="resumo-exec-grid">
       <div class="re-item"><label>Total do Mês</label><div class="rev">${fmt(total)}</div></div>
       <div class="re-item"><label>✅ Pago</label><div class="rev pos">${fmt(pago)}</div></div>
-      <div class="re-item"><label>🔴 A Pagar</label><div class="rev neg">${fmt(pendente)}</div></div>
+      <div class="re-item"><label>🔴 A Pagar</label><div class="rev neg">${DP_link('p-apagar',fmt(pendente))}</div></div>
       <div class="re-item"><label>Vencidas</label><div class="rev">${qtdAtrasado}</div></div>
       ${tendencia?`<div class="re-item"><label>Tendência</label><div class="rev" style="font-size:.85rem">${tendencia}</div></div>`:''}
       <div class="re-item"><label>% Quitado</label><div class="rev">${total>0?Math.round(pago/total*100):0}%</div></div>
@@ -7484,8 +7554,8 @@ function renderDashboardP(){
   document.getElementById('pCards').innerHTML=`
     <div class="card-p total"><label>💰 Total</label><div class="val">${fmt(total)}</div></div>
     <div class="card-p pago"><label>✅ Pago</label><div class="val">${fmt(pago)}</div></div>
-    <div class="card-p pendente"><label>🔴 A Pagar</label><div class="val">${fmt(pendente)}</div></div>
-    <div class="card-p alerta"><label>⚠️ Vencendo 3d</label><div class="val">${vencendo} conta(s)</div></div>`;
+    <div class="card-p pendente"><label>🔴 A Pagar</label><div class="val">${DP_link('p-apagar',fmt(pendente))}</div></div>
+    <div class="card-p alerta"><label>⚠️ Vencendo 3d</label><div class="val">${DP_link('p-vencendo',vencendo+' conta(s)')}</div></div>`;
 
   const anoAtual=P_mesAtual.split('/')[1]||new Date().getFullYear().toString();
   const mesesAno=Object.keys(P_meses).filter(m=>m.endsWith('/'+anoAtual));
@@ -7496,9 +7566,9 @@ function renderDashboardP(){
 
   document.getElementById('pCardsRow2').innerHTML=`
     <div class="card-p qtd-pago"><label>✅ Pagas — ${P_mesAtual}</label><div class="val">${qtdPago}<span style="font-size:.88rem;font-weight:500"> de ${data.length}</span></div><div class="val-sub">${data.length>0?Math.round(qtdPago/data.length*100):0}% quitado</div></div>
-    <div class="card-p qtd-atrasado"><label>🔴 Atrasadas — ${P_mesAtual}</label><div class="val">${qtdAtrasado}</div><div class="val-sub">${qtdAtrasado>0?fmt(data.filter(r=>r.status.toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0))+' em aberto':'✅ Em dia'}</div></div>
+    <div class="card-p qtd-atrasado"><label>🔴 Atrasadas — ${P_mesAtual}</label><div class="val">${DP_link('p-atraso-mes',String(qtdAtrasado))}</div><div class="val-sub">${qtdAtrasado>0?fmt(data.filter(r=>r.status.toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0))+' em aberto':'✅ Em dia'}</div></div>
     <div class="card-p ano-pago"><label>📅 Pago em ${anoAtual}</label><div class="val">${fmt(pagoAno)}</div><div class="val-sub">Total ${fmt(totalAno)}</div></div>
-    <div class="card-p ano-atrasado"><label>⚠️ Atrasadas ${anoAtual}</label><div class="val">${atrasadoAnoQtd}</div><div class="val-sub">${atrasadoAnoQtd>0?'em atraso':'Sem atrasos 🎉'}</div></div>`;
+    <div class="card-p ano-atrasado"><label>⚠️ Atrasadas ${anoAtual}</label><div class="val">${DP_link('p-atraso-ano',String(atrasadoAnoQtd))}</div><div class="val-sub">${atrasadoAnoQtd>0?'em atraso':'Sem atrasos 🎉'}</div></div>`;
 
   // Card HOJE
   const esMesAtual=P_mesAtual===mesAtualReal();
