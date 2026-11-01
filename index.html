@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261101-474c9e62';
+window.APP_VERSION='20261101-816f7e73';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -449,6 +449,25 @@ table.t-receber tfoot td{background:#16a34a;color:white;font-weight:700;padding:
 .nf-resumo{background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:12px 15px;font-size:.85rem;color:#334155;margin:14px 0;line-height:1.55}
 .nf-form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:620px){.nf-form{grid-template-columns:1fr}.nf-filtros{flex-direction:column}}
+.nf-exp{background:none;border:1px solid #e2e8f0;border-radius:7px;width:28px;height:28px;cursor:pointer;color:#64748b;font-size:.8rem;flex-shrink:0}
+.nf-exp:hover{background:#f1f5f9;color:#0f172a}
+.nf-exp:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
+.nf-lin.parc{border-left-color:#7c3aed;background:#fcfaff}
+.nf-de{font-size:.7rem;font-weight:600;color:#94a3b8;text-align:right;margin-top:2px}
+.nf-itens{margin:12px 0 2px;padding:10px 12px;background:#f8fafc;border:1px solid #e9eef5;border-radius:9px}
+.nf-item{display:flex;align-items:center;gap:9px;padding:6px 2px;font-size:.84rem;color:#334155;cursor:pointer;border-bottom:1px solid #eef2f7}
+.nf-item:last-of-type{border-bottom:0}
+.nf-item.off{color:#a3aec0;text-decoration:line-through}
+.nf-item input{width:16px;height:16px;cursor:pointer;flex-shrink:0}
+.nf-itens-rod{font-size:.75rem;color:#64748b;padding-top:9px;margin-top:4px;border-top:1px dashed #dbe3ec}
+.nf-vinc-tit{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:700;margin-bottom:6px}
+.nf-vinc{display:flex;align-items:center;gap:9px;justify-content:space-between;background:#f8fafc;border:1px solid #e9eef5;border-radius:8px;padding:7px 11px;margin-bottom:5px;font-size:.82rem;color:#334155}
+.nf-vinc.add{background:#fff;border-style:dashed}
+.nf-vinc-vazio{font-size:.82rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 11px}
+.nf-x,.nf-mais{border:0;border-radius:6px;width:26px;height:26px;cursor:pointer;flex-shrink:0;font-weight:800;font-size:.85rem}
+.nf-x{background:#fee2e2;color:#b91c1c}.nf-x:hover{background:#fecaca}
+.nf-mais{background:#dcfce7;color:#15803d}.nf-mais:hover{background:#bbf7d0}
+.nf-x:focus-visible,.nf-mais:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .nf-alerta{background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:0 9px 9px 0;padding:12px 16px;margin-bottom:12px;font-size:.85rem;color:#92400e}
 .nf-alerta.erro{background:#fef2f2;border-color:#fecaca;border-left-color:#dc2626;color:#b91c1c}
 /* Fechamento */
@@ -1925,6 +1944,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <button type="button" class="btn" onclick="NF_fechar()" aria-label="Fechar">✕</button>
     </div>
     <div id="nfModalResumo" class="nf-resumo"></div>
+    <div id="nfVinculos"></div>
     <div class="nf-form">
       <div class="form-group"><label>Número da NFS-e *</label><input type="text" id="nfFNumero" placeholder="ex.: 00012345"/></div>
       <div class="form-group"><label>Data de emissão *</label><input type="date" id="nfFData"/></div>
@@ -3570,6 +3590,10 @@ let NF_NOTAS={};            // id -> nota
 let NF_ok=false;            // a leitura da nuvem deu certo nesta sessão?
 let NF_aba='fila';
 let NF_editandoId=null, NF_ctxFila=null;
+// Seleção por diária. Cliente de fechamento mensal não mexe aqui (tudo nasce marcado);
+// cliente que fatura por nota desmarca o que fica pra próxima.
+let NF_desmarcados=new Set();   // ids tirados da próxima nota
+let NF_abertos=new Set();       // grupos expandidos na fila
 
 async function NF_carregar(){
   try{ NF_NOTAS=await CC_fbCarregar(NF_COL)||{}; NF_ok=true; }
@@ -3585,6 +3609,18 @@ function NF_idsFaturados(){
   return s;
 }
 function NF_meses(){return (typeof R_getMesesDisponiveis==='function')?R_getMesesDisponiveis():[];}
+function NF_lanc(id){return (R_todosOsDados||[]).find(r=>String(r.id)===String(id));}
+function NF_rotuloLanc(r){
+  if(!r)return '(lançamento sumiu)';
+  return (r.data||'-')+' · '+(r.horas||0)+'h · '+(r.studio||'')+' · '+fmt(Number(r.valorTotal)||0)+(Number(r.saldo)>0?' · ⏳ não pago':'');
+}
+// Diárias do cliente que ainda não entraram em nota nenhuma — a lista do "puxar outras".
+function NF_disponiveisDoCliente(cliente,excluirIds){
+  const ja=NF_idsFaturados(), fora=new Set((excluirIds||[]).map(String));
+  return (R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0
+    &&!ja.has(String(r.id))&&!fora.has(String(r.id)))
+    .sort((a,b)=>String(a.mes).localeCompare(String(b.mes))||String(a.data||'').localeCompare(String(b.data||'')));
+}
 function NF_filtro(){
   return {cliente:document.getElementById('nfFCliente')?.value||'',
           ini:document.getElementById('nfFMesIni')?.value||'',
@@ -3640,6 +3676,8 @@ function NF_divergencias(){
   return out;
 }
 window.NF_setAba=function(a){NF_aba=a;NF_montar();};
+window.NF_toggleGrupo=function(chave){if(NF_abertos.has(chave))NF_abertos.delete(chave);else NF_abertos.add(chave);NF_montar();};
+window.NF_toggleLanc=function(id){id=String(id);if(NF_desmarcados.has(id))NF_desmarcados.delete(id);else NF_desmarcados.add(id);NF_montar();};
 
 function NF_popularFiltros(){
   const meses=NF_meses(), f=NF_filtro();
@@ -3677,11 +3715,26 @@ function NF_montar(){
     +'<div class="card-p" style="border-left:4px solid #dc2626"><label>⚠️ Divergências</label><div class="val">'+divs.length+'</div><div class="val-sub">'+(divs.length?'precisam de olhada':'nada fora do lugar 🎉')+'</div></div>';
 
   if(NF_aba==='fila'){
-    raiz.innerHTML=fila.length?fila.map((g,i)=>'<div class="nf-lin fila"><div class="nf-info">'
-      +'<div class="nf-nome">'+NF_esc(g.cliente)+'</div><div class="nf-meta">'+g.mes+' · '+g.grav+(g.grav===1?' gravação':' gravações')
+    raiz.innerHTML=fila.length?fila.map((g,i)=>{
+      const chave=g.cliente+'||'+g.mes, aberto=NF_abertos.has(chave);
+      const sel=g.ids.filter(id=>!NF_desmarcados.has(String(id)));
+      const selVal=sel.reduce((a,id)=>a+(Number((NF_lanc(id)||{}).valorTotal)||0),0);
+      const parcial=sel.length!==g.ids.length;
+      const linhas=g.ids.map(id=>{const r=NF_lanc(id), on=!NF_desmarcados.has(String(id));
+        return '<label class="nf-item'+(on?'':' off')+'"><input type="checkbox" '+(on?'checked':'')
+          +' onchange="NF_toggleLanc(\''+NF_esc(id)+'\')"><span>'+NF_esc(NF_rotuloLanc(r))+'</span></label>';}).join('');
+      return '<div class="nf-lin fila'+(parcial?' parc':'')+'"><div style="width:100%">'
+      +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<button type="button" class="nf-exp" onclick="NF_toggleGrupo(\''+NF_esc(chave)+'\')" aria-expanded="'+aberto+'">'+(aberto?'▾':'▸')+'</button>'
+      +'<div class="nf-info"><div class="nf-nome">'+NF_esc(g.cliente)+'</div><div class="nf-meta">'+g.mes+' · '
+      +(parcial?('<b>'+sel.length+' de '+g.grav+'</b> selecionada(s)'):(g.grav+(g.grav===1?' gravação':' gravações')))
       +' · '+g.horas+'h'+(g.aberto?' · <span class="nf-pill pend">'+g.aberto+' ainda não pago</span>':'')+'</div></div>'
-      +'<div class="nf-val">'+fmt(g.valor)+'</div>'
-      +'<div class="nf-acao"><button class="btn btn-green" style="width:auto;padding:7px 14px;font-size:.82rem" onclick="NF_abrirNova('+i+')">🧾 Registrar nota</button></div></div>').join('')
+      +'<div class="nf-val">'+fmt(parcial?selVal:g.valor)+(parcial?'<div class="nf-de">de '+fmt(g.valor)+'</div>':'')+'</div>'
+      +'<div class="nf-acao"><button class="btn btn-green" style="width:auto;padding:7px 14px;font-size:.82rem"'
+      +(sel.length?'':' disabled')+' onclick="NF_abrirNova('+i+')">🧾 Registrar nota</button></div></div>'
+      +(aberto?'<div class="nf-itens">'+linhas
+        +'<div class="nf-itens-rod">Desmarque o que <b>não</b> entra nesta nota — fica na fila para a próxima.</div></div>':'')
+      +'</div></div>';}).join('')
       :'<div class="nf-vazio">✅ Nada a faturar neste recorte — tudo que foi gravado já tem nota.</div>';
     return;
   }
@@ -3716,18 +3769,68 @@ function NF_descricao(g){
 }
 window.NF_abrirNova=function(i){
   const g=NF_fila()[i]; if(!g)return;
-  NF_editandoId=null; NF_ctxFila=g;
-  document.getElementById('nfModalTit').textContent='🧾 Registrar nota — '+g.cliente;
-  document.getElementById('nfModalResumo').innerHTML='<b>'+NF_esc(g.cliente)+'</b> · '+g.mes+' · '
-    +g.grav+(g.grav===1?' gravação':' gravações')+' · '+g.horas+'h<br>Esta nota vai cobrir <b>'+g.ids.length
-    +'</b> lançamento(s), que somam <b>'+fmt(g.valor)+'</b>. Eles saem da fila e não podem ser faturados de novo.';
+  // só o que ficou marcado na fila entra nesta nota
+  const ids=g.ids.filter(id=>!NF_desmarcados.has(String(id)));
+  if(!ids.length){toast('Marque pelo menos uma diária.','#f59e0b');return;}
+  const regs=ids.map(NF_lanc).filter(Boolean);
+  const sel={cliente:g.cliente,mes:g.mes,ids,
+    valor:Math.round(regs.reduce((a,r)=>a+(Number(r.valorTotal)||0),0)*100)/100,
+    horas:Math.round(regs.reduce((a,r)=>a+(Number(r.horas)||0),0)*100)/100,
+    grav:regs.length};
+  NF_editandoId=null; NF_ctxFila=sel;
+  document.getElementById('nfModalTit').textContent='🧾 Registrar nota — '+sel.cliente;
+  document.getElementById('nfModalResumo').innerHTML='<b>'+NF_esc(sel.cliente)+'</b> · '+sel.mes+' · '
+    +sel.grav+(sel.grav===1?' gravação':' gravações')+' · '+sel.horas+'h'
+    +(sel.ids.length<g.ids.length?'<br><span style="color:#b45309">Das '+g.ids.length+' do mês, <b>'+sel.ids.length+'</b> entram nesta nota. As outras ficam na fila.</span>':'')
+    +'<br>Esta nota vai cobrir <b>'+sel.ids.length+'</b> lançamento(s), que somam <b>'+fmt(sel.valor)+'</b>.';
   document.getElementById('nfFNumero').value='';
   document.getElementById('nfFData').value=NF_hojeISO();
-  document.getElementById('nfFValor').value=g.valor.toFixed(2);
+  document.getElementById('nfFValor').value=sel.valor.toFixed(2);
   document.getElementById('nfFLink').value='';
-  document.getElementById('nfFDesc').value=NF_descricao(g);
+  document.getElementById('nfFDesc').value=NF_descricao(sel);
   document.getElementById('nfFObs').value='';
+  NF_renderVinculos();
   document.getElementById('nfModalBg').classList.add('open');
+};
+// Vínculos da nota aberta: tirar uma diária ou puxar outra do mesmo cliente (qualquer mês).
+function NF_vinculosAtuais(){
+  if(NF_editandoId)return ((NF_NOTAS[NF_editandoId]||{}).lancamentoIds||[]).map(String);
+  return NF_ctxFila?NF_ctxFila.ids.map(String):[];
+}
+function NF_clienteAtual(){
+  return NF_editandoId?((NF_NOTAS[NF_editandoId]||{}).cliente||''):(NF_ctxFila?NF_ctxFila.cliente:'');
+}
+function NF_renderVinculos(){
+  const box=document.getElementById('nfVinculos'); if(!box)return;
+  const ids=NF_vinculosAtuais(), cli=NF_clienteAtual();
+  const disp=NF_disponiveisDoCliente(cli,ids);
+  const dentro=ids.map(id=>{const r=NF_lanc(id);
+    return '<div class="nf-vinc"><span>'+NF_esc(r?(r.mes+' · '+NF_rotuloLanc(r)):'(lançamento '+id+' não existe mais)')+'</span>'
+      +'<button type="button" class="nf-x" title="Tirar desta nota" onclick="NF_desvincular(\''+NF_esc(id)+'\')">✕</button></div>';}).join('');
+  const fora=disp.map(r=>'<div class="nf-vinc add"><span>'+NF_esc(r.mes+' · '+NF_rotuloLanc(r))+'</span>'
+      +'<button type="button" class="nf-mais" title="Incluir nesta nota" onclick="NF_vincular(\''+NF_esc(r.id)+'\')">+</button></div>').join('');
+  box.innerHTML='<div class="nf-vinc-tit">Diárias nesta nota <b>('+ids.length+')</b></div>'
+    +(dentro||'<div class="nf-vinc-vazio">Nenhuma — a nota ficaria sem lançamento.</div>')
+    +(disp.length?'<div class="nf-vinc-tit" style="margin-top:12px">Outras diárias de '+NF_esc(cli)+' ainda sem nota <b>('+disp.length+')</b></div>'+fora:'');
+}
+function NF_recalcular(){
+  const ids=NF_vinculosAtuais(), regs=ids.map(NF_lanc).filter(Boolean);
+  const v=Math.round(regs.reduce((a,r)=>a+(Number(r.valorTotal)||0),0)*100)/100;
+  const el=document.getElementById('nfFValor');
+  if(el)el.value=v.toFixed(2);
+  NF_renderVinculos();
+}
+window.NF_desvincular=function(id){
+  id=String(id);
+  if(NF_editandoId){const n=NF_NOTAS[NF_editandoId]; n.lancamentoIds=(n.lancamentoIds||[]).filter(x=>String(x)!==id);}
+  else if(NF_ctxFila){NF_ctxFila.ids=NF_ctxFila.ids.filter(x=>String(x)!==id);}
+  NF_recalcular();
+};
+window.NF_vincular=function(id){
+  id=String(id);
+  if(NF_editandoId){const n=NF_NOTAS[NF_editandoId]; n.lancamentoIds=(n.lancamentoIds||[]).concat([id]);}
+  else if(NF_ctxFila){NF_ctxFila.ids=NF_ctxFila.ids.concat([id]);}
+  NF_recalcular();
 };
 window.NF_editar=function(id){
   const n=NF_NOTAS[id]; if(!n)return;
@@ -3742,6 +3845,7 @@ window.NF_editar=function(id){
   document.getElementById('nfFLink').value=n.link||'';
   document.getElementById('nfFDesc').value=n.descricao||'';
   document.getElementById('nfFObs').value=n.obs||'';
+  NF_renderVinculos();
   document.getElementById('nfModalBg').classList.add('open');
 };
 window.NF_fechar=function(){document.getElementById('nfModalBg').classList.remove('open');NF_editandoId=null;NF_ctxFila=null;};
@@ -3756,18 +3860,26 @@ window.NF_salvar=async function(){
     descricao:document.getElementById('nfFDesc').value||'',
     obs:document.getElementById('nfFObs').value||'',
     atualizadoEm:new Date().toISOString()};
+  const idsFinais=NF_vinculosAtuais();
+  if(!idsFinais.length){toast('A nota precisa de pelo menos uma diária.','#ef4444');return;}
+  const regsFinais=idsFinais.map(NF_lanc).filter(Boolean);
+  const somaHoras=Math.round(regsFinais.reduce((a,r)=>a+(Number(r.horas)||0),0)*100)/100;
+  const mesesNota=[...new Set(regsFinais.map(r=>r.mes))].sort((a,b)=>NF_meses().indexOf(a)-NF_meses().indexOf(b));
   let id=NF_editandoId, nota;
-  if(id){ nota={...NF_NOTAS[id],...base,id}; }
+  if(id){ nota={...NF_NOTAS[id],...base,id,lancamentoIds:idsFinais,gravacoes:regsFinais.length,horas:somaHoras,
+                mesIni:mesesNota[0]||NF_NOTAS[id].mesIni,mesFim:mesesNota[mesesNota.length-1]||NF_NOTAS[id].mesFim}; }
   else{
     const g=NF_ctxFila; if(!g){toast('Nada selecionado.','#ef4444');return;}
     // Trava: se alguém registrou nota para esses lançamentos enquanto o modal estava aberto.
-    const jaFeitos=NF_idsFaturados(), repetido=g.ids.filter(x=>jaFeitos.has(String(x)));
+    const jaFeitos=NF_idsFaturados(), repetido=idsFinais.filter(x=>jaFeitos.has(String(x)));
     if(repetido.length){toast('⚠️ '+repetido.length+' lançamento(s) já entraram em outra nota. Feche e abra a aba de novo.','#ef4444',8000);return;}
     id='nf'+Date.now()+Math.floor(Math.random()*9999);
-    nota={...base,id,cliente:g.cliente,mesIni:g.mes,mesFim:g.mes,lancamentoIds:g.ids.slice(),
-          gravacoes:g.grav,horas:g.horas,status:'emitida',criadoEm:new Date().toISOString()};
+    nota={...base,id,cliente:g.cliente,mesIni:mesesNota[0]||g.mes,mesFim:mesesNota[mesesNota.length-1]||g.mes,
+          lancamentoIds:idsFinais.slice(),gravacoes:regsFinais.length,horas:somaHoras,
+          status:'emitida',criadoEm:new Date().toISOString()};
   }
   NF_NOTAS[id]=nota;
+  idsFinais.forEach(x=>NF_desmarcados.delete(String(x)));
   NF_fechar(); NF_montar();
   await CC_fbSalvar(NF_COL,id,nota);
   if(typeof AUD_log==='function')AUD_log(NF_editandoId?'editar':'criar','notas_fiscais',nota.cliente||'',(NF_editandoId?'Nota editada':'Nota registrada')+' nº '+nota.numero,null,nota.valor);

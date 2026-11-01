@@ -90,6 +90,59 @@ const r = await page.evaluate(async () => {
   out.guarda = { okFalso: NF_ok === false, avisouNaTela: /não sei o que já foi faturado/.test($('nfAviso').textContent) };
   await NF_carregar(); NF_montar();
 
+  // ══ cliente que fatura POR NOTA: escolhe quais diárias entram ══
+  R_todosOsDados.push(
+    { id: 'nf-p1', cliente: 'CLIENTE GAMA', mes, data: '03/11', horas: 2, valorTotal: 1000, valorReserva: 1000, saldo: 0, studio: 'STUDIO A' },
+    { id: 'nf-p2', cliente: 'CLIENTE GAMA', mes, data: '10/11', horas: 2, valorTotal: 1000, valorReserva: 1000, saldo: 0, studio: 'STUDIO A' },
+    { id: 'nf-p3', cliente: 'CLIENTE GAMA', mes, data: '17/11', horas: 2, valorTotal: 1000, valorReserva: 1000, saldo: 0, studio: 'STUDIO A' });
+  NF_setAba('fila');   // os testes anteriores deixaram a tela em 'divergências'
+  const iG = () => NF_fila().findIndex(g => g.cliente === 'CLIENTE GAMA');
+  out.gamaNaFila = NF_fila()[iG()] && NF_fila()[iG()].grav === 3;
+
+  // expande e desmarca duas
+  NF_toggleGrupo('CLIENTE GAMA||' + mes);
+  out.expandiu = document.querySelectorAll('#nfConteudo .nf-item').length >= 3;
+  NF_toggleLanc('nf-p2'); NF_toggleLanc('nf-p3');
+  out.parcial = { marcouParcial: /nf-lin fila parc/.test($('nfConteudo').innerHTML),
+                  mostraDeQuantas: /1 de 3/.test($('nfConteudo').textContent) };
+
+  NF_abrirNova(iG());
+  out.modalParcial = { vinculos: NF_vinculosAtuais().length, valor: $('nfFValor').value,
+                       avisaQueSobra: /ficam na fila/.test($('nfModalResumo').textContent) };
+  $('nfFNumero').value = '00099001';
+  await NF_salvar(); await new Promise(r => setTimeout(r, 400));
+
+  const nGama = Object.values(NF_NOTAS).find(n => n.numero === '00099001');
+  const gRest = NF_fila()[iG()];
+  out.porNota = { notaCom1: nGama && nGama.lancamentoIds.length === 1 && nGama.valor === 1000,
+                  sobraram2: gRest && gRest.grav === 2,
+                  horasDaNota: nGama && nGama.horas === 2 };
+
+  // ══ desvincular e puxar de outro mês numa nota já salva ══
+  const mesAnt = NF_meses()[Math.max(0, NF_meses().indexOf(mes) - 1)];
+  R_todosOsDados.push({ id: 'nf-p0', cliente: 'CLIENTE GAMA', mes: mesAnt, data: '20/10', horas: 5, valorTotal: 4000, valorReserva: 4000, saldo: 0, studio: 'STUDIO B' });
+  NF_editar(nGama.id);
+  out.editAbriu = { vinculos: NF_vinculosAtuais().length,
+                    ofereceOutras: /ainda sem nota/.test($('nfVinculos').textContent),
+                    listaOutroMes: $('nfVinculos').textContent.includes(mesAnt) };
+  NF_vincular('nf-p0');
+  out.aoVincular = { vinculos: NF_vinculosAtuais().length, valorRecalculado: $('nfFValor').value };
+  NF_desvincular('nf-p1');
+  out.aoDesvincular = { vinculos: NF_vinculosAtuais().length, valorRecalculado: $('nfFValor').value };
+  await NF_salvar(); await new Promise(r => setTimeout(r, 400));
+  const nGama2 = NF_NOTAS[nGama.id];
+  out.depoisDeEditar = { ids: nGama2.lancamentoIds.length, valor: nGama2.valor, horas: nGama2.horas,
+                         mesIni: nGama2.mesIni, mesFim: nGama2.mesFim,
+                         p1VoltouParaFila: NF_fila().some(g => g.cliente === 'CLIENTE GAMA' && g.ids.includes('nf-p1')) };
+
+  // nota sem nenhuma diária é barrada
+  NF_editar(nGama.id);
+  NF_vinculosAtuais().slice().forEach(id => NF_desvincular(id));
+  const antes = JSON.stringify(NF_NOTAS[nGama.id].lancamentoIds);
+  await NF_salvar();
+  out.barraVazia = { aindaAberto: $('nfModalBg').classList.contains('open'), naoGravou: JSON.stringify(NF_NOTAS[nGama.id].lancamentoIds) === antes };
+  NF_fechar();
+
   // excluir de vez
   await NF_excluir(nota.id); await new Promise(r => setTimeout(r, 300));
   out.excluiu = { sumiu: !NF_NOTAS[nota.id], voltouParaFila: NF_fila().some(g => g.cliente === 'CLIENTE ALFA') };
@@ -126,6 +179,24 @@ console.log('\n── cancelar, reativar, excluir ──');
 ok('cancelar devolve para a fila', r.cancelou.voltouParaFila && r.cancelou.status === 'cancelada', r.cancelou);
 ok('reativar tira da fila de novo', r.reativou.saiuDeNovo && r.reativou.status === 'emitida', r.reativou);
 ok('excluir devolve para a fila', r.excluiu.sumiu && r.excluiu.voltouParaFila, r.excluiu);
+
+console.log('\n── cliente que fatura POR NOTA ──');
+ok('as 3 diárias entram na fila como um grupo', r.gamaNaFila);
+ok('a linha abre e mostra as diárias', r.expandiu);
+ok('desmarcar marca o grupo como parcial', r.parcial.marcouParcial && r.parcial.mostraDeQuantas, r.parcial);
+ok('o modal leva só a marcada, com o valor dela', r.modalParcial.vinculos === 1 && r.modalParcial.valor === '1000.00', r.modalParcial);
+ok('o modal avisa que o resto fica na fila', r.modalParcial.avisaQueSobra);
+ok('a nota sai com 1 diária e as outras 2 ficam', r.porNota.notaCom1 && r.porNota.sobraram2, r.porNota);
+ok('horas da nota são só das diárias dela', r.porNota.horasDaNota);
+
+console.log('\n── vincular e desvincular numa nota salva ──');
+ok('o editar oferece outras diárias do cliente', r.editAbriu.ofereceOutras, r.editAbriu);
+ok('inclusive de OUTRO mês', r.editAbriu.listaOutroMes);
+ok('vincular recalcula o valor', r.aoVincular.vinculos === 2 && r.aoVincular.valorRecalculado === '5000.00', r.aoVincular);
+ok('desvincular recalcula de novo', r.aoDesvincular.vinculos === 1 && r.aoDesvincular.valorRecalculado === '4000.00', r.aoDesvincular);
+ok('salvar refaz valor, horas e período', r.depoisDeEditar.ids === 1 && r.depoisDeEditar.valor === 4000 && r.depoisDeEditar.horas === 5, r.depoisDeEditar);
+ok('a diária desvinculada VOLTA para a fila', r.depoisDeEditar.p1VoltouParaFila);
+ok('nota sem nenhuma diária é barrada', r.barraVazia.aindaAberto && r.barraVazia.naoGravou, r.barraVazia);
 
 console.log('\n── a guarda que importa ──');
 ok('leitura falhou → avisa em vez de dizer "tudo a faturar"', r.guarda.okFalso && r.guarda.avisouNaTela, r.guarda);
