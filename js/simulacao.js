@@ -213,6 +213,44 @@ function SIM_agendaIncompleta(limite){
   }).filter(x=>x.pct<85);
 }
 
+// ─────────────────────────────────────────────────── custo incompleto (o outro lado)
+// Espelho exato da função de cima, do lado do CUSTO — e a razão pela qual a curva de
+// projeção mentia além de uns 60 dias.
+//
+// O comentário acima diz "a despesa fixa daquele mês já está inteira no sistema". Isso é
+// verdade só para o PRÓXIMO mês: `FX_mesesAplicaveis` materializa conta fixa até
+// mesAtual+1 e para. Do 2º mês futuro em diante a linha do saldo não desconta custo
+// nenhum — então somar só a receita que falta fazia a curva subir sem contrapeso. Era
+// isso que, no horizonte de 180 dias, fazia a projeção escalar a partir do 3º mês.
+//
+// Medir o custo que falta pelo mesmo critério (média dos 3 últimos meses fechados) deixa a
+// curva honesta e se desliga sozinha onde não é necessária: nos meses em que as fixas já
+// estão lançadas, `falta` dá ~0 e nada muda.
+function SIM_custoIncompleto(limite){
+  const W=__SIMW(), hoje=SIM_hoje(), mesAtual=mesAtualReal();
+  const porMes={};
+  Object.keys(W.P||{}).forEach(m=>{
+    (W.P[m]||[]).forEach(c=>{ const v=Number(c.valor)||0; if(v>0)porMes[m]=(porMes[m]||0)+v; });
+  });
+  const ordem=m=>{const q=m.split('/'); return (parseInt(q[1],10)||0)*12+(MESES_IDX[q[0]]??0);};
+  const ord=Object.keys(porMes).sort((a,b)=>ordem(a)-ordem(b));
+  const oAtual=ordem(mesAtual);
+  const fechados=ord.filter(m=>ordem(m)<oAtual).slice(-3);
+  if(!fechados.length)return [];
+  const media=fechados.reduce((a,m)=>a+porMes[m],0)/fechados.length;
+  if(media<=0)return [];
+  const alvos=[]; const d=new Date(hoje);
+  while(d<=limite){
+    const m=MESES_ABREV[d.getMonth()]+'/'+d.getFullYear();
+    if(m!==mesAtual&&alvos.indexOf(m)<0)alvos.push(m);
+    d.setMonth(d.getMonth()+1,1);
+  }
+  return alvos.map(m=>{
+    const lancado=porMes[m]||0;
+    return {mes:m,lancado,media,pct:Math.round(lancado/media*100),falta:Math.max(0,media-lancado)};
+  }).filter(x=>x.pct<85);
+}
+
 // ─────────────────────────────────────────────────────────────── render
 function SIM_montarNaAba(){
   const raiz=document.getElementById('simConteudo'); if(!raiz)return;
@@ -288,6 +326,7 @@ function SIM_montarNaAba(){
   const nNotas=todosItens.filter(x=>SIM_cfg.notas[x.chave]).length;
 
   const incompletos=SIM_agendaIncompleta(limite);
+  const custoFalta=SIM_custoIncompleto(limite);
   const contas=SIM_contasComSaldo();
   const usandoOverride=(SIM_cfg.saldoOverride!==null&&SIM_cfg.saldoOverride!==undefined);
 
@@ -413,9 +452,9 @@ function SIM_montarNaAba(){
         <span class="pt" style="background:#0ea5e9"></span>Faturamento acumulado</button>
       <button type="button" class="sim-lin${SIM_LINHAS.cus?' on':''}" onclick="SIM_toggleLinha('cus')">
         <span class="pt" style="background:#f97316"></span>Custo acumulado</button>
-      ${incompletos.length?`<button type="button" class="sim-lin${SIM_LINHAS.proj?' on':''}" onclick="SIM_toggleLinha('proj')"
-        title="Soma a receita que historicamente ainda entra nos meses que estão com a agenda pela metade">
-        <span class="pt" style="background:#7c3aed"></span>Projeção com a agenda cheia</button>`:''}
+      ${(incompletos.length||custoFalta.length)?`<button type="button" class="sim-lin${SIM_LINHAS.proj?' on':''}" onclick="SIM_toggleLinha('proj')"
+        title="Completa os meses incompletos pela média dos 3 últimos fechados — dos dois lados: a receita que ainda entra E o custo que ainda será lançado">
+        <span class="pt" style="background:#7c3aed"></span>Projeção: agenda e custos cheios</button>`:''}
     </div>
     <canvas id="simChartLinha" height="88"></canvas>
   </div>
@@ -478,7 +517,7 @@ function SIM_montarNaAba(){
   h+=`</div>`;
 
   raiz.innerHTML=h;
-  SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos);
+  SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos,custoFalta);
 }
 
 // Cenário rápido para um grupo inteiro de vencidos. Vale mais que ajustar um a um: a pergunta
@@ -528,9 +567,9 @@ function SIM_itemLinha(x){
   </div>`;
 }
 
-function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos){
-  incompletos=incompletos||[];
-  SIM_ultimoGrafico={linha,blocos,pior,meta,DIAS,incompletos};
+function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos,custoFalta){
+  incompletos=incompletos||[]; custoFalta=custoFalta||[];
+  SIM_ultimoGrafico={linha,blocos,pior,meta,DIAS,incompletos,custoFalta};
   if(typeof Chart==='undefined')return;
   try{ if(SIM_chartLinha)SIM_chartLinha.destroy(); }catch(e){} SIM_chartLinha=null;
   try{ if(SIM_chartBarras)SIM_chartBarras.destroy(); }catch(e){} SIM_chartBarras=null;
@@ -550,16 +589,20 @@ function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos){
     // 3 últimos meses fechados. É a mesma conta do aviso "a agenda ainda está enchendo" — o que
     // falta em cada mês entra diluído pelos dias daquele mês. Serve pra separar "vou quebrar"
     // de "ainda não vendi", que é a leitura que a linha crua do saldo não consegue dar.
-    if(SIM_LINHAS.proj&&incompletos.length){
-      const falta={}; incompletos.forEach(x=>{falta[x.mes]=x.falta;});
+    if(SIM_LINHAS.proj&&(incompletos.length||custoFalta.length)){
+      const faltaR={}; incompletos.forEach(x=>{faltaR[x.mes]=x.falta;});
+      const faltaP={}; custoFalta.forEach(x=>{faltaP[x.mes]=x.falta;});
       const dias={}; linha.forEach(t=>{const m=MESES_ABREV[t.dt.getMonth()]+'/'+t.dt.getFullYear(); dias[m]=(dias[m]||0)+1;});
       let acc=0; const proj=[];
       linha.forEach((t,i)=>{
         const m=MESES_ABREV[t.dt.getMonth()]+'/'+t.dt.getFullYear();
-        if(falta[m]&&dias[m])acc+=falta[m]/dias[m];
+        if(dias[m]){
+          if(faltaR[m])acc+=faltaR[m]/dias[m];   // a receita que historicamente ainda entra
+          if(faltaP[m])acc-=faltaP[m]/dias[m];   // e o custo que ainda vai ser lançado
+        }
         if(i%passo===0||i===linha.length-1)proj.push(Math.round((t.saldo+acc)*100)/100);
       });
-      ds.push({label:'Projeção com a agenda cheia',data:proj.slice(0,pts.length),
+      ds.push({label:'Projeção: agenda e custos cheios',data:proj.slice(0,pts.length),
         borderColor:'#7c3aed',borderWidth:2,borderDash:[7,4],pointRadius:0,fill:false,tension:.35});
     }
     // Faturamento e custo ACUMULADOS desde hoje. Vão num eixo próprio (direita) porque em
@@ -579,7 +622,7 @@ function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos){
     }
     SIM_chartLinha=new Chart(cl,{type:'line',
       data:{labels:pts.map(t=>SIM_dia(t.dt)),datasets:ds},
-      options:{plugins:{legend:{display:meta>0||SIM_LINHAS.fat||SIM_LINHAS.cus||(SIM_LINHAS.proj&&incompletos.length>0),position:'bottom',labels:{boxWidth:12,font:{size:11}}},
+      options:{plugins:{legend:{display:meta>0||SIM_LINHAS.fat||SIM_LINHAS.cus||(SIM_LINHAS.proj&&(incompletos.length>0||custoFalta.length>0)),position:'bottom',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},
         scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
                 y2:{display:SIM_LINHAS.fat||SIM_LINHAS.cus,position:'right',beginAtZero:true,
@@ -616,7 +659,7 @@ function SIM_toggleLinha(k){
   const ordem=['fat','cus','proj'];
   document.querySelectorAll('.sim-linhas .sim-lin').forEach((b,i)=>b.classList.toggle('on',!!SIM_LINHAS[ordem[i]]));
   const g=SIM_ultimoGrafico;
-  if(g)SIM_desenharGraficos(g.linha,g.blocos,g.pior,g.meta,g.DIAS,g.incompletos);
+  if(g)SIM_desenharGraficos(g.linha,g.blocos,g.pior,g.meta,g.DIAS,g.incompletos,g.custoFalta);
 }
 
 async function SIM_setHorizonte(d){

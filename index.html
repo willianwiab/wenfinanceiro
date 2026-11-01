@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261101-816f7e73';
+window.APP_VERSION='20261101-7150233c';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -3536,19 +3536,19 @@ function DP_abrirPagar(tipo){
   DP_focoAnterior=document.activeElement;
   const itens=DP_pagarItens(tipo);
   const ano=P_mesAtual.split('/')[1]||'';
-  // "A pagar" é valor CHEIO das contas não pagas — é assim que o card soma. Os outros
-  // recortes mostram o que falta (valor − já pago), que é o que o sub dos cards mostra.
-  const cheio=tipo==='p-apagar';
-  const soma=itens.reduce((a,i)=>a+(cheio?i.valor:i.saldo),0);
+  // Todo recorte mostra o que FALTA (valor − já pago) — a mesma conta dos cards desde a
+  // auditoria de 01/11/2026. Antes "A pagar" somava valor cheio e esta janela tinha que
+  // avisar que o card estava errado; agora os dois fecham.
+  const cheio=false;
+  const soma=itens.reduce((a,i)=>a+i.saldo,0);
   const parciais=itens.filter(i=>i.parcial);
-  const faltaReal=itens.reduce((a,i)=>a+i.saldo,0);
   const row=i=>'<div class="dp-row"><span class="dp-ic">'+cfg.ic+'</span><div class="dp-txt">'
     +'<div class="dp-nome" title="'+DP_esc(i.nome)+'">'+DP_esc(i.nome)+'</div><small>'+DP_esc(i.nota)+'</small></div>'
     +'<strong style="color:#b91c1c">'+fmt(cheio?i.valor:i.saldo)+'</strong></div>';
   document.getElementById('dpTitulo').textContent=cfg.tit+(tipo==='p-atraso-ano'?ano:P_mesAtual);
   const qtd=itens.length;
   let html='<div class="dp-total dp-neg"><b>'+fmt(soma)+'</b><span>'+qtd+' '+(qtd===1?'conta':'contas')+'</span></div>';
-  if(cheio&&parciais.length)html+='<p class="dp-vazio" style="text-align:left;color:#b45309">⚠️ '+parciais.length+' conta(s) com pagamento parcial. O card soma o valor cheio; descontando o que já foi pago, faltam <b>'+fmt(faltaReal)+'</b>.</p>';
+  if(parciais.length)html+='<p class="dp-vazio" style="text-align:left;color:#b45309">💰 '+parciais.length+' conta(s) com pagamento parcial — cada linha mostra o que ainda falta.</p>';
   html+=(qtd?itens.map(row).join(''):'<p class="dp-vazio">'+cfg.vazio+'</p>');
   document.getElementById('dpConteudo').innerHTML=html;
   document.getElementById('modalDetalhePainel').classList.add('open');
@@ -7800,9 +7800,26 @@ function P_lerCacheLocal(){try{const x=JSON.parse(localStorage.getItem(P_CACHE_K
 function P_lerCacheMeta(){try{const x=JSON.parse(localStorage.getItem(P_CACHE_META_KEY)||'{}');return x&&typeof x==='object'?x:{};}catch(e){return{};}}
 function P_clonar(v){return JSON.parse(JSON.stringify(v==null?null:v));}
 function P_normalizarMeses(meses){
-  Object.keys(meses||{}).forEach(m=>{if(!Array.isArray(meses[m]))meses[m]=[];meses[m].forEach(r=>{if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';if(typeof r.id==='number')r.id='w'+Math.round(r.id);else if(typeof r.id==='string'&&r.id.includes('.'))r.id='w'+r.id.replace('.','x');});});
+  Object.keys(meses||{}).forEach(m=>{if(!Array.isArray(meses[m]))meses[m]=[];meses[m].forEach(r=>{if(r.status==null||r.status==='')r.status='PENDENTE';if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';if(typeof r.id==='number')r.id='w'+Math.round(r.id);else if(typeof r.id==='string'&&r.id.includes('.'))r.id='w'+r.id.replace('.','x');});});
   return meses||{};
 }
+// ── Pagamento parcial: UMA conta de "pago" e "em aberto" para todo o módulo ─────────
+// Antes, cada total fazia `filter(status==='PAGO').reduce(valor)`: uma conta de R$ 600 com
+// R$ 250 já pagos entrava com ZERO em "Pago" e CHEIA em "A Pagar". O detalhe da tela já
+// fazia certo (`DP_pagarItens` usa valor − valorPago) e a Simulação também — só os totais
+// divergiam, e a janela do card chegava a imprimir um aviso de que o card somava errado.
+// `status==='PAGO'` vale o valor cheio: conta quitada antiga às vezes não tem valorPago.
+function P_pagoDe(r){
+  if(!r)return 0;
+  const v=Number(r.valor)||0;
+  if(String(r.status||'').toUpperCase()==='PAGO')return v;
+  return Math.min(v,Math.max(0,Number(r.valorPago)||0));
+}
+function P_abertoDe(r){return Math.round((((Number(r&&r.valor)||0)-P_pagoDe(r)))*100)/100;}
+function P_somaPago(lista){return Math.round((lista||[]).reduce((a,r)=>a+P_pagoDe(r),0)*100)/100;}
+function P_somaAberto(lista){return Math.round((lista||[]).reduce((a,r)=>a+P_abertoDe(r),0)*100)/100;}
+// quanto do "pago" veio de contas que SEGUEM abertas — a fatia laranja do gráfico
+function P_somaParcial(lista){return Math.round((lista||[]).reduce((a,r)=>a+(P_abertoDe(r)>0?P_pagoDe(r):0),0)*100)/100;}
 function P_serializarMes(mes){return JSON.stringify((P_meses&&P_meses[mes])||[]);}
 
 const P_cacheInicial=P_normalizarMeses(P_lerCacheLocal()),P_cacheMetaInicial=P_lerCacheMeta();
@@ -7876,7 +7893,7 @@ async function syncToSheetsP(){
 }
 async function P_atualizarCaderninho(){
   try{
-    const resumo={};Object.keys(P_meses).forEach(m=>{const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);resumo[m]={total,pago,pendente:total-pago,qtd:data.length,qtdPago:data.filter(r=>r.status.toUpperCase()==='PAGO').length};});
+    const resumo={};Object.keys(P_meses).forEach(m=>{const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=P_somaPago(data);resumo[m]={total,pago,pendente:total-pago,qtd:data.length,qtdPago:data.filter(r=>r.status.toUpperCase()==='PAGO').length};});
     const fields={resumo:toFV(resumo),atualizadoEm:{stringValue:new Date().toISOString()}};
     const res=await fetch(`${FS_URL}/resumo_mensal/contas_pagar?key=${FB_API_KEY}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
     if(!res.ok)throw new Error('Resumo recusado ('+res.status+')');
@@ -7957,8 +7974,8 @@ function P_getMesesPassados(){return P_getMesesOrdenados().filter(m=>m<P_mesAtua
 function renderDashboardP(){
   const data=P_getData(),hoje=getDia();
   const total=data.reduce((a,r)=>a+r.valor,0);
-  const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);
-  const pendente=total-pago;
+  const pago=P_somaPago(data);
+  const pendente=Math.round((total-pago)*100)/100;
   const vencendo=data.filter(r=>r.status.toUpperCase()!=='PAGO'&&r.dia&&r.dia-hoje<=3&&r.dia>=hoje).length;
   const qtdPago=data.filter(r=>r.status.toUpperCase()==='PAGO').length;
   const qtdAtrasado=data.filter(r=>r.status.toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).length;
@@ -7987,13 +8004,13 @@ function renderDashboardP(){
   const anoAtual=P_mesAtual.split('/')[1]||new Date().getFullYear().toString();
   const mesesAno=Object.keys(P_meses).filter(m=>m.endsWith('/'+anoAtual));
   const totalAno=mesesAno.reduce((a,m)=>a+P_meses[m].reduce((s,r)=>s+r.valor,0),0);
-  const pagoAno=mesesAno.reduce((a,m)=>a+P_meses[m].filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0),0);
+  const pagoAno=mesesAno.reduce((a,m)=>a+P_somaPago(P_meses[m]),0);
   const idxMesAtual2=mesesOrd.indexOf(P_mesAtual);
   const atrasadoAnoQtd=mesesAno.reduce((a,m)=>{const idxM=mesesOrd.indexOf(m);const isPass=idxM<idxMesAtual2;const isAtual=m===P_mesAtual;return a+P_meses[m].filter(r=>{if(r.status.toUpperCase()==='PAGO')return false;if(isPass)return true;if(isAtual)return r.dia&&r.dia<hoje;return false;}).length;},0);
 
   document.getElementById('pCardsRow2').innerHTML=`
     <div class="card-p qtd-pago"><label>✅ Pagas — ${P_mesAtual}</label><div class="val">${qtdPago}<span style="font-size:.88rem;font-weight:500"> de ${data.length}</span></div><div class="val-sub">${data.length>0?Math.round(qtdPago/data.length*100):0}% quitado</div></div>
-    <div class="card-p qtd-atrasado"><label>🔴 Atrasadas — ${P_mesAtual}</label><div class="val">${DP_link('p-atraso-mes',String(qtdAtrasado))}</div><div class="val-sub">${qtdAtrasado>0?fmt(data.filter(r=>r.status.toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje).reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0))+' em aberto':'✅ Em dia'}</div></div>
+    <div class="card-p qtd-atrasado"><label>🔴 Atrasadas — ${P_mesAtual}</label><div class="val">${DP_link('p-atraso-mes',String(qtdAtrasado))}</div><div class="val-sub">${qtdAtrasado>0?fmt(P_somaAberto(data.filter(r=>String(r.status||'').toUpperCase()!=='PAGO'&&r.dia&&r.dia<hoje)))+' em aberto':'✅ Em dia'}</div></div>
     <div class="card-p ano-pago"><label>📅 Pago em ${anoAtual}</label><div class="val">${fmt(pagoAno)}</div><div class="val-sub">Total ${fmt(totalAno)}</div></div>
     <div class="card-p ano-atrasado"><label>⚠️ Atrasadas ${anoAtual}</label><div class="val">${DP_link('p-atraso-ano',String(atrasadoAnoQtd))}</div><div class="val-sub">${atrasadoAnoQtd>0?'em atraso':'Sem atrasos 🎉'}</div></div>`;
 
@@ -8020,7 +8037,7 @@ function renderDashboardP(){
 
   // Charts
   if(P_pieObj)P_pieObj.destroy();
-  const parcialTotal=data.filter(r=>r.status==='PARCIAL').reduce((a,r)=>a+(r.valorPago||0),0);
+  const parcialTotal=P_somaParcial(data); // inclui parcial gravada como PENDENTE, nao so a rotulada 'PARCIAL'
   P_pieObj=new Chart(document.getElementById('pPieChart'),{type:'doughnut',data:{labels:['Pago','Parcial','Pendente'],datasets:[{data:[pago-parcialTotal,parcialTotal,pendente],backgroundColor:['#22c55e','#f59e0b','#ef4444'],borderWidth:0}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},cutout:'65%'}});
 
   const dias=[...new Set(data.filter(r=>r.dia).map(r=>r.dia))].sort((a,b)=>a-b);
@@ -8028,7 +8045,7 @@ function renderDashboardP(){
   P_barObj=new Chart(document.getElementById('pBarChart'),{type:'bar',data:{labels:dias.map(d=>'Dia '+d),datasets:[{label:'Total',data:dias.map(d=>data.filter(r=>r.dia===d).reduce((a,r)=>a+r.valor,0)),backgroundColor:'#3b82f6',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
 
   // Comparativo
-  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>(P_meses[m]||[]).filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0));const pendentes=totais.map((t,i)=>t-pagos[i]);
+  const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>P_somaPago(P_meses[m]));const pendentes=totais.map((t,i)=>t-pagos[i]);
   if(P_lineObj)P_lineObj.destroy();
   P_lineObj=new Chart(document.getElementById('pLineChart'),{type:'bar',data:{labels:mesesOrdP,datasets:[{label:'✅ Pago',data:pagos,backgroundColor:'#22c55e',borderRadius:3,stack:'s'},{label:'🔴 Pendente',data:pendentes,backgroundColor:'#ef4444',borderRadius:3,stack:'s'}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}},responsive:true}});
 
@@ -8066,7 +8083,7 @@ function P_renderSemanas(){
   const semanas=[{label:'Sem 1',ini:1,fim:7},{label:'Sem 2',ini:8,fim:14},{label:'Sem 3',ini:15,fim:21},{label:'Sem 4+',ini:22,fim:31}];
   document.getElementById('pSemanaGrid').innerHTML=semanas.map(s=>{
     const contas=data.filter(r=>r.dia&&r.dia>=s.ini&&r.dia<=s.fim);if(!contas.length)return'';
-    const total=contas.reduce((a,r)=>a+r.valor,0),pago=contas.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);
+    const total=contas.reduce((a,r)=>a+r.valor,0),pago=P_somaPago(contas);
     return`<div class="semana-card-p"><label>${s.label} (${s.ini}–${s.fim})</label><div class="sw-val-p">${fmt(total)}</div><div class="sw-sub-p">✅ ${fmt(pago)} · 🔴 ${fmt(total-pago)} · ${contas.length}</div></div>`;
   }).join('');
 }
@@ -8137,7 +8154,7 @@ function renderTabelaP(){
     const diaKey=P_filtroAtual==='VENCIDO'?`${mesR}_${r.dia}`:`${r.dia}`;
     if(diaKey!==lastDiaKey){
       lastDiaKey=diaKey;const diaData=data.filter(x=>(P_filtroAtual==='VENCIDO'?x._mes===mesR&&x.dia===r.dia:x.dia===r.dia));
-      const diaTotal=diaData.reduce((a,x)=>a+x.valor,0);const diaPago=diaData.filter(x=>x.status.toUpperCase()==='PAGO').reduce((a,x)=>a+x.valor,0);const diaPendente=diaTotal-diaPago;
+      const diaTotal=diaData.reduce((a,x)=>a+x.valor,0);const diaPago=P_somaPago(diaData);const diaPendente=Math.round((diaTotal-diaPago)*100)/100;
       const diaLabel=r.dia?`📅 ${P_filtroAtual==='VENCIDO'?mesR+' — ':''}Dia ${r.dia}`:'📌 Sem data';
       rows+=`<tr class="section-day-row-p"><td colspan="7"><div class="section-day-bar-p"><div class="section-day-label-p">${diaLabel}</div><div class="section-day-totals-p"><span class="sdt-chip-p total">Total: ${fmt(diaTotal)}</span>${diaPago>0?`<span class="sdt-chip-p pago">✅ ${fmt(diaPago)}</span>`:''}${diaPendente>0?`<span class="sdt-chip-p pendente">🔴 ${fmt(diaPendente)}</span>`:`<span class="sdt-chip-p zerado">✅</span>`}</div></div></td></tr>`;
     }
@@ -8432,7 +8449,7 @@ function renderCategoriasP(){
 // Histórico Pagar
 function renderHistoricoP(){
   document.getElementById('pHistList').innerHTML=P_getMesesOrdenados().reverse().map(m=>{
-    const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
+    const data=P_meses[m]||[];const total=data.reduce((a,r)=>a+r.valor,0);const pago=P_somaPago(data);const pct=total>0?Math.round(pago/total*100):0;const atual=m===mesAtualReal();
     return`<div class="hist-card-p" style="${atual?'border:2px solid #3b82f6':''}" onclick="P_trocarMesHist('${m}')"><div><div class="mes-nome-p">📅 ${m}${atual?' <span style="font-size:.73rem;background:#eff6ff;color:#1e40af;padding:2px 7px;border-radius:99px;margin-left:5px">ATUAL</span>':''}</div><div class="mes-info-p">${data.length} contas · ${pct}% pago · ${fmt(pago)}</div></div><div style="text-align:right"><div class="mes-total-p">${fmt(total)}</div><button class="btn btn-outline-b btn-sm" style="margin-top:5px" onclick="event.stopPropagation();exportarMesP('${m}')">⬇ Excel</button></div></div>`;
   }).join('');
 }
@@ -8442,7 +8459,7 @@ function P_trocarMesHist(m){P_mesAtual=m;P_atualizarNavMes();showMain('pagar',do
 function exportarExcelP(){exportarMesP(P_mesAtual);}
 function exportarMesP(m){
   const data=(P_meses[m]||[]).slice().sort((a,b)=>(a.dia||99)-(b.dia||99));
-  const total=data.reduce((a,r)=>a+r.valor,0);const pago=data.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);
+  const total=data.reduce((a,r)=>a+r.valor,0);const pago=P_somaPago(data);
   const ws=XLSX.utils.aoa_to_sheet([['CONTAS A PAGAR — '+m],[],['Descrição','Dia','Valor','Já Pago','Saldo','Status','Obs','Código'],...data.map(r=>[r.nome,r.dia||'',r.valor,r.valorPago||0,(r.valor-(r.valorPago||0)),r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE',r.obs,r.cod]),[],['TOTAL','',total,'','','','',''],['PAGO','',pago,'','','','',''],['PENDENTE','',total-pago,'','','','','']]);
   ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:14},{wch:12},{wch:40},{wch:50}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,m.replace('/','_'));XLSX.writeFile(wb,'Pagar_'+m.replace('/','_')+'.xlsx');
@@ -8453,7 +8470,7 @@ function exportarTodosExcelP(){const wb=XLSX.utils.book_new();P_getMesesOrdenado
 function exportarBackupP(){const payload={versao:'wen-v3',exportadoEm:new Date().toISOString(),meses:P_meses};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='WEN_Pagar_Backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);toast('✅ Backup Pagar exportado!');}
 async function importarBackupP(event){
   const file=event.target.files[0];if(!file)return;const reader=new FileReader();
-  reader.onload=async e=>{try{const payload=JSON.parse(e.target.result);const dadosMeses=payload.meses||(typeof payload==='object'&&!payload.registros?payload:null);if(!dadosMeses||typeof dadosMeses!=='object'){toast('❌ Arquivo inválido.','#ef4444');return;}const qtd=Object.keys(dadosMeses).length;if(!confirm(`Importar ${qtd} mês(es)? Substituirá dados atuais de Pagar.`))return;P_meses=dadosMeses;Object.keys(P_meses).forEach(m=>{P_meses[m].forEach(r=>{if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';});});localStorage.setItem('wen_meses6',JSON.stringify(P_meses));P_atualizarNavMes();renderDashboardP();renderHistoricoP();toast('⏳ Sincronizando...');await syncToSheetsP();toast('✅ '+qtd+' meses importados!');}catch(err){toast('❌ Erro: '+err.message,'#ef4444');}};reader.readAsText(file);event.target.value='';
+  reader.onload=async e=>{try{const payload=JSON.parse(e.target.result);const dadosMeses=payload.meses||(typeof payload==='object'&&!payload.registros?payload:null);if(!dadosMeses||typeof dadosMeses!=='object'){toast('❌ Arquivo inválido.','#ef4444');return;}const qtd=Object.keys(dadosMeses).length;if(!confirm(`Importar ${qtd} mês(es)? Substituirá dados atuais de Pagar.`))return;P_meses=dadosMeses;Object.keys(P_meses).forEach(m=>{P_meses[m].forEach(r=>{if(r.status==null||r.status==='')r.status='PENDENTE';if(r.valorPago===undefined)r.valorPago=r.status==='PAGO'?r.valor:0;if(r.fixa===undefined)r.fixa=false;if(r.categoria===undefined)r.categoria='';});});localStorage.setItem('wen_meses6',JSON.stringify(P_meses));P_atualizarNavMes();renderDashboardP();renderHistoricoP();toast('⏳ Sincronizando...');await syncToSheetsP();toast('✅ '+qtd+' meses importados!');}catch(err){toast('❌ Erro: '+err.message,'#ef4444');}};reader.readAsText(file);event.target.value='';
 }
 
 // Copiar mês
@@ -8491,8 +8508,8 @@ function renderFluxoCaixa(){
   // Dados pagar do mês
   const pagData=P_meses[mesRef]||[];
   const despesa=pagData.reduce((a,r)=>a+r.valor,0);
-  const pago=pagData.filter(r=>r.status.toUpperCase()==='PAGO').reduce((a,r)=>a+r.valor,0);
-  const aPagar=despesa-pago;
+  const pago=P_somaPago(pagData);
+  const aPagar=Math.round((despesa-pago)*100)/100;
 
   // Resultado
   const resultado=receita-despesa;
@@ -9346,7 +9363,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/simulacao.js?v=6b3816fb"></script>
+<script src="js/simulacao.js?v=b6f27392"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}
