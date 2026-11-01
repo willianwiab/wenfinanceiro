@@ -16,8 +16,11 @@ const r = await page.evaluate(async () => {
   showMain('pagar', nb);
   await new Promise(r => setTimeout(r, 1800));
 
-  // monta um mês com casos de propósito: paga, parcial, atrasada, vencendo, sem dia
-  const hoje = getDia();
+  // O "hoje" fica FIXO no dia 15: com o dia real, a fixture quebrava de 1 a 4 de cada mês
+  // (hoje−4 virava dia 1, que não está atrasado). O que se testa é a regra, não o calendário.
+  const hoje = 15;
+  const getDiaReal = window.getDia;
+  window.getDia = () => hoje;
   P_meses[P_mesAtual] = [
     { id: 'a1', nome: 'ALUGUEL STUDIO A', valor: 3800, valorPago: 3800, dia: 5, mes: P_mesAtual, categoria: 'aluguel', status: 'PAGO' },
     { id: 'a2', nome: 'ENERGIA', valor: 640, valorPago: 0, dia: Math.max(1, hoje - 4), mes: P_mesAtual, categoria: 'consumo', status: 'PENDENTE' },
@@ -59,6 +62,7 @@ const r = await page.evaluate(async () => {
   out.receberIntacto = document.getElementById('modalDetalhePainel').classList.contains('open') && /receber/i.test(txt('dpTitulo'));
   DP_fechar();
   out.tipoInvalido = (DP_abrir('nao-existe'), !document.getElementById('modalDetalhePainel').classList.contains('open'));
+  window.getDia = getDiaReal;
   return out;
 });
 await browser.close();
