@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261105-30fb4ae2';
+window.APP_VERSION='20261105-4e27afc8';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2293,7 +2293,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <div id="pCatPreview" style="margin-top:4px;min-height:18px;font-size:.76rem"></div>
       </div>
       <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-start;padding-top:20px">
-        <label class="toggle-fixa-p" onclick="toggleFixaCheckP()">
+        <label class="toggle-fixa-p">
           <input type="checkbox" id="pFFixa" onclick="event.stopPropagation();P_refletirFixa()"/>
           <div><div class="tf-label-p">📌 Conta Fixa</div><div class="tf-desc-p">Repete todo mês</div></div>
         </label>
@@ -8228,7 +8228,11 @@ function renderTabelaP(){
 }
 
 // Modal Pagar
-function toggleFixaCheckP(){const cb=document.getElementById('pFFixa');cb.checked=!cb.checked;P_refletirFixa();}
+// ⚠️ O <label> NÃO pode ter onclick que inverta o checkbox: o input mora dentro dele, então o
+// navegador já faz a troca sozinho ao clicar em qualquer ponto do rótulo. Com os dois, davam
+// duas inversões e clicar no texto "📌 Conta Fixa" não fazia NADA — só acertando o quadradinho
+// é que marcava. (achado em produção, 05/11/2026)
+function toggleFixaCheckP(){P_refletirFixa();}
 // Marcou fixa → o seletor de meses some (ela vai pros 12 meses sozinha) e entra o aviso.
 // Na EDIÇÃO nenhum dos dois aparece: lá a conta já existe e o mês não se escolhe.
 function P_refletirFixa(){

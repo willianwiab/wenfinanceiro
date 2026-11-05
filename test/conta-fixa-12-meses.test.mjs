@@ -55,6 +55,17 @@ const r = await page.evaluate(async () => {
   out.todasFixas      = Object.keys(P_meses).every(m => (P_meses[m]||[]).filter(x=>x.nome==='LARISSA').every(x => x.fixa === true));
   out.umaPorMes       = Object.keys(P_meses).every(m => temLarissa(m) <= 1);
 
+  // ── 3b) clicar no TEXTO do rótulo tem que marcar (o <label> invertia em dobro) ──
+  {
+    const cb = document.getElementById('pFFixa');
+    cb.checked = false; P_refletirFixa();
+    document.querySelector('.toggle-fixa-p .tf-label-p').click();
+    out.rotuloMarca = cb.checked;
+    document.querySelector('.toggle-fixa-p .tf-label-p').click();
+    out.rotuloDesmarca = cb.checked === false;
+    cb.checked = true; P_refletirFixa();
+  }
+
   // ── 4) salvar de novo não duplica ──
   P_editandoId = null;
   abrirModalP();
@@ -107,6 +118,8 @@ eq(r.mesesComLarissa, 12, 'a conta fixa nasce em 12 meses');
 if (!r.criouMesNovo)  f.push('tem que CRIAR o mês que ainda não existia no banco (OUT/2027)');
 if (!r.todasFixas)    f.push('todas as 12 ocorrências têm que nascer com fixa=true');
 if (!r.umaPorMes)     f.push('não pode haver mais de uma ocorrência por mês');
+if (!r.rotuloMarca)    f.push('clicar no texto "📌 Conta Fixa" tem que MARCAR (o label invertia em dobro)');
+if (!r.rotuloDesmarca) f.push('clicar de novo no texto tem que DESMARCAR');
 eq(r.depoisDeSalvarDeNovo, 12, 'salvar a mesma conta fixa de novo NÃO duplica');
 eq(r.desafixar.depois, 3, 'desafixar deixa só mês atual + paga + parcial');
 if (!r.desafixar.pagaSobreviveu)     f.push('a ocorrência PAGA não pode ser removida');
