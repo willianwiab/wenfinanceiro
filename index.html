@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261101-7150233c';
+window.APP_VERSION='20261105-30fb4ae2';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2294,7 +2294,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       </div>
       <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-start;padding-top:20px">
         <label class="toggle-fixa-p" onclick="toggleFixaCheckP()">
-          <input type="checkbox" id="pFFixa" onclick="event.stopPropagation()"/>
+          <input type="checkbox" id="pFFixa" onclick="event.stopPropagation();P_refletirFixa()"/>
           <div><div class="tf-label-p">📌 Conta Fixa</div><div class="tf-desc-p">Repete todo mês</div></div>
         </label>
       </div>
@@ -2303,6 +2303,12 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <label>Adicionar em quais meses?</label>
       <div class="check-actions"><button onclick="checkTodosP(true)">Selecionar todos</button><button onclick="checkTodosP(false)">Limpar</button></div>
       <div class="meses-check" id="pMesesCheck"></div>
+    </div>
+    <div class="form-group" id="pFixaAviso" style="display:none">
+      <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:11px 13px;font-size:.84rem;color:#3730a3;line-height:1.5">
+        📌 <b>Conta fixa</b> — será criada nos próximos <b>12 meses</b>, a partir de <b id="pFixaMesIni">—</b>.<br>
+        Ela se repete sozinha; só deixa de existir quando você desmarcar.
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline-b" onclick="fecharModalP()">Cancelar</button>
@@ -7967,8 +7973,24 @@ function P_isContaVencida(r,mes){
   const hoje=getDia(),mesesOrd=P_getMesesOrdenados(),idxMes=mesesOrd.indexOf(mes),idxAtual=mesesOrd.indexOf(P_mesAtual);
   if(idxMes<idxAtual)return true;if(idxMes===idxAtual)return r.dia<hoje;return false;
 }
-function P_getMesesFuturos(){return P_getMesesOrdenados().filter(m=>m>P_mesAtual);}
-function P_getMesesPassados(){return P_getMesesOrdenados().filter(m=>m<P_mesAtual);}
+// ⚠️ Antes isto comparava o NOME do mês como texto: `m > P_mesAtual`. Com P_mesAtual em
+// NOV/2026, "DEZ/2026" < "NOV/2026" no alfabeto — os dois ficavam INVERTIDOS: "futuros"
+// devolvia SET e OUT, "passados" devolvia DEZ e JAN. Quem escolhia "atualizar os meses
+// futuros" numa edição atualizava o passado. (auditoria 05/11/2026)
+function P_ordemMes(m){const q=String(m||'').split('/');const a=parseInt(q[1],10)||0;return a*12+(MESES_IDX[q[0]]??0);}
+function P_getMesesFuturos(){const o=P_ordemMes(P_mesAtual);return P_getMesesOrdenados().filter(m=>P_ordemMes(m)>o);}
+function P_getMesesPassados(){const o=P_ordemMes(P_mesAtual);return P_getMesesOrdenados().filter(m=>P_ordemMes(m)<o);}
+// Devolve n chaves de mês a partir de `inicio`, CRIANDO as que ainda não existem no banco.
+// É o que a conta fixa usa: ela não pode depender de o mês já ter nascido.
+function P_mesesAFrente(inicio,n){
+  const q=String(inicio||mesAtualReal()).split('/');
+  let mi=MESES_ABREV.indexOf(q[0]), ano=parseInt(q[1],10);
+  if(mi<0||!ano){const d=new Date();mi=d.getMonth();ano=d.getFullYear();}
+  const out=[];
+  for(let i=0;i<n;i++){out.push(MESES_ABREV[mi]+'/'+ano);mi++;if(mi>11){mi=0;ano++;}}
+  return out;
+}
+const P_FIXA_MESES=12;   // quantos meses uma conta fixa ocupa de uma vez
 
 // Dashboard Pagar
 function renderDashboardP(){
@@ -8206,7 +8228,16 @@ function renderTabelaP(){
 }
 
 // Modal Pagar
-function toggleFixaCheckP(){const cb=document.getElementById('pFFixa');cb.checked=!cb.checked;}
+function toggleFixaCheckP(){const cb=document.getElementById('pFFixa');cb.checked=!cb.checked;P_refletirFixa();}
+// Marcou fixa → o seletor de meses some (ela vai pros 12 meses sozinha) e entra o aviso.
+// Na EDIÇÃO nenhum dos dois aparece: lá a conta já existe e o mês não se escolhe.
+function P_refletirFixa(){
+  const fixa=!!document.getElementById('pFFixa')?.checked, editando=!!P_editandoId;
+  const g=document.getElementById('pMesesGrupo'), a=document.getElementById('pFixaAviso');
+  if(g)g.style.display=(editando||fixa)?'none':'block';
+  if(a)a.style.display=(!editando&&fixa)?'block':'none';
+  const mi=document.getElementById('pFixaMesIni');if(mi)mi.textContent=P_mesAtual;
+}
 function previewCategoriaP(){const v=document.getElementById('pFCategoria').value;const el=document.getElementById('pCatPreview');if(!v){el.innerHTML='';return;}const ci=catInfoP(v);el.innerHTML=`<span style="background:${ci.bg};color:${ci.color};padding:2px 9px;border-radius:20px;font-weight:700">${ci.icon} ${ci.label}</span>`;}
 function renderMesesCheckP(){document.getElementById('pMesesCheck').innerHTML=P_getMesesOrdenados().map(m=>{const checked=m===P_mesAtual;return`<label class="${checked?'checked':''}"><input type="checkbox" value="${m}" ${checked?'checked':''} onchange="this.parentElement.classList.toggle('checked',this.checked)"/>${m}</label>`;}).join('');}
 function checkTodosP(val){document.querySelectorAll('#pMesesCheck input').forEach(i=>{i.checked=val;i.parentElement.classList.toggle('checked',val);});}
@@ -8218,6 +8249,7 @@ function abrirModalP(id=null){
     const mes=P_editandoMes||P_mesAtual;const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id))||Object.values(P_meses).flat().find(x=>String(x.id)===String(id));if(!r){toast('⚠️ Conta não encontrada.');return;}
     document.getElementById('pFNome').value=r.nome;document.getElementById('pFDia').value=r.dia||'';document.getElementById('pFValor').value=r.valor;document.getElementById('pFStatus').value=r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE';document.getElementById('pFObs').value=r.obs||'';document.getElementById('pFCod').value=r.cod||'';document.getElementById('pFFixa').checked=!!r.fixa;document.getElementById('pFCategoria').value=r.categoria||'';previewCategoriaP();COMP_popularSelectCompetencia(r.competencia||'');
   }else{['pFNome','pFDia','pFValor','pFObs','pFCod'].forEach(x=>document.getElementById(x).value='');document.getElementById('pFStatus').value='PENDENTE';document.getElementById('pFFixa').checked=false;document.getElementById('pFCategoria').value='';previewCategoriaP();COMP_popularSelectCompetencia('');renderMesesCheckP();}
+  P_refletirFixa();
   document.getElementById('pModalBg').classList.add('open');
 }
 function fecharModalP(){document.getElementById('pModalBg').classList.remove('open');P_editandoMes=null;}
@@ -8234,6 +8266,21 @@ function salvarContaP(){
     const algumaMudanca=original&&(original.valor!==novoValor||original.fixa!==novaFixa||original.dia!==(parseInt(document.getElementById('pFDia').value)||null));
     const pagoAntes=Number(original&&original.valorPago)||0, estavaPaga=original?(pagoAntes>=(Number(original.valor)||0)-0.005&&pagoAntes>0):false;
     if(estavaPaga&&base.status!=='PAGO'&&!confirm('Desmarcar o pagamento de "'+nome+'"?\n\nA conta volta a ficar em aberto e o débito sai do saldo da conta bancária.'))return;
+    // Desafixou: a conta para de se repetir. O que já está lançado à frente é decisão do Will
+    // — remover 11 meses em silêncio é o tipo de coisa que não se desfaz.
+    if(original&&original.fixa&&!novaFixa){
+      const alvo=String(original.nome||'').trim().toUpperCase();
+      const aberto=r=>String(r.status||'').toUpperCase()!=='PAGO'&&!(Number(r.valorPago)>0);
+      const aFrente=P_getMesesFuturos()
+        .map(m=>({m,itens:(P_meses[m]||[]).filter(r=>String(r.nome||'').trim().toUpperCase()===alvo&&aberto(r))}))
+        .filter(x=>x.itens.length);
+      const qtd=aFrente.reduce((a,x)=>a+x.itens.length,0);
+      if(qtd&&confirm('"'+nome+'" deixou de ser conta fixa.\n\nRemover as '+qtd+' ocorrência(s) futura(s) ainda NÃO pagas?\n\nAs já pagas (ou com pagamento parcial) ficam onde estão.\nEsta ação não pode ser desfeita.')){
+        aFrente.forEach(({m,itens})=>{const ids=new Set(itens.map(r=>String(r.id)));P_meses[m]=(P_meses[m]||[]).filter(r=>!ids.has(String(r.id)));});
+        AUD_log('excluir','meses',nome,'Desafixada — '+qtd+' ocorrência(s) futura(s) removida(s)',null,null);
+        toast('🗑️ '+qtd+' ocorrência(s) futura(s) removida(s).','#6b7280');
+      }
+    }
     const futuros=P_getMesesFuturos();fecharModalP();
     // preserva campos das Fases 1/2/4 (contaBancariaId, dataPagamento, juros/multa/desconto, faturaCartao, dataCriacao) que não estão no formulário
     const mesclado={...original,...base,competencia:base.competencia,id:P_editandoId};if(base.competencia===undefined)delete mesclado.competencia;
@@ -8251,9 +8298,27 @@ function salvarContaP(){
       document.getElementById('pConfirmBg').classList.add('open');
     }else{const idx=(P_meses[mes]||[]).findIndex(r=>String(r.id)===String(P_editandoId));if(idx>-1){P_meses[mes][idx]=mesclado;if(P_mexeuNoPago(original,mesclado)){try{BC_syncMovPagar(mesclado);BC_salvarCache();}catch(e){}}}AUD_log('editar','meses',nome,'Conta editada',original?original.valor:null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Conta atualizada!');}
   }else{
-    const sel=[...document.querySelectorAll('#pMesesCheck input:checked')].map(i=>i.value);if(!sel.length){toast('Selecione ao menos um mês.','#ef4444');return;}
+    // 📌 Conta fixa não pergunta mês nenhum: nasce nos próximos 12, criando os que ainda
+    // não existem no banco. Era isso que limitava — o seletor só oferecia mês já existente.
+    let alvos;
+    if(novaFixa){ alvos=P_mesesAFrente(P_mesAtual,P_FIXA_MESES); }
+    else{
+      alvos=[...document.querySelectorAll('#pMesesCheck input:checked')].map(i=>i.value);
+      if(!alvos.length){toast('Selecione ao menos um mês.','#ef4444');return;}
+    }
     const agora=new Date().toISOString();
-    sel.forEach(m=>{if(!P_meses[m])P_meses[m]=[];P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});});fecharModalP();AUD_log('criar','meses',nome,'Conta a pagar criada em '+sel.length+' mês(es)',null,novoValor);P_salvarStorage();renderTabelaP();renderDashboardP();toast('✅ Adicionada em '+sel.length+' mês(es)!');
+    const mesmoNome=r=>String(r.nome||'').trim().toUpperCase()===nome.toUpperCase();
+    let criados=0,pulados=0;
+    alvos.forEach(m=>{
+      if(!P_meses[m])P_meses[m]=[];
+      // só na fixa: se o mês já tem uma conta com esse nome, não duplica
+      if(novaFixa&&P_meses[m].some(mesmoNome)){pulados++;return;}
+      P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});criados++;
+    });
+    fecharModalP();
+    AUD_log('criar','meses',nome,'Conta a pagar criada em '+criados+' mês(es)'+(novaFixa?' (fixa, '+P_FIXA_MESES+' meses)':''),null,novoValor);
+    P_salvarStorage();renderTabelaP();renderDashboardP();
+    toast('✅ '+(novaFixa?'📌 ':'')+nome+' em '+criados+' mês(es)'+(pulados?' · '+pulados+' já existia(m)':'')+'!');
   }
 }
 
