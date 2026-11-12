@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261105-4e27afc8';
+window.APP_VERSION='20261112-372fa4c4';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -264,6 +264,13 @@ body{background:#f0f4f8;color:#1e293b}
 .badge-novo{background:#dbeafe;color:#1e40af;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
 .badge-sumido{background:#fee2e2;color:#b91c1c;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
 .badge-vip{background:#fef3c7;color:#92400e;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
+
+/* 👁 Modo privado */
+.priv-btn{background:rgba(255,255,255,.18);border:none;color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:1.05rem;line-height:1;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0}
+.priv-btn:hover{background:rgba(255,255,255,.32)}
+/* gráfico continua contando a história pela altura da barra — então borra junto */
+body.privado canvas{filter:blur(8px);opacity:.75}
+body.privado .chart-box,body.privado .sim-kpis{position:relative}
 
 /* Agenda widget */
 .agenda-widget{background:white;border-radius:14px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:20px;border:2px solid #e0e7ff}
@@ -981,6 +988,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <span class="sync-badge" id="syncBar">⏳ Conectando...</span>
     <!-- Sininho -->
     <div style="position:relative">
+      <button class="priv-btn" id="privBtn" onclick="PRIV_alternar()" title="Esconder valores" aria-pressed="false">👁️</button>
       <button class="notif-btn" id="notifBtn" onclick="toggleNotifPainel()" title="Notificações da Agenda">🔔
         <span class="notif-badge" id="notifBadge">0</span>
       </button>
@@ -2724,7 +2732,29 @@ const MESES_ABREV=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','
 const MESES_NOMES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const CORES_CLI=['#16a34a','#3b82f6','#f97316','#8b5cf6','#ef4444','#0891b2','#be185d','#b45309','#4f46e5','#15803d'];
 
-const fmt=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+// ── 👁 Modo privado: esconde todo valor em dinheiro DA TELA ────────────────────────
+// Só a tela. `fmtReal` nunca mascara e é quem alimenta o que SAI do sistema — o texto de
+// fechamento que vai pro cliente, Excel, CSV e impressão. Mascarar ali mandaria "••••" pro
+// cliente, que é o oposto do que o recurso serve.
+let PRIV_on=(()=>{try{return localStorage.getItem('wen_privacidade')==='1';}catch(e){return false;}})();
+const PRIV_MASCARA='R$ ••••••';
+const fmtReal=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt=v=>PRIV_on?PRIV_MASCARA:fmtReal(v);
+// eixo dos gráficos (não passa pelo fmt: o rótulo é abreviado, "R$12k")
+function PRIV_eixo(v){return PRIV_on?'•••':'R$'+Math.round(v/1000)+'k';}
+function PRIV_refletir(){
+  document.body.classList.toggle('privado',PRIV_on);
+  const b=document.getElementById('privBtn');
+  if(b){b.textContent=PRIV_on?'🙈':'👁️';b.title=PRIV_on?'Mostrar valores':'Esconder valores';b.setAttribute('aria-pressed',PRIV_on?'true':'false');}
+}
+window.PRIV_alternar=function(){
+  PRIV_on=!PRIV_on;
+  try{localStorage.setItem('wen_privacidade',PRIV_on?'1':'0');}catch(e){}
+  PRIV_refletir();
+  // repinta a aba ativa para os números já desenhados virarem máscara (e vice-versa)
+  try{showMain(mainAtivo,document.querySelector('.nav-main button.active'));}catch(e){}
+  toast(PRIV_on?'🙈 Valores escondidos':'👁️ Valores visíveis','#6b7280',1800);
+};
 function gerarId(){return 'w'+Date.now()+Math.floor(Math.random()*9999);}
 function mesAtualReal(){const d=new Date();return MESES_ABREV[d.getMonth()]+'/'+d.getFullYear();}
 function getDia(){return new Date().getDate();}
@@ -3131,6 +3161,8 @@ function renderSubPageP(id){
   if(id==='p-auditoria')AUD_render();
 }
 
+// aplica o 👁 guardado assim que o DOM existe
+try{document.addEventListener('DOMContentLoaded',PRIV_refletir);}catch(e){}
 function atualizarHeaderContexto(){
   const btn=document.getElementById('btnNovoAtivo');
   const mesWrap=document.getElementById('mesNavWrap');
@@ -3999,7 +4031,7 @@ function renderDashboardR(){
 
   const mesesEvol=R_getMesesDisponiveis().filter(m=>R_todosOsDados.some(r=>r.mes===m&&r.valorTotal>0));
   if(R_evolObj)R_evolObj.destroy();
-  R_evolObj=new Chart(document.getElementById('rEvolChart'),{type:'line',data:{labels:mesesEvol,datasets:[{label:'Receita',data:mesesEvol.map(m=>R_todosOsDados.filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0)),borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,.1)',tension:.4,fill:true,pointBackgroundColor:'#16a34a'}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+  R_evolObj=new Chart(document.getElementById('rEvolChart'),{type:'line',data:{labels:mesesEvol,datasets:[{label:'Receita',data:mesesEvol.map(m=>R_todosOsDados.filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0)),borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,.1)',tension:.4,fill:true,pointBackgroundColor:'#16a34a'}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>PRIV_eixo(v)}}}}});
 }
 
 // Calendário Receber
@@ -4399,7 +4431,7 @@ function R_abrirModalCliente(nome){
   document.getElementById('rMcTableBody').innerHTML=ml.map(m=>`<tr><td><span class="mes-chip-r">${m.mes}</span></td><td class="right">${m.horas}h</td><td class="right">${fmt(m.fat)}</td><td class="right">${fmt(m.horas>0?m.fat/m.horas:0)}</td><td class="center">${m.gravacoes}</td></tr>`).join('');
   document.getElementById('rMcTableFoot').innerHTML=`<tr><td>TOTAL</td><td class="right">${tH}h</td><td class="right">${fmt(tF)}</td><td class="right">${fmt(tTk)}</td><td class="center">${todos.length}</td></tr>`;
   if(R_mcChartObj)R_mcChartObj.destroy();
-  R_mcChartObj=new Chart(document.getElementById('rMcChart'),{type:'bar',data:{labels:ml.map(m=>m.mes),datasets:[{label:'Faturamento',data:ml.map(m=>m.fat),backgroundColor:'rgba(22,163,74,.7)',borderRadius:5,yAxisID:'y'},{label:'Horas',data:ml.map(m=>m.horas),backgroundColor:'rgba(59,130,246,.6)',borderRadius:5,yAxisID:'y1'}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{position:'left',ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'h'}}}}});
+  R_mcChartObj=new Chart(document.getElementById('rMcChart'),{type:'bar',data:{labels:ml.map(m=>m.mes),datasets:[{label:'Faturamento',data:ml.map(m=>m.fat),backgroundColor:'rgba(22,163,74,.7)',borderRadius:5,yAxisID:'y'},{label:'Horas',data:ml.map(m=>m.horas),backgroundColor:'rgba(59,130,246,.6)',borderRadius:5,yAxisID:'y1'}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{position:'left',ticks:{callback:v=>PRIV_eixo(v)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'h'}}}}});
   document.getElementById('rModalClienteBg').classList.add('open');
 }
 function R_fecharModalCliente(){document.getElementById('rModalClienteBg').classList.remove('open');if(R_mcChartObj){R_mcChartObj.destroy();R_mcChartObj=null;}}
@@ -4470,7 +4502,7 @@ function renderComparativoR(){
     </div>
   </div>`).join('')||'<div style="text-align:center;padding:36px;color:#6b7280">Nenhum dado.</div>';
   if(R_compChartObj)R_compChartObj.destroy();
-  R_compChartObj=new Chart(document.getElementById('rCompChart'),{type:'bar',data:{labels:cliLista.slice(0,10).map(([n])=>n),datasets:[{label:mA,data:cliLista.slice(0,10).map(([,v])=>v.a),backgroundColor:'rgba(22,163,74,.7)',borderRadius:4},{label:mB,data:cliLista.slice(0,10).map(([,v])=>v.b),backgroundColor:'rgba(59,130,246,.7)',borderRadius:4}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+  R_compChartObj=new Chart(document.getElementById('rCompChart'),{type:'bar',data:{labels:cliLista.slice(0,10).map(([n])=>n),datasets:[{label:mA,data:cliLista.slice(0,10).map(([,v])=>v.a),backgroundColor:'rgba(22,163,74,.7)',borderRadius:4},{label:mB,data:cliLista.slice(0,10).map(([,v])=>v.b),backgroundColor:'rgba(59,130,246,.7)',borderRadius:4}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{ticks:{callback:v=>PRIV_eixo(v)}}}}});
 }
 
 // Recorrentes
@@ -4520,7 +4552,7 @@ function renderGeralR(){
   anos.forEach(a=>porAno[a]={fat:0,h:0,rec:0});
   todos.forEach(r=>{const a=r.mes.split('/')[1];if(porAno[a]){porAno[a].fat+=Number(r.valorTotal||0);porAno[a].h+=Number(r.horas||0);porAno[a].rec+=Number(r.valorReserva||0);}});
   if(R_geralEvolObj)R_geralEvolObj.destroy();
-  R_geralEvolObj=new Chart(document.getElementById('rGeralEvolChart'),{type:'bar',data:{labels:anos,datasets:[{label:'Faturamento',data:anos.map(a=>porAno[a].fat),backgroundColor:'rgba(22,163,74,.8)',borderRadius:5,yAxisID:'y'},{label:'Recebido',data:anos.map(a=>porAno[a].rec),backgroundColor:'rgba(34,197,94,.4)',borderRadius:5,yAxisID:'y'},{label:'Horas',data:anos.map(a=>porAno[a].h),type:'line',yAxisID:'y1',borderColor:'#3b82f6',backgroundColor:'#3b82f6',tension:.4,pointRadius:4,fill:false}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{position:'left',ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'h'}}}}});
+  R_geralEvolObj=new Chart(document.getElementById('rGeralEvolChart'),{type:'bar',data:{labels:anos,datasets:[{label:'Faturamento',data:anos.map(a=>porAno[a].fat),backgroundColor:'rgba(22,163,74,.8)',borderRadius:5,yAxisID:'y'},{label:'Recebido',data:anos.map(a=>porAno[a].rec),backgroundColor:'rgba(34,197,94,.4)',borderRadius:5,yAxisID:'y'},{label:'Horas',data:anos.map(a=>porAno[a].h),type:'line',yAxisID:'y1',borderColor:'#3b82f6',backgroundColor:'#3b82f6',tension:.4,pointRadius:4,fill:false}]},options:{plugins:{legend:{position:'bottom'}},scales:{y:{position:'left',ticks:{callback:v=>PRIV_eixo(v)}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>v+'h'}}}}});
 
   const studios={};todos.forEach(r=>{const s=r.studio||'STUDIO A';studios[s]=(studios[s]||0)+Number(r.valorTotal||0);});
   if(R_geralStudioObj)R_geralStudioObj.destroy();
@@ -4532,7 +4564,7 @@ function renderGeralR(){
   const cliMap={};todos.forEach(r=>{if(!cliMap[r.cliente])cliMap[r.cliente]={fat:0,h:0,n:0,meses:new Set(),ultimo:''};cliMap[r.cliente].fat+=Number(r.valorTotal||0);cliMap[r.cliente].h+=Number(r.horas||0);cliMap[r.cliente].n++;cliMap[r.cliente].meses.add(r.mes);if(!cliMap[r.cliente].ultimo||r.mes>cliMap[r.cliente].ultimo)cliMap[r.cliente].ultimo=r.mes;});
   const top20=Object.entries(cliMap).sort((a,b)=>b[1].fat-a[1].fat).slice(0,20);
   if(R_geralTop20Obj)R_geralTop20Obj.destroy();
-  R_geralTop20Obj=new Chart(document.getElementById('rGeralTop20Chart'),{type:'bar',data:{labels:top20.map(([n])=>n),datasets:[{data:top20.map(([,v])=>v.fat),backgroundColor:top20.map((_,i)=>i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#c2884b':'rgba(22,163,74,.75)'),borderRadius:5}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+  R_geralTop20Obj=new Chart(document.getElementById('rGeralTop20Chart'),{type:'bar',data:{labels:top20.map(([n])=>n),datasets:[{data:top20.map(([,v])=>v.fat),backgroundColor:top20.map((_,i)=>i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#c2884b':'rgba(22,163,74,.75)'),borderRadius:5}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>PRIV_eixo(v)}}}}});
 
   const anoAtual=new Date().getFullYear();
   document.getElementById('rGeralTabelaTop20').innerHTML=top20.map(([nome,v],i)=>{const tk=v.h>0?v.fat/v.h:0;const sumido=parseInt(v.ultimo.split('/')[1])<anoAtual;return`<tr style="border-bottom:1px solid #f1f5f9;${i%2===0?'':'background:#fafafa'}"><td style="padding:9px 11px;font-weight:700">${['🥇','🥈','🥉'][i]||i+1}</td><td style="padding:9px 11px;font-weight:600">${nome}${sumido?' <span style="font-size:.68rem;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px">sumido</span>':''}</td><td style="padding:9px 11px;text-align:right;font-weight:700;color:#16a34a">${fmt(v.fat)}</td><td style="padding:9px 11px;text-align:center">${v.h}h</td><td style="padding:9px 11px;text-align:right">${fmt(tk)}/h</td><td style="padding:9px 11px;text-align:center">${v.n}</td><td style="padding:9px 11px;text-align:center">${v.meses.size}</td><td style="padding:9px 11px;text-align:center"><span class="mes-chip-r">${v.ultimo}</span></td></tr>`;}).join('');
@@ -4625,10 +4657,10 @@ function copiarWhatsAppR(){
   Object.entries(porMes).sort(([a],[b])=>a.localeCompare(b)).forEach(([mes,regs])=>{
     const mS=regs.reduce((a,r)=>a+Number(r.saldo||0),0),mT=regs.reduce((a,r)=>a+Number(r.valorTotal||0),0);
     txt+=`📅 *${mes}*\n`;
-    regs.forEach(r=>{txt+=`  • ${r.data||'-'}`;if(!cliente)txt+=` | *${r.cliente}*`;txt+=` | ${r.horas}h | ${fmt(r.valorTotal)}`;if(r.saldo>0)txt+=` | 🔴 *${fmt(r.saldo)}*`;else txt+=` | ✅`;txt+='\n';});
-    txt+=`  _Subtotal: ${fmt(mT)}${mS>0?' | 🔴 '+fmt(mS):' | ✅'}_\n\n`;
+    regs.forEach(r=>{txt+=`  • ${r.data||'-'}`;if(!cliente)txt+=` | *${r.cliente}*`;txt+=` | ${r.horas}h | ${fmtReal(r.valorTotal)}`;if(r.saldo>0)txt+=` | 🔴 *${fmtReal(r.saldo)}*`;else txt+=` | ✅`;txt+='\n';});
+    txt+=`  _Subtotal: ${fmtReal(mT)}${mS>0?' | 🔴 '+fmtReal(mS):' | ✅'}_\n\n`;
   });
-  txt+=`━━━━━━━━━━━━━━━━━━━━━━\n💰 *${fmt(tT)}* · ⏱ ${tH}h\n${tS>0?`🔴 *PENDENTE: ${fmt(tS)}*\n⚠️ Por favor efetue o pagamento.`:'✅ *Tudo quitado!*'}\n\n_WEN Produtora · ${new Date().toLocaleDateString('pt-BR')}_`;
+  txt+=`━━━━━━━━━━━━━━━━━━━━━━\n💰 *${fmtReal(tT)}* · ⏱ ${tH}h\n${tS>0?`🔴 *PENDENTE: ${fmtReal(tS)}*\n⚠️ Por favor efetue o pagamento.`:'✅ *Tudo quitado!*'}\n\n_WEN Produtora · ${new Date().toLocaleDateString('pt-BR')}_`;
   navigator.clipboard.writeText(txt).then(()=>toast('📱 Copiado!')).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);toast('📱 Copiado!');});
 }
 function exportarFechamentoExcelR(){
@@ -7607,11 +7639,14 @@ function RPT_gerar(){
   }
 }
 window.RPT_exportarCSV=function(){if(!RPT_ultimo||!RPT_ultimo.linhas.length){toast('Nada pra exportar.','#ef4444');return;}
+  // as linhas foram montadas com o fmt da hora: no modo privado sairiam "••••" no arquivo
+  if(PRIV_on){toast('👁️ Desligue o modo privado e gere o relatório de novo — os valores estão mascarados.','#f59e0b',6000);return;}
   const linhasCSV=[RPT_ultimo.colunas,...RPT_ultimo.linhas.map(r=>r.map(c=>String(c).replace('R$','').trim()))];
   const csv=linhasCSV.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
   BKP_baixar('WEN_relatorio_'+RPT_ultimo.titulo.replace(/\s+/g,'_')+'.csv','﻿'+csv,'text/csv;charset=utf-8');
 };
 window.RPT_imprimir=function(){if(!RPT_ultimo){toast('Gere um relatório primeiro.','#ef4444');return;}
+  if(PRIV_on){toast('👁️ Desligue o modo privado e gere o relatório de novo — os valores estão mascarados.','#f59e0b',6000);return;}
   const h=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${RPT_ultimo.titulo}</title><style>body{font-family:'Segoe UI',sans-serif;padding:20px;color:#0f172a}h1{font-size:1.2rem}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{padding:7px 9px;border-bottom:1px solid #ddd;font-size:.9rem;text-align:left}</style></head><body><h1>📈 ${RPT_ultimo.titulo}</h1><div style="color:#666">${RPT_ultimo.periodo} · WEN Produtora</div><table><tr>${RPT_ultimo.colunas.map(c=>`<th>${c}</th>`).join('')}</tr>${RPT_ultimo.linhas.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table></body></html>`;
   try{const w=window.open('','_blank');if(w){w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);}else toast('Permita pop-ups.','#f59e0b');}catch(e){toast('Erro: '+e.message,'#ef4444');}
 };
@@ -8064,12 +8099,12 @@ function renderDashboardP(){
 
   const dias=[...new Set(data.filter(r=>r.dia).map(r=>r.dia))].sort((a,b)=>a-b);
   if(P_barObj)P_barObj.destroy();
-  P_barObj=new Chart(document.getElementById('pBarChart'),{type:'bar',data:{labels:dias.map(d=>'Dia '+d),datasets:[{label:'Total',data:dias.map(d=>data.filter(r=>r.dia===d).reduce((a,r)=>a+r.valor,0)),backgroundColor:'#3b82f6',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+  P_barObj=new Chart(document.getElementById('pBarChart'),{type:'bar',data:{labels:dias.map(d=>'Dia '+d),datasets:[{label:'Total',data:dias.map(d=>data.filter(r=>r.dia===d).reduce((a,r)=>a+r.valor,0)),backgroundColor:'#3b82f6',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>PRIV_eixo(v)}}}}});
 
   // Comparativo
   const mesesOrdP=P_getMesesOrdenados();const totais=mesesOrdP.map(m=>(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0));const pagos=mesesOrdP.map(m=>P_somaPago(P_meses[m]));const pendentes=totais.map((t,i)=>t-pagos[i]);
   if(P_lineObj)P_lineObj.destroy();
-  P_lineObj=new Chart(document.getElementById('pLineChart'),{type:'bar',data:{labels:mesesOrdP,datasets:[{label:'✅ Pago',data:pagos,backgroundColor:'#22c55e',borderRadius:3,stack:'s'},{label:'🔴 Pendente',data:pendentes,backgroundColor:'#ef4444',borderRadius:3,stack:'s'}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}},responsive:true}});
+  P_lineObj=new Chart(document.getElementById('pLineChart'),{type:'bar',data:{labels:mesesOrdP,datasets:[{label:'✅ Pago',data:pagos,backgroundColor:'#22c55e',borderRadius:3,stack:'s'},{label:'🔴 Pendente',data:pendentes,backgroundColor:'#ef4444',borderRadius:3,stack:'s'}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>PRIV_eixo(v)}}},responsive:true}});
 
   P_renderCalendario();P_renderSemanas();
 }
@@ -8666,7 +8701,7 @@ function renderFluxoCaixa(){
         {label:'📊 Resultado',data:mesesEvol.map(m=>{const rec=R_todosOsDados.filter(r=>r.mes===m).reduce((a,r)=>a+Number(r.valorTotal||0),0);const desp=(P_meses[m]||[]).reduce((a,r)=>a+r.valor,0);return rec-desp;}),borderColor:'#f97316',backgroundColor:'rgba(249,115,22,.05)',tension:.4,fill:false,borderDash:[5,3],pointBackgroundColor:'#f97316',pointRadius:3},
       ]
     },
-    options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'},grid:{color:'#f1f5f9'}}},responsive:true}
+    options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{y:{ticks:{callback:v=>PRIV_eixo(v)},grid:{color:'#f1f5f9'}}},responsive:true}
   });
 
   // Pie distribuição
@@ -8687,7 +8722,7 @@ function renderFluxoCaixa(){
   const fcCliVazio=(txt)=>{let m=document.getElementById('fcClientesVazio');if(!m&&fcCliCv){m=document.createElement('div');m.id='fcClientesVazio';m.style.cssText='text-align:center;padding:30px;color:#6b7280;font-size:.85rem';fcCliCv.parentElement.appendChild(m);}if(m){m.textContent=txt;m.style.display=txt?'':'none';}};
   if(topCli.length&&fcCliCv){
     fcCliCv.style.display='';fcCliVazio('');
-    FC_clientesObj=new Chart(fcCliCv,{type:'bar',data:{labels:topCli.map(([n])=>n),datasets:[{data:topCli.map(([,v])=>v),backgroundColor:'#ef4444',borderRadius:5,label:'A Receber'}]},options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k'}}}}});
+    FC_clientesObj=new Chart(fcCliCv,{type:'bar',data:{labels:topCli.map(([n])=>n),datasets:[{data:topCli.map(([,v])=>v),backgroundColor:'#ef4444',borderRadius:5,label:'A Receber'}]},options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{callback:v=>PRIV_eixo(v)}}}}});
   }else if(fcCliCv){fcCliCv.style.display='none';fcCliVazio('✅ Nenhum saldo a receber!');}
 }
 
@@ -9432,7 +9467,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/simulacao.js?v=b6f27392"></script>
+<script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>
   #cxModalBg .cx-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-top:14px}

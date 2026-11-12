@@ -624,9 +624,9 @@ function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos,custoFalta
       data:{labels:pts.map(t=>SIM_dia(t.dt)),datasets:ds},
       options:{plugins:{legend:{display:meta>0||SIM_LINHAS.fat||SIM_LINHAS.cus||(SIM_LINHAS.proj&&(incompletos.length>0||custoFalta.length>0)),position:'bottom',labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},
-        scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
+        scales:{y:{ticks:{callback:v=>(typeof PRIV_eixo==='function'?PRIV_eixo(v):'R$'+Math.round(v/1000)+'k'),color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
                 y2:{display:SIM_LINHAS.fat||SIM_LINHAS.cus,position:'right',beginAtZero:true,
-                    ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#94a3b8',font:{size:10}},grid:{display:false}},
+                    ticks:{callback:v=>(typeof PRIV_eixo==='function'?PRIV_eixo(v):'R$'+Math.round(v/1000)+'k'),color:'#94a3b8',font:{size:10}},grid:{display:false}},
                 x:{ticks:{color:'#6b7280',maxTicksLimit:10,font:{size:11}},grid:{display:false}}}}});
   }
   const cb=document.getElementById('simChartBarras');
@@ -641,7 +641,7 @@ function SIM_desenharGraficos(linha,blocos,pior,meta,DIAS,incompletos,custoFalta
           title:c=>'A partir de '+SIM_dia(blocos[c[0].dataIndex].ini),
           label:c=>c.dataset.label+': '+fmt(c.raw),
           afterBody:c=>'Saldo ao fim: '+fmt(blocos[c[0].dataIndex].saldoFim)}}},
-        scales:{y:{ticks:{callback:v=>'R$'+Math.round(v/1000)+'k',color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
+        scales:{y:{ticks:{callback:v=>(typeof PRIV_eixo==='function'?PRIV_eixo(v):'R$'+Math.round(v/1000)+'k'),color:'#6b7280',font:{size:11}},grid:{color:'#f1f5f9'}},
                 x:{ticks:{color:'#6b7280',font:{size:11}},grid:{display:false}}}}});
   }
 }
