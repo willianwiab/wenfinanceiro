@@ -1,28 +1,43 @@
 rules_version = '2';
-// ══════════════════════════════════════════════════════════════════════════════
-// WEN Financeiro — projeto Firebase `wencontasapagar`
-//
-// Acesso de UM usuário só: o Will (wenprodutora@gmail.com). NÃO basta "estar
-// logado": com e-mail/senha ligado e a API key pública, qualquer um poderia
-// AUTO-CRIAR uma conta e passar por `request.auth != null`. Por isso a regra
-// exige o e-mail específico. Para liberar outra pessoa no futuro, some o e-mail
-// à lista `AUTORIZADOS` abaixo (e crie a conta no Console).
-//
-// ⚠️ ORDEM DE PUBLICAÇÃO (senão trava o acesso):
-//   1º) a conta wenprodutora@gmail.com já existe no Authentication e o app já
-//       faz login com ela; 2º) SÓ ENTÃO publicar estas regras.
-// Rollback: reabrir temporariamente com `allow read, write: if true;`.
-// ══════════════════════════════════════════════════════════════════════════════
 service cloud.firestore {
   match /databases/{database}/documents {
-    function autorizado() {
-      return request.auth != null
-        && request.auth.token.email in [
-             'wenprodutora@gmail.com'
-           ];
+    function proprietario() {
+      return request.auth != null && request.auth.token.email == 'wenprodutora@gmail.com';
     }
-    match /{document=**} {
-      allow read, write: if autorizado();
+    function administrativo() {
+      return request.auth != null
+        && request.auth.token.email == 'financeiro@wenprodutora.com.br'
+        && request.auth.token.email_verified == true;
+    }
+    // Nenhuma permissão administrativa sobre lançamentos, bancos, despesas ou folha.
+    match /{document=**} { allow read, write: if proprietario(); }
+    match /administrativo_fechamentos/{id} {
+      allow read: if administrativo();
+      // Cliente, valores, diárias e permissões são definidos exclusivamente pelo proprietário.
+      allow update: if administrativo()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData',
+          'descricaoFiscal','descricaoCobranca','enviadoEm','atualizadoEm'
+        ])
+        && request.resource.data.cobrancaStatus in ['pendente','enviada','pago']
+        && request.resource.data.fiscalStatus in ['pendente','emitida','nao_solicitada']
+        && request.resource.data.descricaoFiscal is string
+        && request.resource.data.descricaoFiscal.size() <= 30000
+        && request.resource.data.descricaoCobranca is string
+        && request.resource.data.descricaoCobranca.size() > 0
+        && request.resource.data.descricaoCobranca.size() <= 30000
+        && request.resource.data.nfNumero is string
+        && request.resource.data.nfNumero.size() <= 200
+        && request.resource.data.nfData is string
+        && request.resource.data.nfData.size() <= 10
+        && request.resource.data.vencimento is string
+        && request.resource.data.vencimento.size() <= 10
+        && request.resource.data.enviadoEm is string
+        && request.resource.data.enviadoEm.size() <= 30
+        && request.resource.data.atualizadoEm is string
+        && request.resource.data.atualizadoEm.size() <= 30
+        && (request.resource.data.fiscalStatus != 'emitida'
+          || (request.resource.data.nfNumero.size() > 0 && request.resource.data.nfData.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
     }
   }
 }

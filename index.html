@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261118-bae8b941';
+window.APP_VERSION='20261118-268348b8';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1039,7 +1039,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <button onclick="showMain('pagar',this)" class="">📤 A Pagar</button>
   <button onclick="showMain('evolucao',this)">📈 Evolução</button>
   <button onclick="showMain('simulacao',this)">🔮 Simulação</button>
-  <button onclick="showMain('notas',this)">🧾 Notas Fiscais</button>
+  <button onclick="showMain('notas',this)">🧾 Notas Fiscais e Cobranças</button>
   <button onclick="showMain('contas',this)">🏦 Contas</button>
   <button onclick="showMain('cartoes',this)">💳 Cartões</button>
   <button onclick="showMain('categorias',this)">🏷️ Categorias</button>
@@ -1938,9 +1938,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 <div class="page" id="page-notas">
   <div class="nf-topo no-print">
     <div>
-      <h2 style="margin:0">🧾 Notas Fiscais de Serviço</h2>
-      <p class="nf-sub">O que já foi faturado, o que falta, e o que não bate. Esta tela <b>não emite
-      nota</b> — ela guarda o que você emitiu e impede faturar a mesma gravação duas vezes.</p>
+      <h2 style="margin:0">Fiscal e Cobranças</h2>
+      <p class="nf-sub">A partir de outubro de 2026. Controle notas, prepare cobranças com ou sem NF e selecione diárias para fechar com o cliente. O registro de nota não realiza sua emissão no portal fiscal.</p>
     </div>
   </div>
   <div class="nf-filtros no-print">
@@ -1949,6 +1948,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="fg"><label>Mês final</label><select id="nfFMesFim" onchange="NF_montar()"></select></div>
     <div class="fg"><label>Exibir</label>
       <div class="nf-abas">
+        <button id="nfAbaFech" onclick="NF_setAba('fechamentos')">Fechamentos e cobranças</button>
         <button id="nfAbaFila" class="on" onclick="NF_setAba('fila')">📋 A faturar</button>
         <button id="nfAbaEmit" onclick="NF_setAba('emitidas')">✅ Emitidas</button>
         <button id="nfAbaDiv" onclick="NF_setAba('diverg')">⚠️ Divergências</button>
@@ -2782,6 +2782,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
+<script src="js/fechamentos.js?v=8a7237d7"></script>
+<script src="js/fechamentos-admin.js?v=ac64aa37"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3092,7 +3094,7 @@ function AUTH_montarTela(){
 
 // ── Porteiro: decide entre abrir o app ou pedir login. Chamado no lugar de init(). ──
 let AUTH_appIniciado=false;
-function AUTH_iniciarApp(){ if(AUTH_appIniciado) return; AUTH_appIniciado=true; MOD_prepararCachesLocais(); init(); }
+function AUTH_iniciarApp(){ if(AUTH_ATIVO){try{const claims=JSON.parse(atob(AUTH_.idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));if(claims.email!=='wenprodutora@gmail.com'){location.replace('administrativo.html');return;}}catch(e){AUTH_.sair(false);AUTH_montarTela();return;}} if(AUTH_appIniciado) return; AUTH_appIniciado=true; MOD_prepararCachesLocais(); init(); }
 async function AUTH_bootstrap(){
   if(!AUTH_ATIVO){ AUTH_iniciarApp(); return; }        // simulação: entra direto
   const rt=(()=>{ try{ return localStorage.getItem(AUTH_RT_KEY); }catch(e){ return null; } })();
@@ -3702,19 +3704,19 @@ let NF_desmarcados=new Set();   // ids tirados da próxima nota
 let NF_abertos=new Set();       // grupos expandidos na fila
 
 async function NF_carregar(){
-  try{ NF_NOTAS=await CC_fbCarregar(NF_COL)||{}; NF_ok=true; }
+  try{ NF_NOTAS=await CC_fbCarregar(NF_COL)||{}; if(!await FC_carregar())throw Error('Fechamentos indisponíveis');NF_ok=true; }
   catch(e){ NF_ok=false; console.warn('Notas fiscais:',e.message); }
   return NF_ok;
 }
 function NF_esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function NF_ativas(){return Object.values(NF_NOTAS).filter(n=>n&&n.status!=='cancelada');}
+function NF_ativas(){return [...Object.values(NF_NOTAS),...FC_notas()].filter(n=>n&&n.status!=='cancelada');}
 // Todo lançamento já coberto por alguma nota viva. É a trava anti-duplicidade.
 function NF_idsFaturados(){
   const s=new Set();
   NF_ativas().forEach(n=>(n.lancamentoIds||[]).forEach(id=>s.add(String(id))));
   return s;
 }
-function NF_meses(){return (typeof R_getMesesDisponiveis==='function')?R_getMesesDisponiveis():[];}
+function NF_meses(){return (typeof R_getMesesDisponiveis==='function'?R_getMesesDisponiveis():[]).filter(m=>WENFechamentos.mesChave(m)>='2026-10');}
 function NF_lanc(id){return (R_todosOsDados||[]).find(r=>String(r.id)===String(id));}
 function NF_rotuloLanc(r){
   if(!r)return '(lançamento sumiu)';
@@ -3723,8 +3725,8 @@ function NF_rotuloLanc(r){
 // Diárias do cliente que ainda não entraram em nota nenhuma — a lista do "puxar outras".
 function NF_disponiveisDoCliente(cliente,excluirIds){
   const ja=NF_idsFaturados(), fora=new Set((excluirIds||[]).map(String));
-  return (R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0
-    &&!ja.has(String(r.id))&&!fora.has(String(r.id)))
+  return (R_todosOsDados||[]).filter(r=>WENFechamentos.noPeriodo(r)&&r.cliente===cliente&&Number(r.valorTotal)>0
+    &&!ja.has(String(r.id))&&!FC_ocupados().has(String(r.id))&&!fora.has(String(r.id)))
     .sort((a,b)=>String(a.mes).localeCompare(String(b.mes))||String(a.data||'').localeCompare(String(b.data||'')));
 }
 function NF_filtro(){
@@ -3734,7 +3736,7 @@ function NF_filtro(){
 }
 // Base = o mesmo recorte do Fechamento: tudo que foi gravado no período, pago ou não.
 function NF_lancamentosDoPeriodo(){
-  const f=NF_filtro(), meses=NF_meses().filter(m=>(!f.ini||m>=f.ini)&&(!f.fim||m<=f.fim));
+  const f=NF_filtro(), meses=NF_meses().filter(m=>(!f.ini||WENFechamentos.mesChave(m)>=WENFechamentos.mesChave(f.ini))&&(!f.fim||WENFechamentos.mesChave(m)<=WENFechamentos.mesChave(f.fim)));
   return (R_todosOsDados||[]).filter(r=>meses.includes(r.mes)&&Number(r.valorTotal)>0
     &&(!f.cliente||r.cliente===f.cliente));
 }
@@ -3742,7 +3744,8 @@ function NF_lancamentosDoPeriodo(){
 function NF_fila(){
   const jaFeitos=NF_idsFaturados(), por={};
   NF_lancamentosDoPeriodo().forEach(r=>{
-    if(jaFeitos.has(String(r.id)))return;
+    if(jaFeitos.has(String(r.id))||FC_ocupados().has(String(r.id)))return;
+    const ficha=CFI_casar(r.cliente,CFI_lista());if(ficha&&ficha.exigeNota===false)return;
     const k=(r.cliente||'Sem cliente')+'||'+r.mes;
     const g=por[k]||(por[k]={cliente:r.cliente||'Sem cliente',mes:r.mes,ids:[],valor:0,horas:0,grav:0,aberto:0});
     g.ids.push(String(r.id)); g.valor+=Number(r.valorTotal)||0;
@@ -3752,14 +3755,14 @@ function NF_fila(){
 }
 function NF_notasDoPeriodo(){
   const f=NF_filtro();
-  return Object.values(NF_NOTAS).filter(n=>n&&(!f.cliente||n.cliente===f.cliente)
-    &&(!f.ini||!n.mesFim||n.mesFim>=f.ini)&&(!f.fim||!n.mesIni||n.mesIni<=f.fim))
+  return [...Object.values(NF_NOTAS),...FC_notas()].filter(n=>n&&WENFechamentos.mesChave(n.mesFim||n.mesIni)>='2026-10'&&(!f.cliente||n.cliente===f.cliente)
+    &&(!f.ini||!n.mesFim||WENFechamentos.mesChave(n.mesFim)>=WENFechamentos.mesChave(f.ini))&&(!f.fim||!n.mesIni||WENFechamentos.mesChave(n.mesIni)<=WENFechamentos.mesChave(f.fim)))
     .sort((a,b)=>String(b.dataEmissao||'').localeCompare(String(a.dataEmissao||'')));
 }
 // Três coisas que tornam uma nota suspeita — todas vêm de editar o lançamento DEPOIS de faturar.
 function NF_divergencias(){
   const out=[], porLanc={};
-  NF_ativas().forEach(n=>(n.lancamentoIds||[]).forEach(id=>{(porLanc[id]=porLanc[id]||[]).push(n);}));
+  NF_ativas().filter(n=>WENFechamentos.mesChave(n.mesFim||n.mesIni)>='2026-10').forEach(n=>(n.lancamentoIds||[]).forEach(id=>{(porLanc[id]=porLanc[id]||[]).push(n);}));
   Object.keys(porLanc).forEach(id=>{
     if(porLanc[id].length>1){
       const r=(R_todosOsDados||[]).find(x=>String(x.id)===String(id));
@@ -3767,7 +3770,7 @@ function NF_divergencias(){
                 det:(r?(r.cliente+' · '+r.mes+' · '+fmt(Number(r.valorTotal)||0)):'lançamento '+id)});
     }
   });
-  NF_ativas().forEach(n=>{
+  NF_ativas().filter(n=>WENFechamentos.mesChave(n.mesFim||n.mesIni)>='2026-10').forEach(n=>{
     const ids=n.lancamentoIds||[];
     const achados=ids.map(id=>(R_todosOsDados||[]).find(x=>String(x.id)===String(id))).filter(Boolean);
     if(achados.length<ids.length)
@@ -3788,7 +3791,7 @@ window.NF_toggleLanc=function(id){id=String(id);if(NF_desmarcados.has(id))NF_des
 function NF_popularFiltros(){
   const meses=NF_meses(), f=NF_filtro();
   const selC=document.getElementById('nfFCliente');
-  if(selC){const cli=[...new Set((R_todosOsDados||[]).map(r=>r.cliente).filter(Boolean))].sort();
+  if(selC){const cli=[...new Set((R_todosOsDados||[]).filter(WENFechamentos.noPeriodo).map(r=>r.cliente).filter(Boolean))].sort();
     const atual=selC.value;
     selC.innerHTML='<option value="">— Todos —</option>'+cli.map(c=>'<option value="'+NF_esc(c)+'">'+NF_esc(c)+'</option>').join('');
     if(cli.includes(atual))selC.value=atual;}
@@ -3807,10 +3810,11 @@ function NF_montar(){
   // para uma lista que pode estar cheia, e faria o Will faturar de novo o que já faturou.
   if(aviso)aviso.innerHTML=NF_ok?'':'<div class="nf-alerta erro"><b>Não consegui ler as notas já registradas.</b> '
     +'Sem isso eu não sei o que já foi faturado, então a fila abaixo pode estar errada. Recarregue a página antes de registrar qualquer nota.</div>';
-  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli'].forEach((id,i)=>{const b=document.getElementById(id);
-    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes'][i]);});
+  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli','nfAbaFech'].forEach((id,i)=>{const b=document.getElementById(id);
+    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes','fechamentos'][i]);});
   // O cadastro fiscal tem cards e lista próprios: sai antes de montar fila/notas.
   if(NF_aba==='clientes'){CFI_render();return;}
+  if(NF_aba==='fechamentos'){FC_render();return;}
 
   const fila=NF_fila(), notas=NF_notasDoPeriodo(), divs=NF_divergencias();
   const somaFila=fila.reduce((a,g)=>a+g.valor,0);
@@ -3886,8 +3890,9 @@ function CFI_ano(){return String(new Date().getFullYear());}
 
 function CFI_render(){
   const raiz=document.getElementById('nfConteudo'); if(!raiz)return;
-  const lista=CFI_lista();
-  const res=CFI_resumo(typeof R_todosOsDados!=='undefined'?R_todosOsDados:[],lista,CFI_ano());
+  const recentes=(R_todosOsDados||[]).filter(WENFechamentos.noPeriodo);
+  const lista=CFI_lista().filter(f=>recentes.some(r=>CFI_casar(r.cliente,[f])));
+  const res=CFI_resumo(recentes,lista,CFI_ano());
   const cards=document.getElementById('nfCards');
   if(cards)cards.innerHTML=
      '<div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Prontos para emitir</label><div class="val">'+res.prontas+'</div><div class="val-sub">de '+res.fichas+' cadastrado(s)</div></div>'
@@ -4058,6 +4063,8 @@ window.NF_vincular=function(id){
   NF_recalcular();
 };
 window.NF_editar=function(id){
+  if(String(id).startsWith('fc:')){window.open('administrativo.html#'+encodeURIComponent(String(id).slice(3)),'_blank','noopener');return;}
+
   const n=NF_NOTAS[id]; if(!n)return;
   NF_editandoId=id; NF_ctxFila=null;
   document.getElementById('nfModalTit').textContent='✏️ Editar nota nº '+(n.numero||'');
@@ -4096,7 +4103,7 @@ window.NF_salvar=async function(){
   else{
     const g=NF_ctxFila; if(!g){toast('Nada selecionado.','#ef4444');return;}
     // Trava: se alguém registrou nota para esses lançamentos enquanto o modal estava aberto.
-    const jaFeitos=NF_idsFaturados(), repetido=idsFinais.filter(x=>jaFeitos.has(String(x)));
+    const jaFeitos=NF_idsFaturados(), repetido=idsFinais.filter(x=>jaFeitos.has(String(x))||FC_ocupados().has(String(x)));
     if(repetido.length){toast('⚠️ '+repetido.length+' lançamento(s) já entraram em outra nota. Feche e abra a aba de novo.','#ef4444',8000);return;}
     id='nf'+Date.now()+Math.floor(Math.random()*9999);
     nota={...base,id,cliente:g.cliente,mesIni:mesesNota[0]||g.mes,mesFim:mesesNota[mesesNota.length-1]||g.mes,
@@ -4113,6 +4120,8 @@ window.NF_salvar=async function(){
 // Cancelar NÃO apaga: a nota some da soma mas o vínculo continua, senão os lançamentos
 // voltariam para a fila e seriam faturados de novo por engano.
 window.NF_cancelar=async function(id){
+  if(String(id).startsWith('fc:')){toast('Atualize a nota no fechamento administrativo.');return;}
+
   const n=NF_NOTAS[id]; if(!n)return;
   const vol=n.status==='cancelada';
   if(!confirm(vol?('Reativar a nota nº '+(n.numero||'')+'?')
@@ -4123,6 +4132,8 @@ window.NF_cancelar=async function(id){
   toast(vol?'♻️ Nota reativada.':'🚫 Nota cancelada.','#6b7280');
 };
 window.NF_excluir=async function(id){
+  if(String(id).startsWith('fc:')){toast('Atualize a nota no fechamento administrativo.');return;}
+
   const n=NF_NOTAS[id]; if(!n)return;
   if(!confirm('Excluir de vez o registro da nota nº '+(n.numero||'')+'?\n\nIsso não cancela a nota na Prefeitura — só apaga o registro daqui. Os lançamentos voltam para a fila.'))return;
   delete NF_NOTAS[id]; NF_montar();
