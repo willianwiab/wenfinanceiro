@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261112-372fa4c4';
+window.APP_VERSION='20261118-bae8b941';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -264,6 +264,22 @@ body{background:#f0f4f8;color:#1e293b}
 .badge-novo{background:#dbeafe;color:#1e40af;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
 .badge-sumido{background:#fee2e2;color:#b91c1c;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
 .badge-vip{background:#fef3c7;color:#92400e;font-size:.63rem;font-weight:700;padding:1px 5px;border-radius:10px}
+
+/* 👥 Cadastro fiscal de clientes */
+.cfi-lin{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #e5e7eb;border-radius:11px;margin-bottom:8px;background:#fff;flex-wrap:wrap}
+.cfi-lin.pend{border-color:#fcd34d;background:#fffbeb}
+.cfi-info{flex:1;min-width:190px}
+.cfi-nome{font-weight:700;color:#1e293b;font-size:.94rem}
+.cfi-sub{font-size:.78rem;color:#6b7280;margin-top:2px}
+.cfi-selo{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.cfi-selo.ok{background:#dcfce7;color:#166534}
+.cfi-selo.falta{background:#fef3c7;color:#92400e}
+.cfi-sec{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700;margin:18px 0 9px;overflow:hidden}
+.cfi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:11px}
+.cfi-grid .fg label{display:block;font-size:.76rem;color:#475569;font-weight:600;margin-bottom:4px}
+.cfi-grid .fg input,.cfi-grid .fg select{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.88rem;font-family:inherit}
+.cfi-grid .fg input.ruim{border-color:#ef4444;background:#fef2f2}
+@media(max-width:640px){.cfi-lin{gap:8px}.cfi-info{min-width:100%}}
 
 /* 👁 Modo privado */
 .priv-btn{background:rgba(255,255,255,.18);border:none;color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:1.05rem;line-height:1;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0}
@@ -1936,12 +1952,64 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <button id="nfAbaFila" class="on" onclick="NF_setAba('fila')">📋 A faturar</button>
         <button id="nfAbaEmit" onclick="NF_setAba('emitidas')">✅ Emitidas</button>
         <button id="nfAbaDiv" onclick="NF_setAba('diverg')">⚠️ Divergências</button>
+        <button id="nfAbaCli" onclick="NF_setAba('clientes')">👥 Clientes</button>
       </div>
     </div>
   </div>
   <div id="nfAviso"></div>
   <div id="nfCards" class="cards-p"></div>
   <div id="nfConteudo"></div>
+</div>
+
+<!-- Modal: cadastro fiscal do cliente -->
+<div class="modal-bg" id="cfiModalBg" role="dialog" aria-modal="true" aria-labelledby="cfiTit" onclick="if(event.target===this)CFI_fechar()">
+  <div class="modal" style="max-width:680px">
+    <h3 id="cfiTit" style="margin:0 0 4px">➕ Novo cliente</h3>
+    <p style="font-size:.8rem;color:#6b7280;margin:0 0 8px">O <b>nome</b> tem que ser igual ao que aparece no Receber — é por ele que o cadastro se liga às diárias.</p>
+    <div id="cfiStatus" style="margin-bottom:12px"></div>
+    <div class="cfi-sec" style="margin-top:0">Comercial</div>
+    <div class="cfi-grid">
+      <div class="fg"><label>Nome no Receber *</label><input id="cfiF_nome" oninput="CFI_conferir()" placeholder="Ex: CARTPANDA"/></div>
+      <div class="fg"><label>Nome fantasia</label><input id="cfiF_fantasia"/></div>
+      <div class="fg"><label>Responsável comercial</label><input id="cfiF_responsavel"/></div>
+      <div class="fg"><label>Telefone</label><input id="cfiF_telefone"/></div>
+      <div class="fg"><label>E-mail</label><input id="cfiF_email" oninput="CFI_conferir()"/></div>
+    </div>
+    <div class="cfi-sec">Fiscal — o que a nota exige</div>
+    <div class="cfi-grid">
+      <div class="fg"><label>CPF / CNPJ *</label><input id="cfiF_doc" oninput="CFI_conferir()" placeholder="00.000.000/0001-00"/></div>
+      <div class="fg"><label>Razão social *</label><input id="cfiF_razaoSocial" oninput="CFI_conferir()"/></div>
+      <div class="fg"><label>Inscrição municipal</label><input id="cfiF_inscricaoMunicipal"/></div>
+      <div class="fg"><label>Inscrição estadual</label><input id="cfiF_inscricaoEstadual"/></div>
+      <div class="fg"><label>Logradouro *</label><input id="cfiF_logradouro" oninput="CFI_conferir()"/></div>
+      <div class="fg"><label>Número *</label><input id="cfiF_numero" oninput="CFI_conferir()"/></div>
+      <div class="fg"><label>Complemento</label><input id="cfiF_complemento"/></div>
+      <div class="fg"><label>Bairro *</label><input id="cfiF_bairro" oninput="CFI_conferir()"/></div>
+      <div class="fg"><label>Município *</label><input id="cfiF_municipio" oninput="CFI_conferir()"/></div>
+      <div class="fg"><label>UF *</label><input id="cfiF_uf" maxlength="2" oninput="CFI_conferir()" placeholder="SP"/></div>
+      <div class="fg"><label>CEP *</label><input id="cfiF_cep" oninput="CFI_conferir()" placeholder="01414-000"/></div>
+      <div class="fg"><label>E-mail para receber a nota</label><input id="cfiF_emailNota" oninput="CFI_conferir()"/></div>
+    </div>
+    <div class="cfi-sec">Contato financeiro — para a cobrança</div>
+    <div class="cfi-grid">
+      <div class="fg"><label>Nome</label><input id="cfiF_contatoFinanceiro"/></div>
+      <div class="fg"><label>WhatsApp</label><input id="cfiF_whatsappFinanceiro" placeholder="11 90000-0000"/></div>
+      <div class="fg"><label>E-mail</label><input id="cfiF_emailFinanceiro" oninput="CFI_conferir()"/></div>
+    </div>
+    <div class="cfi-sec">Faturamento</div>
+    <div class="cfi-grid">
+      <div class="fg"><label>Fechamento padrão</label><select id="cfiF_fechamentoPadrao"><option value="mensal">Mensal</option><option value="diaria">Por diária</option></select></div>
+      <div class="fg"><label>Prazo de pagamento</label><input id="cfiF_prazoPagamento" placeholder="Ex: 30 dias"/></div>
+      <div class="fg"><label>Dia de vencimento</label><input id="cfiF_diaVencimento" type="number" min="1" max="31"/></div>
+      <div class="fg"><label>Instruções de faturamento</label><input id="cfiF_instrucoes"/></div>
+      <div class="fg"><label>Observações</label><input id="cfiF_observacoes"/></div>
+      <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_exigeNota" checked/> Exige nota fiscal</label></div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-outline-b" onclick="CFI_fechar()">Cancelar</button>
+      <button class="btn btn-blue" onclick="CFI_salvar()">Salvar</button>
+    </div>
+  </div>
 </div>
 
 <!-- Modal: registrar / editar nota -->
@@ -3739,8 +3807,10 @@ function NF_montar(){
   // para uma lista que pode estar cheia, e faria o Will faturar de novo o que já faturou.
   if(aviso)aviso.innerHTML=NF_ok?'':'<div class="nf-alerta erro"><b>Não consegui ler as notas já registradas.</b> '
     +'Sem isso eu não sei o que já foi faturado, então a fila abaixo pode estar errada. Recarregue a página antes de registrar qualquer nota.</div>';
-  ['nfAbaFila','nfAbaEmit','nfAbaDiv'].forEach((id,i)=>{const b=document.getElementById(id);
-    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg'][i]);});
+  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli'].forEach((id,i)=>{const b=document.getElementById(id);
+    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes'][i]);});
+  // O cadastro fiscal tem cards e lista próprios: sai antes de montar fila/notas.
+  if(NF_aba==='clientes'){CFI_render();return;}
 
   const fila=NF_fila(), notas=NF_notasDoPeriodo(), divs=NF_divergencias();
   const somaFila=fila.reduce((a,g)=>a+g.valor,0);
@@ -3794,6 +3864,123 @@ function NF_montar(){
     +'<div class="nf-nome">'+NF_esc(d.txt)+'</div><div class="nf-meta">'+NF_esc(d.det)+'</div></div></div>').join('')
     :'<div class="nf-vazio">✅ Nenhuma divergência — toda nota bate com os lançamentos que ela cobre.</div>';
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CFI_ — camada de app do cadastro fiscal (a REGRA vive em js/clientes-fiscais.js)
+// Lê do cache local na hora e atualiza da nuvem depois, no padrão do BC_: este sistema já
+// estourou cota duas vezes e uma coleção nova lida a cada carga não vai ser a terceira.
+// ══════════════════════════════════════════════════════════════════════════════
+const CFI_COL='clientes_fiscais', CFI_CACHE='wen_clientes_fiscais';
+let CFI_FICHAS={}, CFI_ok=false, CFI_editandoId=null;
+
+function CFI_salvarCache(){try{localStorage.setItem(CFI_CACHE,JSON.stringify(CFI_FICHAS));}catch(e){}}
+function CFI_carregarCache(){try{const c=localStorage.getItem(CFI_CACHE);if(c)CFI_FICHAS=JSON.parse(c)||{};}catch(e){}}
+async function CFI_carregar(){
+  CFI_carregarCache();
+  try{ CFI_FICHAS=await CC_fbCarregar(CFI_COL)||{}; CFI_ok=true; CFI_salvarCache(); }
+  catch(e){ CFI_ok=false; console.warn('Clientes fiscais:',e.message); }
+  return CFI_ok;
+}
+function CFI_lista(){return Object.values(CFI_FICHAS||{}).filter(Boolean).sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));}
+function CFI_ano(){return String(new Date().getFullYear());}
+
+function CFI_render(){
+  const raiz=document.getElementById('nfConteudo'); if(!raiz)return;
+  const lista=CFI_lista();
+  const res=CFI_resumo(typeof R_todosOsDados!=='undefined'?R_todosOsDados:[],lista,CFI_ano());
+  const cards=document.getElementById('nfCards');
+  if(cards)cards.innerHTML=
+     '<div class="card-p" style="border-left:4px solid #16a34a"><label>✅ Prontos para emitir</label><div class="val">'+res.prontas+'</div><div class="val-sub">de '+res.fichas+' cadastrado(s)</div></div>'
+    +'<div class="card-p" style="border-left:4px solid #f59e0b"><label>⚠️ Cadastro incompleto</label><div class="val">'+res.incompletas+'</div><div class="val-sub">falta dado fiscal</div></div>'
+    +'<div class="card-p" style="border-left:4px solid #ef4444"><label>👤 Sem cadastro</label><div class="val">'+res.semFicha+'</div><div class="val-sub">faturaram em '+CFI_ano()+'</div></div>';
+  const aviso=document.getElementById('nfAviso');
+  if(aviso)aviso.innerHTML=CFI_ok?'':'<div class="nf-alerta erro"><b>Não consegui ler o cadastro fiscal da nuvem.</b> A lista abaixo pode estar velha — recarregue antes de cadastrar.</div>';
+
+  let h='';
+  if(res.pendencias.length){
+    h+='<div class="cfi-sec">👤 Faturaram em '+CFI_ano()+' e ainda não têm cadastro — do maior para o menor</div>';
+    h+=res.pendencias.map(p=>'<div class="cfi-lin pend"><div class="cfi-info">'
+      +'<div class="cfi-nome">'+NF_esc(p.nome)+'</div>'
+      +'<div class="cfi-sub">'+p.diarias+' diária(s) · '+fmt(p.faturado)+'</div></div>'
+      +'<button class="btn btn-blue" style="padding:6px 13px;font-size:.82rem" data-nome="'+NF_esc(p.nome)+'" onclick="CFI_abrir(null,this.dataset.nome)">Cadastrar</button></div>').join('');
+  }
+  h+='<div class="cfi-sec">📇 Cadastrados ('+lista.length+')'
+    +'<button class="btn btn-blue" style="float:right;padding:5px 12px;font-size:.8rem;text-transform:none;letter-spacing:0" onclick="CFI_abrir()">＋ Novo cliente</button></div>';
+  h+=lista.length?lista.map(f=>{
+      const c=CFI_completude(f);
+      const selo=c.pronto?'<span class="cfi-selo ok">✅ pronto</span>'
+        :'<span class="cfi-selo falta">⚠️ falta '+NF_esc(c.faltam.slice(0,2).join(', '))+(c.faltam.length>2?' +'+(c.faltam.length-2):'')+'</span>';
+      const doc=f.doc?CFI_formatarDoc(f.doc):'sem CPF/CNPJ';
+      return '<div class="cfi-lin"><div class="cfi-info"><div class="cfi-nome">'+NF_esc(f.nome||f.id)+'</div>'
+        +'<div class="cfi-sub">'+NF_esc(doc)+(f.municipio?' · '+NF_esc(f.municipio)+'/'+NF_esc(f.uf||''):'')+'</div></div>'
+        +selo+'<button class="btn btn-outline-b" style="padding:6px 12px;font-size:.82rem" data-id="'+NF_esc(f.id)+'" onclick="CFI_abrir(this.dataset.id)">✏️ Editar</button></div>';
+    }).join('')
+    :'<p class="nf-vazio">Nenhum cliente cadastrado ainda. Comece pelos que mais faturam, na lista acima.</p>';
+  raiz.innerHTML=h;
+}
+
+window.CFI_abrir=function(id,nomeSugerido){
+  const f=id?(CFI_FICHAS[id]||CFI_novaFicha('')):CFI_novaFicha(nomeSugerido||'');
+  CFI_editandoId=id||null;
+  const v=(k,val)=>{const el=document.getElementById(k);if(el)el.value=val==null?'':val;};
+  document.getElementById('cfiTit').textContent=id?('✏️ '+(f.nome||'Cliente')):'➕ Novo cliente';
+  ['nome','fantasia','razaoSocial','responsavel','telefone','email','doc','inscricaoMunicipal',
+   'inscricaoEstadual','logradouro','numero','complemento','bairro','municipio','uf','cep',
+   'emailNota','contatoFinanceiro','whatsappFinanceiro','emailFinanceiro','prazoPagamento',
+   'diaVencimento','instrucoes','observacoes'].forEach(k=>v('cfiF_'+k,f[k]));
+  v('cfiF_fechamentoPadrao',f.fechamentoPadrao||'mensal');
+  const ex=document.getElementById('cfiF_exigeNota'); if(ex)ex.checked=f.exigeNota!==false;
+  CFI_conferir();
+  document.getElementById('cfiModalBg').classList.add('open');
+};
+window.CFI_fechar=function(){document.getElementById('cfiModalBg').classList.remove('open');CFI_editandoId=null;};
+
+// Marca em vermelho o que está inválido e diz o que falta — antes de salvar, não depois.
+window.CFI_conferir=function(){
+  const g=k=>document.getElementById('cfiF_'+k);
+  [['doc',v=>!v||CFI_validarDoc(v)],['cep',v=>!v||CFI_validarCEP(v)],['uf',v=>!v||CFI_validarUF(v)],
+   ['email',v=>!v||CFI_validarEmail(v)],['emailNota',v=>!v||CFI_validarEmail(v)],
+   ['emailFinanceiro',v=>!v||CFI_validarEmail(v)]].forEach(([k,ok])=>{
+     const el=g(k); if(el)el.classList.toggle('ruim',!ok(el.value.trim()));});
+  const prov={};
+  ['doc','razaoSocial','logradouro','numero','bairro','municipio','uf','cep','email','emailNota','emailFinanceiro']
+    .forEach(k=>{const el=g(k);prov[k]=el?el.value.trim():'';});
+  const c=CFI_completude(prov);
+  const el=document.getElementById('cfiStatus');
+  if(el)el.innerHTML=c.pronto?'<span class="cfi-selo ok">✅ pronto para emitir nota</span>'
+    :'<span class="cfi-selo falta">⚠️ falta: '+NF_esc(c.faltam.join(', '))+'</span>';
+};
+
+window.CFI_salvar=async function(){
+  const g=k=>{const el=document.getElementById('cfiF_'+k);return el?el.value.trim():'';};
+  const nome=g('nome');
+  if(!nome){toast('Informe o nome do cliente (o mesmo que aparece no Receber).','#ef4444');return;}
+  if(g('doc')&&!CFI_validarDoc(g('doc'))){toast('CPF/CNPJ inválido — confira o número.','#ef4444');return;}
+  const base=CFI_editandoId?Object.assign({},CFI_FICHAS[CFI_editandoId]):CFI_novaFicha(nome);
+  let f=Object.assign(base,{
+    nome, id:CFI_editandoId||CFI_slug(nome),
+    fantasia:g('fantasia'), razaoSocial:g('razaoSocial'), responsavel:g('responsavel'),
+    telefone:g('telefone'), email:g('email'), doc:CFI_so(g('doc')),
+    inscricaoMunicipal:g('inscricaoMunicipal'), inscricaoEstadual:g('inscricaoEstadual'),
+    logradouro:g('logradouro'), numero:g('numero'), complemento:g('complemento'),
+    bairro:g('bairro'), municipio:g('municipio'), uf:g('uf').toUpperCase(), cep:CFI_so(g('cep')),
+    emailNota:g('emailNota'), contatoFinanceiro:g('contatoFinanceiro'),
+    whatsappFinanceiro:g('whatsappFinanceiro'), emailFinanceiro:g('emailFinanceiro'),
+    exigeNota:!!(document.getElementById('cfiF_exigeNota')||{}).checked,
+    fechamentoPadrao:g('fechamentoPadrao')||'mensal',
+    prazoPagamento:g('prazoPagamento'), diaVencimento:parseInt(g('diaVencimento'),10)||null,
+    instrucoes:g('instrucoes'), observacoes:g('observacoes'),
+    atualizadoEm:new Date().toISOString()
+  });
+  if(!f.criadoEm)f.criadoEm=f.atualizadoEm;
+  f=CFI_adicionarApelido(f,nome);
+  CFI_FICHAS[f.id]=f; CFI_salvarCache();
+  const novo=!CFI_editandoId;
+  CFI_fechar(); CFI_render();
+  await BC_fbUpsert(CFI_COL,f.id,f);
+  try{AUD_log(novo?'criar':'editar','clientes_fiscais',nome,'Cadastro fiscal',null,null);}catch(e){}
+  toast('✅ '+nome+' salvo.');
+};
 
 // ── registrar / editar ──
 function NF_hojeISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -9130,7 +9317,7 @@ function MOD_hidratarMain(id){
   else if(id==='cartoes'||id==='evolucao')MOD_cartoes();
   // A fila "a faturar" sai do Receber (já carregado no init) cruzado com as notas já
   // registradas — só a coleção nova precisa vir da nuvem.
-  else if(id==='notas')MOD_umaVez('notas-fiscais',NF_carregar).then(()=>{if(mainAtivo==='notas')NF_montar();});
+  else if(id==='notas')Promise.all([MOD_umaVez('notas-fiscais',NF_carregar),MOD_umaVez('clientes-fiscais',CFI_carregar)]).then(()=>{if(mainAtivo==='notas')NF_montar();});
   else if(id==='simulacao'){
     // precisa do saldo real das contas; a config traz ajustes/notas do Firestore
     MOD_contasCompleto().then(()=>{if(typeof SIM_marcarContasProntas==='function')SIM_marcarContasProntas();});
@@ -9467,6 +9654,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
+<script src="js/clientes-fiscais.js?v=be77e287"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>
