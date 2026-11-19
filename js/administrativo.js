@@ -156,7 +156,9 @@ function lista(){
  $('lista').querySelectorAll('[data-exp]').forEach(b=>b.onclick=e=>{
    e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
  $('lista').querySelectorAll('[data-abrir]').forEach(b=>b.onclick=()=>{
-   if(!dirty||confirm('Descartar as alterações não salvas?'))abrir(b.dataset.abrir);});
+   const url=new URL(location.href);url.hash=b.dataset.abrir;
+   const nova=window.open(url.href,'_blank');
+   if(nova)nova.opener=null;else avisar('Permita abrir novas abas neste navegador e clique novamente em Abrir cobrança.',true);});
 }
 // ── O fechamento aberto é o MESMO documento do Relatórios → Fechamento do WEN
 //    Financeiro: faixa verde, cartões de resumo, tabela por mês, barra de total e
