@@ -103,7 +103,7 @@ eq(r.nomeVeioPreenchido, 'CLIENTE GRANDE', 'o nome vem preenchido da pendência'
 if (!/falta/.test(r.statusInicial)) f.push('ficha nova tem que dizer o que falta');
 if (!r.docRuimMarcado) f.push('CNPJ inválido tem que marcar o campo em vermelho');
 if (!r.barrouDocRuim)  f.push('🔴 salvou com CNPJ inválido — tinha que barrar');
-if (!/pronto para emitir/.test(r.statusPronto)) f.push('com tudo preenchido tem que dizer "pronto para emitir"');
+if (!/com CPF\/CNPJ/.test(r.statusPronto)) f.push('com o documento válido o selo tem que dizer "com CPF/CNPJ"');
 eq(r.salvou, 1, 'salvou a ficha');
 eq(r.ficha, { id: 'clientegrande', nome: 'CLIENTE GRANDE', doc: '21577617000144', uf: 'SP', cep: '01414000', pronto: true }, 'a ficha gravada');
 if (!r.guardouNoCache) f.push('tem que guardar no cache local (padrão do BC_)');

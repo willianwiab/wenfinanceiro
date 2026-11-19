@@ -54,12 +54,23 @@ const vazia = C.CFI_novaFicha('CLIENTE NOVO');
 eq(vazia.id, 'clientenovo', 'ficha nova nasce com o slug como id');
 eq(vazia.nomes, ['CLIENTE NOVO'], 'ficha nova já guarda a grafia de origem');
 ok(!C.CFI_completude(vazia).pronto, 'ficha vazia não está pronta');
-eq(C.CFI_completude(vazia).faltam.length, 8, 'os 8 campos obrigatórios da NFS-e');
+eq(C.CFI_completude(vazia).faltam, ['CPF ou CNPJ','contato','WhatsApp'],
+   'só CPF/CNPJ bloqueia; contato e WhatsApp entram como desejáveis (decisão do Will, 19/11)');
 
-const cheia = Object.assign(C.CFI_novaFicha('ACME'), {
-  doc:'21577617000144', razaoSocial:'ACME LTDA', logradouro:'Rua Haddock Lobo',
+// 🔑 O essencial é o documento. Endereço NÃO bloqueia: o Will não quer preencher, e o
+// Emissor Nacional costuma puxar razão social e endereço pelo CNPJ.
+const soDoc = Object.assign(C.CFI_novaFicha('ACME'), { doc:'21577617000144' });
+ok(C.CFI_completude(soDoc).pronto, 'só com CPF/CNPJ a ficha já conta como pronta');
+eq(C.CFI_completude(soDoc).leves, ['contato','WhatsApp'], 'e avisa o que ainda falta, sem bloquear');
+
+const semEndereco = Object.assign({}, soDoc, { contatoFinanceiro:'Maria', whatsappFinanceiro:'11 90000-0000' });
+eq(C.CFI_completude(semEndereco), { pronto:true, faltam:[], leves:[] },
+   'CNPJ + contato + WhatsApp, sem endereço nenhum: nada a cobrar');
+
+const cheia = Object.assign({}, semEndereco, {
+  razaoSocial:'ACME LTDA', logradouro:'Rua Haddock Lobo',
   numero:'1307', bairro:'Jardins', municipio:'São Paulo', uf:'SP', cep:'01414-000' });
-eq(C.CFI_completude(cheia), { pronto:true, faltam:[] }, 'ficha completa fica pronta');
+eq(C.CFI_completude(cheia), { pronto:true, faltam:[], leves:[] }, 'ficha completa segue pronta');
 
 const docRuim = Object.assign({}, cheia, { doc:'21577617000145' });
 ok(!C.CFI_completude(docRuim).pronto, 'CNPJ com dígito errado derruba o pronto');
@@ -67,6 +78,9 @@ ok(C.CFI_completude(docRuim).faltam.includes('CPF/CNPJ inválido'), 'e diz o mot
 
 const semIM = Object.assign({}, cheia, { inscricaoMunicipal:'' });
 ok(C.CFI_completude(semIM).pronto, 'inscrição municipal NÃO é obrigatória');
+// os campos de endereço continuam EXISTINDO no modelo — só deixaram de ser cobrados
+ok('logradouro' in C.CFI_novaFicha('X'), 'o campo de endereço segue no modelo, para quando a emissão pedir');
+ok('cep' in C.CFI_novaFicha('X'), 'idem o CEP');
 
 const mailRuim = Object.assign({}, cheia, { emailFinanceiro:'joao@' });
 ok(!C.CFI_completude(mailRuim).pronto, 'e-mail do financeiro inválido derruba');

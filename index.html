@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261118-268348b8';
+window.APP_VERSION='20261119-00303077';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1975,21 +1975,26 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="fg"><label>Telefone</label><input id="cfiF_telefone"/></div>
       <div class="fg"><label>E-mail</label><input id="cfiF_email" oninput="CFI_conferir()"/></div>
     </div>
-    <div class="cfi-sec">Fiscal — o que a nota exige</div>
+    <div class="cfi-sec">Fiscal</div>
     <div class="cfi-grid">
       <div class="fg"><label>CPF / CNPJ *</label><input id="cfiF_doc" oninput="CFI_conferir()" placeholder="00.000.000/0001-00"/></div>
       <div class="fg"><label>Razão social *</label><input id="cfiF_razaoSocial" oninput="CFI_conferir()"/></div>
       <div class="fg"><label>Inscrição municipal</label><input id="cfiF_inscricaoMunicipal"/></div>
       <div class="fg"><label>Inscrição estadual</label><input id="cfiF_inscricaoEstadual"/></div>
-      <div class="fg"><label>Logradouro *</label><input id="cfiF_logradouro" oninput="CFI_conferir()"/></div>
-      <div class="fg"><label>Número *</label><input id="cfiF_numero" oninput="CFI_conferir()"/></div>
-      <div class="fg"><label>Complemento</label><input id="cfiF_complemento"/></div>
-      <div class="fg"><label>Bairro *</label><input id="cfiF_bairro" oninput="CFI_conferir()"/></div>
-      <div class="fg"><label>Município *</label><input id="cfiF_municipio" oninput="CFI_conferir()"/></div>
-      <div class="fg"><label>UF *</label><input id="cfiF_uf" maxlength="2" oninput="CFI_conferir()" placeholder="SP"/></div>
-      <div class="fg"><label>CEP *</label><input id="cfiF_cep" oninput="CFI_conferir()" placeholder="01414-000"/></div>
       <div class="fg"><label>E-mail para receber a nota</label><input id="cfiF_emailNota" oninput="CFI_conferir()"/></div>
     </div>
+    <details style="margin-top:4px">
+      <summary style="cursor:pointer;font-size:.82rem;color:#64748b;font-weight:600">Endereço (opcional — o Emissor Nacional costuma puxar pelo CNPJ)</summary>
+      <div class="cfi-grid" style="margin-top:10px">
+        <div class="fg"><label>Logradouro</label><input id="cfiF_logradouro" oninput="CFI_conferir()"/></div>
+        <div class="fg"><label>Número</label><input id="cfiF_numero" oninput="CFI_conferir()"/></div>
+        <div class="fg"><label>Complemento</label><input id="cfiF_complemento"/></div>
+        <div class="fg"><label>Bairro</label><input id="cfiF_bairro" oninput="CFI_conferir()"/></div>
+        <div class="fg"><label>Município</label><input id="cfiF_municipio" oninput="CFI_conferir()"/></div>
+        <div class="fg"><label>UF</label><input id="cfiF_uf" maxlength="2" oninput="CFI_conferir()" placeholder="SP"/></div>
+        <div class="fg"><label>CEP</label><input id="cfiF_cep" oninput="CFI_conferir()" placeholder="01414-000"/></div>
+      </div>
+    </details>
     <div class="cfi-sec">Contato financeiro — para a cobrança</div>
     <div class="cfi-grid">
       <div class="fg"><label>Nome</label><input id="cfiF_contatoFinanceiro"/></div>
@@ -3952,7 +3957,7 @@ window.CFI_conferir=function(){
     .forEach(k=>{const el=g(k);prov[k]=el?el.value.trim():'';});
   const c=CFI_completude(prov);
   const el=document.getElementById('cfiStatus');
-  if(el)el.innerHTML=c.pronto?'<span class="cfi-selo ok">✅ pronto para emitir nota</span>'
+  if(el)el.innerHTML=c.pronto?('<span class="cfi-selo ok">✅ com CPF/CNPJ</span>'+(c.leves.length?' <span class="cfi-selo falta">falta '+NF_esc(c.leves.join(', '))+'</span>':''))
     :'<span class="cfi-selo falta">⚠️ falta: '+NF_esc(c.faltam.join(', '))+'</span>';
 };
 
@@ -9665,7 +9670,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/clientes-fiscais.js?v=be77e287"></script>
+<script src="js/clientes-fiscais.js?v=5b6d80e4"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>

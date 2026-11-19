@@ -17,17 +17,20 @@
 const CFI_UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA',
                  'PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
-// Campos sem os quais a NFS-e não sai. Inscrição municipal fica de fora de propósito:
-// só é exigida quando o tomador presta serviço no mesmo município.
+// O ESSENCIAL, decidido pelo Will em 19/11: o nome já vem do financeiro; o que falta é
+// CPF/CNPJ, contato, WhatsApp e (talvez) e-mail. Endereço ele não quer preencher.
+//
+// ⚠️ A CONFERIR COM O CONTADOR: a NFS-e identifica o tomador pelo CNPJ, e o Emissor Nacional
+// normalmente resolve razão social e endereço pelo cadastro da Receita. Se na hora de emitir
+// ele exigir o endereço, os campos continuam aqui (opcionais) — é só voltar a torná-los
+// obrigatórios nesta lista. Não apaguei nada: só parei de cobrar.
 const CFI_OBRIGATORIOS = [
-  ['doc',         'CPF ou CNPJ'],
-  ['razaoSocial', 'razão social'],
-  ['logradouro',  'logradouro'],
-  ['numero',      'número'],
-  ['bairro',      'bairro'],
-  ['municipio',   'município'],
-  ['uf',          'UF'],
-  ['cep',         'CEP'],
+  ['doc', 'CPF ou CNPJ'],
+];
+// Desejáveis: não bloqueiam, mas a tela mostra como pendência leve.
+const CFI_DESEJAVEIS = [
+  ['contatoFinanceiro',  'contato'],
+  ['whatsappFinanceiro', 'WhatsApp'],
 ];
 
 // ── identidade ────────────────────────────────────────────────────────────────────
@@ -92,17 +95,17 @@ function CFI_validarEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String
 // Devolve o que FALTA, em português, para a tela conseguir dizer o motivo.
 function CFI_completude(f){
   f = f || {};
-  const faltam = [];
-  CFI_OBRIGATORIOS.forEach(([campo, rotulo]) => {
-    if (!String(f[campo] == null ? '' : f[campo]).trim()) faltam.push(rotulo);
-  });
+  const faltam = [], falta = ([c,r]) => { if(!String(f[c]==null?'':f[c]).trim()) return r; };
+  CFI_OBRIGATORIOS.forEach(x => { const r = falta(x); if (r) faltam.push(r); });
+  // os desejáveis entram na lista do que falta, mas NÃO derrubam o "pronto"
+  const leves = CFI_DESEJAVEIS.map(falta).filter(Boolean);
   if (String(f.doc||'').trim() && !CFI_validarDoc(f.doc))      faltam.push('CPF/CNPJ inválido');
   if (String(f.cep||'').trim() && !CFI_validarCEP(f.cep))      faltam.push('CEP inválido');
   if (String(f.uf||'').trim()  && !CFI_validarUF(f.uf))        faltam.push('UF inválida');
   if (String(f.email||'').trim() && !CFI_validarEmail(f.email))faltam.push('e-mail inválido');
   if (String(f.emailFinanceiro||'').trim() && !CFI_validarEmail(f.emailFinanceiro))
     faltam.push('e-mail do financeiro inválido');
-  return { pronto: faltam.length === 0, faltam };
+  return { pronto: faltam.length === 0, faltam: faltam.concat(leves), leves };
 }
 
 // ── ficha nova ────────────────────────────────────────────────────────────────────
@@ -175,7 +178,7 @@ function CFI_resumo(lancamentos, fichas, ano){
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
+  module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_DESEJAVEIS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
     CFI_validarDoc, CFI_tipoDoc, CFI_formatarDoc, CFI_validarCEP, CFI_validarUF, CFI_validarEmail,
     CFI_completude, CFI_novaFicha, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
 }
