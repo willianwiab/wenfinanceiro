@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-8d9bf65c';
+window.APP_VERSION='20261119-a8d9260d';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -732,16 +732,16 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 .calc-preview.show{display:block}
 .venc-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .venc-data{border:1px solid #e5e7eb;border-radius:7px;padding:8px 10px;font-size:.9rem;outline:none;
-  background:#fff;color:#0f172a;font-family:inherit;min-width:160px}
+  background:#fff;color:#0f172a;font-family:inherit;width:150px;flex:none}
 .venc-data:focus{border-color:#6d28d9;box-shadow:0 0 0 3px rgba(109,40,217,.1)}
 .venc-chips{display:flex;gap:5px;flex-wrap:wrap}
-.venc-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:5px 11px;
-  font-size:.75rem;font-weight:600;color:#475569;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+.venc-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:4px 10px;
+  font-size:.73rem;font-weight:600;color:#475569;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
 .venc-chip:hover{background:#e2e8f0;color:#0f172a}
 .venc-chip.lim{color:#94a3b8}
 .venc-chip.lim:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 .venc-chip:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
-.venc-eco{font-size:.78rem;color:#64748b;margin-top:7px;line-height:1.45}
+.venc-eco{font-size:.7rem;color:#64748b;font-weight:600;text-transform:none;letter-spacing:0;line-height:1.4}
 .venc-eco.alerta{color:#b45309}
 .data-selects{display:flex;gap:5px}
 .data-selects select{border:1px solid #e5e7eb;border-radius:7px;padding:8px 7px;font-size:.86rem;outline:none;cursor:pointer;background:white}
@@ -2230,7 +2230,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="form-row">
       <div class="form-group"><label>Cliente *</label><input type="text" id="rFCliente" placeholder="Ex: CARTPANDA" list="rClientesList" oninput="R_padraoRender()" onchange="R_padraoRender()"/><datalist id="rClientesList"></datalist></div>
       <div class="form-group">
-        <label>📅 Data da Gravação</label>
+        <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📅 Data da Gravação<span id="rMesAutoInfo" style="display:none;font-size:.7rem;font-weight:700;border-radius:5px;padding:2px 8px;text-transform:none;letter-spacing:0"></span></label>
         <div class="data-selects">
           <select id="rFDia" style="flex:0.8"><option value="">Dia</option></select>
           <select id="rFMes" onchange="atualizarMesDoFormularioR()" style="flex:1.4">
@@ -2240,7 +2240,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           </select>
           <select id="rFAno" onchange="atualizarMesDoFormularioR()" style="flex:1"><option value="">Ano</option></select>
         </div>
-        <div id="rMesAutoInfo" style="display:none;margin-top:5px;font-size:.74rem;font-weight:700;border-radius:5px;padding:4px 9px"></div>
       </div>
     </div>
     <div class="form-row3">
@@ -2263,7 +2262,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="calc-preview" id="rCalcPreview"></div>
     <div class="form-group"><label>Descrição</label><input type="text" id="rFDesc" placeholder="1 DIÁRIA DE 2 HORAS"/></div>
     <div class="form-group">
-        <label>📅 Vencimento <span style="font-size:.72rem;color:#9ca3af">(vazio = mesma data da gravação)</span></label>
+        <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📅 Vencimento<span class="venc-eco" id="rVencEco"></span></label>
         <div class="venc-linha">
           <input type="date" id="rFVenc" class="venc-data" onchange="R_vencEco()" oninput="R_vencEco()"/>
           <div class="venc-chips">
@@ -2274,7 +2273,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
             <button type="button" class="venc-chip lim" onclick="R_vencAtalho('limpar')">Limpar</button>
           </div>
         </div>
-        <div class="venc-eco" id="rVencEco"></div>
       </div>
       <div class="form-group"><label>Observação</label><textarea id="rFObs" rows="2"></textarea></div>
     <!-- Padrão do CLIENTE, não deste lançamento. Grava em clientes_fiscais; o Receber
@@ -4563,8 +4561,8 @@ function atualizarMesDoFormularioR(){
   if(mi&&ano){
     try{R_vencEco();}catch(e){}
     const mesAbrev=MESES_ABREV[parseInt(mi)-1],mesCalc=mesAbrev+'/'+ano,dif=mesCalc!==R_mesAtual;
-    info.textContent=dif?'⚠️ Lançando em: '+mesCalc+' (mês diferente)':'✅ Lançando em: '+mesCalc;
-    info.style.display='block';info.style.background=dif?'#fef9c3':'#f0fdf4';info.style.color=dif?'#92400e':'#16a34a';info.style.border=dif?'1px solid #fde68a':'1px solid #bbf7d0';
+    info.textContent=dif?'⚠️ '+mesCalc+' · mês diferente':'✅ '+mesCalc;
+    info.style.display='inline-block';info.style.background=dif?'#fef9c3':'#f0fdf4';info.style.color=dif?'#92400e':'#16a34a';info.style.border=dif?'1px solid #fde68a':'1px solid #bbf7d0';
   }else info.style.display='none';
 }
 function R_atualizarClientesList(){const todos=R_getTodosClientes();['rClientesList','rClientesList2'].forEach(id=>{const dl=document.getElementById(id);if(dl)dl.innerHTML=todos.map(c=>`<option value="${c}">`).join('');});}
