@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-7810e326';
+window.APP_VERSION='20261119-8d9bf65c';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2250,12 +2250,15 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     </div>
     <div class="form-row3">
       <div class="form-group"><label>🎬 Locação (R$)</label><input type="number" id="rFValorLocacao" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
-      <div class="form-group"><label>✂️ Edição (R$)</label><input type="number" id="rFValorEdicao" placeholder="0,00" step="0.01" oninput="R_descAuto()"/></div>
+      <div class="form-group"><label>✂️ Edição (R$) <span style="font-size:.7rem;color:#9ca3af;font-weight:400">· qtd</span></label>
+        <div style="display:flex;gap:7px;align-items:center">
+          <input type="number" id="rFValorEdicao" placeholder="0,00" step="0.01" oninput="R_descAuto()" style="flex:1;min-width:0"/>
+          <input type="number" id="rFQtdEdicao" placeholder="0" min="0" step="1" oninput="R_descAuto()" title="Quantas edições" style="width:62px;flex:none;text-align:center"/>
+        </div></div>
       <div class="form-group"><label>💰 Total (calculado)</label><input type="number" id="rFValorTotal" placeholder="0,00" readonly style="background:#f1f5f9;color:#6b7280;cursor:not-allowed"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Valor Reserva (R$)</label><input type="number" id="rFValorReserva" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
-      <div class="form-group"><label>✂️ Edições (qtd)</label><input type="number" id="rFQtdEdicao" placeholder="0" min="0" step="1" oninput="R_descAuto()"/></div>
     </div>
     <div class="calc-preview" id="rCalcPreview"></div>
     <div class="form-group"><label>Descrição</label><input type="text" id="rFDesc" placeholder="1 DIÁRIA DE 2 HORAS"/></div>
@@ -2804,7 +2807,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=ceed75ea"></script>
-<script src="js/fechamentos-admin.js?v=2067d245"></script>
+<script src="js/fechamentos-admin.js?v=d810e259"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4469,7 +4472,9 @@ async function R_confirmarExcluir(){
       toast('⚠️ NÃO consegui excluir: '+((r&&r.motivo)||'a nuvem não respondeu')+'. O lançamento continua aí — tente de novo em instantes.','#ef4444',9000);
       return;
     }
+    const excluido=R_todosOsDados.find(x=>String(x.id)===String(R_ridParaExcluir));
     R_todosOsDados=R_todosOsDados.filter(x=>String(x.id)!==String(R_ridParaExcluir));
+    FC_aoSalvarLancamento(excluido,'exclusao');
     R_salvarCacheLocal();   // sem isto, um F5 trazia o excluído de volta do cache
     setSyncStatus('ok');renderTabelaR();renderDashboardR();renderAgendaWidget();toast('🗑️ Excluído!','#ef4444');
   }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}
@@ -4662,6 +4667,9 @@ async function R_salvarLancamento(){
     }
     if(mesLanc&&mesLanc!==R_mesAtual){R_mesAtual=mesLanc;renderMesSelectR();}
     setSyncStatus('ok');R_fecharModal();renderTabelaR();renderDashboardR();renderAgendaWidget();
+    // Espelha para o administrativo DEPOIS de salvar. Falha aqui não desfaz o lançamento.
+    const idEsp=R_editandoId||(R_todosOsDados[R_todosOsDados.length-1]||{}).id;
+    FC_aoSalvarLancamento(R_todosOsDados.find(x=>String(x.id)===String(idEsp)),'lancamento');
   }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}finally{loading(false);}
 }
 
@@ -4691,7 +4699,7 @@ async function R_salvarParcial(){
   loading(true,'Registrando...');setSyncStatus('saving');
   try{
     const idx=R_todosOsDados.findIndex(r=>String(r.id)===String(R_parcialRid));
-    if(idx>-1){const r=R_todosOsDados[idx];const nr=Math.min(Number(r.valorTotal),Number(r.valorReserva||0)+v);const ns=Math.max(0,Number(r.valorTotal)-nr);R_todosOsDados[idx].valorReserva=nr;R_todosOsDados[idx].saldo=ns;await R_fbSalvar(R_todosOsDados[idx]);R_fecharModalParcial();renderTabelaR();renderDashboardR();setSyncStatus('ok');toast(ns===0?'✅ Quitado!':'✅ '+fmt(v)+' registrado!');}
+    if(idx>-1){const r=R_todosOsDados[idx];const nr=Math.min(Number(r.valorTotal),Number(r.valorReserva||0)+v);const ns=Math.max(0,Number(r.valorTotal)-nr);R_todosOsDados[idx].valorReserva=nr;R_todosOsDados[idx].saldo=ns;await R_fbSalvar(R_todosOsDados[idx]);R_fecharModalParcial();renderTabelaR();renderDashboardR();setSyncStatus('ok');toast(ns===0?'✅ Quitado!':'✅ '+fmt(v)+' registrado!');FC_aoSalvarLancamento(R_todosOsDados[idx],'baixa');}
   }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}finally{loading(false);}
 }
 

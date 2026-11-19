@@ -22,9 +22,14 @@ function FC_montar(cliente,selecionados,campos){
   return f;
 }
 // Clientes com diárias ainda não liberadas no recorte, já sem quem a ficha tirou do caminho.
+let FC_loteTudo=false;
 function FC_lote(){
   const ocupados=FC_ocupados(), fichas=(typeof CFI_lista==='function'?CFI_lista():[]), grupos={};
-  (NF_lancamentosDoPeriodo()||[]).forEach(r=>{
+  // "tudo" = todo lançamento desde out/2026, independente do recorte de meses da tela.
+  const base=FC_loteTudo
+    ? (R_todosOsDados||[]).filter(r=>Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r))
+    : (NF_lancamentosDoPeriodo()||[]);
+  base.forEach(r=>{
     if(ocupados.has(String(r.id)))return;
     const c=r.cliente||'';if(!c)return;
     (grupos[c]=grupos[c]||[]).push(r);
@@ -38,11 +43,13 @@ function FC_lote(){
 let FC_loteFora=new Set();   // clientes que o Will desmarcou nesta tela
 function FC_loteHTML(){
   const grupos=FC_lote();
-  if(!grupos.length)return '<p class="nf-vazio">✅ Nada solto neste recorte — toda diária dos clientes atendidos pelo administrativo já tem fechamento.</p>';
+  const chaveTudo=`<label class="nf-item" style="margin:10px 0"><input type="checkbox" id="fcLoteTudo" ${FC_loteTudo?'checked':''}>
+     <span><b>Carregar tudo desde outubro/2026</b> — ignora o recorte de meses acima. Use uma vez, para trazer o que já existia.</span></label>`;
+  if(!grupos.length)return chaveTudo+'<p class="nf-vazio">✅ Nada solto'+(FC_loteTudo?'':' neste recorte')+' — toda diária dos clientes atendidos pelo administrativo já está espelhada.</p>';
   const marcados=grupos.filter(g=>!FC_loteFora.has(g.cliente));
   const total=marcados.reduce((a,g)=>a+g.valor,0), diarias=marcados.reduce((a,g)=>a+g.regs.length,0);
-  return `<div class="nf-resumo"><b>Liberar o mês de uma vez</b><br>
-    Estes clientes têm diárias ainda não liberadas no recorte. Desmarque quem não entra —
+  return `<div class="nf-resumo"><b>Diárias que ainda não chegaram no administrativo</b><br>
+    Daqui para a frente isso acontece sozinho, no momento do lançamento. Esta lista é para o que já existia antes. Desmarque quem não entra —
     quem a ficha tirou do caminho (não exige nota <b>e</b> não é cobrado pelo administrativo) já não aparece aqui.</div>
    <div id="fcLoteLista">${grupos.map(g=>{
      const fora=FC_loteFora.has(g.cliente);
@@ -53,8 +60,9 @@ function FC_loteHTML(){
        ${CFI_chipsDe(g.cliente)}
        <div class="nf-val">${fmt(g.valor)}</div></div>`;}).join('')}</div>
    <div class="nf-resumo"><b>${marcados.length} cliente(s) · ${diarias} diária(s) · ${fmt(total)}</b><br>
-     Cada cliente vira um fechamento. O vencimento e as descrições ficam para o administrativo ajustar.</div>
-   <button class="btn btn-green" id="fcLiberarLote" ${FC_ok&&marcados.length?'':'disabled'}>🚀 Liberar os marcados</button>
+     Cada cliente vira um fechamento (mensal ou por diária, conforme a ficha). O vencimento vem do Receber.</div>
+   ${chaveTudo}
+   <button class="btn btn-green" id="fcLiberarLote" ${FC_ok&&marcados.length?'':'disabled'}>🚀 Espelhar os marcados</button>
    <p id="fcLoteResultado" role="status"></p>`;
 }
 function FC_ocupados(){return new Set(Object.values(FC_dados).flatMap(f=>f.lancamentoIds||[]).map(String));}
@@ -71,6 +79,7 @@ function FC_render(){
   root.querySelectorAll('.fc-lote-cb').forEach(el=>el.onchange=()=>{
     el.checked?FC_loteFora.delete(el.dataset.cli):FC_loteFora.add(el.dataset.cli);FC_render();});
   const bl=document.getElementById('fcLiberarLote');if(bl)bl.onclick=FC_liberarLote;
+  const bt=document.getElementById('fcLoteTudo');if(bt)bt.onchange=()=>{FC_loteTudo=bt.checked;FC_render();};
   root.querySelectorAll('#fcDiarias input').forEach(el=>el.onchange=()=>el.checked?FC_selecionados.add(el.dataset.id):FC_selecionados.delete(el.dataset.id));
   const all=document.getElementById('fcTodas');if(all)all.onchange=()=>root.querySelectorAll('#fcDiarias input:not(:disabled)').forEach(el=>{el.checked=all.checked;el.onchange();});
   const btn=document.getElementById('fcPreparar');if(btn)btn.onclick=()=>{
@@ -102,31 +111,27 @@ async function FC_gravar(f){
 }
 // Libera todos os clientes marcados, um por um. Relê os ocupados antes para não correr
 // atrás de diária que já saiu em outro fechamento enquanto a tela estava aberta.
+// O lote deixou de ser "liberar no fim do mês" e virou a CARGA do espelho: espelha o
+// que ainda não chegou no administrativo. É idempotente — rodar duas vezes não duplica.
 async function FC_liberarLote(){
   if(FC_salvando)return;FC_salvando=true;
   const btn=document.getElementById('fcLiberarLote'), aviso=document.getElementById('fcLoteResultado');
   if(btn)btn.disabled=true;
   try{
-    if(!await FC_carregar())throw Error('Não foi possível verificar os fechamentos existentes. Nada foi liberado.');
-    const ocupados=FC_ocupados();
+    if(!await FC_carregar())throw Error('Não foi possível verificar os fechamentos existentes. Nada foi espelhado.');
     const grupos=FC_lote().filter(g=>!FC_loteFora.has(g.cliente));
     if(!grupos.length)throw Error('Nenhum cliente marcado.');
-    let feitos=0; const falhas=[];
+    let feitos=[];
     for(const g of grupos){
-      try{
-        const regs=g.regs.filter(r=>!ocupados.has(String(r.id)));
-        if(!regs.length){falhas.push(g.cliente+': já liberado');continue;}
-        const f=FC_montar(g.cliente,regs,['data','horas','studio','descricao']);
-        const id=await FC_gravar(f);
-        FC_dados[id]={...f,id};f.lancamentoIds.forEach(x=>ocupados.add(String(x)));feitos++;
-        if(aviso)aviso.textContent=`Liberando… ${feitos}/${grupos.length}`;
-      }catch(e){falhas.push(g.cliente+': '+e.message);}
+      if(aviso)aviso.textContent='Espelhando… '+g.cliente;
+      feitos=feitos.concat(await FC_espelhar(g.regs,'carga'));
     }
+    if(feitos.length)await AV_criar(feitos);
     FC_render();
     const res=document.getElementById('fcLoteResultado');
-    const msg=`${feitos} fechamento(s) liberado(s).`+(falhas.length?' Não deu para '+falhas.length+': '+falhas.join(' · '):'');
+    const msg=feitos.length+' fechamento(s) no administrativo.';
     if(res)res.textContent=msg;
-    toast(falhas.length?msg:'🚀 '+msg,falhas.length?'#f59e0b':undefined);
+    toast('🚀 '+msg);
   }catch(e){if(aviso)aviso.textContent=e.message;if(btn)btn.disabled=false;toast(e.message,'#ef4444');}
   finally{FC_salvando=false;}
 }
@@ -207,4 +212,165 @@ function FC_renderAvisos(){
    +bloco('📅 A vencer',g.aVencer,'Nada mais agendado.')
    +bloco('❔ Sem data de vencimento',g.semData,'Todos com data definida.')
    +bloco('🧾 Esperando nota fiscal',g.notaPendente,'Nenhuma nota pendente.');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FC_espelhar — o fechamento deixa de ser fotografia e vira ESPELHO VIVO.
+//
+// Will (19/11): "não quero liberar em lote, deixa liberado até antes mesmo de gravar —
+// às vezes o cliente paga 50% e já precisa aparecer para ela as informações."
+//
+// Toda vez que um lançamento do Receber é salvo, ele é espelhado para o administrativo
+// (se a ficha do cliente disser que ela atende). Mexeu no lançamento, mexeu no espelho.
+//
+// ⚠️ A GRAVAÇÃO VAI COM updateMask. PATCH sem máscara SUBSTITUI o documento inteiro —
+// foi assim que o Receber perdeu lançamento em julho. Os campos dela (número da nota,
+// datas, situação da cobrança) NUNCA entram na máscara.
+// ══════════════════════════════════════════════════════════════════════════════
+const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','vencimento',
+  'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca'];
+const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm',
+  'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus'];
+
+// A chave do agrupamento sai da ficha: mensal junta o mês do cliente, "diaria" é uma por uma.
+function FC_chaveGrupo(cliente,reg,ficha){
+  const base=CFI_slug(cliente||'');
+  return (ficha&&ficha.fechamentoPadrao==='diaria')
+    ? 'd_'+base+'_'+String(reg.id)
+    : 'm_'+base+'_'+WENFechamentos.mesChave(reg.mes);
+}
+// Achou um fechamento com esta chave? (grupo é guardado no próprio documento)
+function FC_porGrupo(chave){return Object.values(FC_dados).find(f=>f.grupo===chave)||null;}
+
+// A descrição só é regerada enquanto ela não tiver mexido: guardamos o texto que o
+// sistema gerou da última vez (descricaoAuto) e comparamos.
+function FC_preservarTexto(antigo,novo){
+  const dela=k=>antigo&&String(antigo[k]||'').trim()&&String(antigo[k]).trim()!==String((antigo.descricaoAuto||{})[k]||'').trim();
+  return {
+    descricaoFiscal: dela('descricaoFiscal')?antigo.descricaoFiscal:novo.descricaoFiscal,
+    descricaoCobranca: dela('descricaoCobranca')?antigo.descricaoCobranca:novo.descricaoCobranca,
+    descricaoAuto:{descricaoFiscal:novo.descricaoFiscal,descricaoCobranca:novo.descricaoCobranca}
+  };
+}
+// Nota emitida e o valor mudou: NÃO sobrescreve calado — marca e avisa.
+function FC_divergenciaDe(antigo,valorNovo){
+  const emitiu=antigo&&(antigo.fiscalStatus==='emitida'||antigo.nfSinalStatus==='emitida'||antigo.nfSaldoStatus==='emitida');
+  if(!emitiu)return null;
+  const valorNota=Number(antigo.fiscalValor??antigo.valor)||0;
+  if(Math.round(valorNota*100)===Math.round(valorNovo*100))return null;
+  return {valorNota,valorAtual:valorNovo,em:new Date().toISOString()};
+}
+
+// Grava SÓ os campos informados. É aqui que mora a disciplina do updateMask.
+async function FC_gravarCampos(id,doc,campos){
+  const fields={};
+  campos.forEach(k=>{if(doc[k]!==undefined)fields[k]=toFV(doc[k]);});
+  const mask=Object.keys(fields).map(k=>'updateMask.fieldPaths='+encodeURIComponent(k)).join('&');
+  if(!mask)return;
+  const url=`${FS_URL}/administrativo_fechamentos/${encodeURIComponent(id)}?${mask}&key=${FB_API_KEY}`;
+  const res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+  if(!res.ok)throw Error('Espelho recusado ('+res.status+')');
+}
+
+// As diárias que compõem um grupo, lidas do Receber AGORA (o espelho é sempre do estado atual).
+function FC_regsDoGrupo(chave,cliente,ficha){
+  const todas=(R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r));
+  return todas.filter(r=>FC_chaveGrupo(cliente,r,ficha)===chave);
+}
+
+// ── O ESPELHO ────────────────────────────────────────────────────────────────
+// Recebe os lançamentos que mudaram e refaz o(s) grupo(s) deles. Devolve o que fez,
+// para os avisos. Nunca escreve no Receber.
+async function FC_espelhar(regs,motivo){
+  if(!Array.isArray(regs))regs=[regs];
+  const fichas=(typeof CFI_lista==='function'?CFI_lista():[]);
+  const grupos=new Map();
+  regs.forEach(r=>{
+    if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
+    const ficha=CFI_casar(r.cliente,fichas);
+    if(!CFI_liberavel(ficha))return;                 // a ficha diz que ela não atende
+    const chave=FC_chaveGrupo(r.cliente,r,ficha);
+    if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
+  });
+  const feitos=[];
+  for(const [chave,{cliente,ficha}] of grupos){
+    try{
+      const doGrupo=FC_regsDoGrupo(chave,cliente,ficha);
+      const antigo=FC_porGrupo(chave);
+      const id=antigo?antigo.id:chave;
+      if(!doGrupo.length){await FC_removerGrupo(chave,antigo);continue;}
+      const novo=WENFechamentos.criar(doGrupo,ficha||{});
+      const textos=FC_preservarTexto(antigo,novo);
+      const div=FC_divergenciaDe(antigo,novo.valor);
+      const doc={...(antigo||{}),...novo,...textos,grupo:chave,id,
+        atualizadoEm:new Date().toISOString(),divergencia:div||null};
+      if(antigo)FC_CAMPOS_DELA.forEach(k=>{if(antigo[k]!==undefined)doc[k]=antigo[k];});
+      else{doc.criadoEm=doc.atualizadoEm;}
+      await FC_gravarCampos(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto')
+        :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
+      FC_dados[id]=doc;
+      feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
+        divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
+        pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
+        parcial:!!(antigo&&doc.recebido>antigo.recebido&&doc.saldo>0)});
+    }catch(e){console.warn('FC_espelhar',chave,e.message);}
+  }
+  return feitos;
+}
+
+// Grupo ficou sem diária: some, a menos que já tenha nota — aí fica com a divergência.
+async function FC_removerGrupo(chave,antigo){
+  if(!antigo)return;
+  const emitiu=antigo.fiscalStatus==='emitida'||antigo.nfSinalStatus==='emitida'||antigo.nfSaldoStatus==='emitida';
+  if(emitiu){
+    const doc={...antigo,divergencia:{valorNota:Number(antigo.fiscalValor??antigo.valor)||0,valorAtual:0,em:new Date().toISOString()},atualizadoEm:new Date().toISOString()};
+    await FC_gravarCampos(antigo.id,doc,['divergencia','atualizadoEm']);
+    FC_dados[antigo.id]=doc;return;
+  }
+  const res=await fetch(`${FS_URL}/administrativo_fechamentos/${encodeURIComponent(antigo.id)}?key=${FB_API_KEY}`,{method:'DELETE'});
+  if(res.ok||res.status===404)delete FC_dados[antigo.id];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AV_ — avisos para o administrativo, no espírito da Central WEN de Produção:
+// ela não escreve, só recebe, abre e marca como lido.
+// ══════════════════════════════════════════════════════════════════════════════
+const AV_COL='administrativo_avisos';
+function AV_texto(f){
+  const v=x=>WENFechamentos.money(Number(x)||0);
+  if(f.divergencia)return {tipo:'divergencia',
+    texto:'⚠️ '+f.cliente+' — a nota saiu por '+v(f.divergencia.valorNota)+' e a diária agora está '+v(f.divergencia.valorAtual)+'. Não emita outra sem falar com o Will.'};
+  if(f.pagouAgora)return {tipo:'pago',texto:'✅ '+f.cliente+' — pagamento confirmado, '+v(f.valor)+'. Nada mais a cobrar.'};
+  if(f.parcial)return {tipo:'parcial',texto:'💰 '+f.cliente+' — entrou um pagamento. Falta '+v(f.saldo)+'.'};
+  if(f.novo)return {tipo:'novo',texto:'🧾 '+f.cliente+' — '+f.diarias+(f.diarias===1?' diária':' diárias')+' · '+v(f.valor)+'. Pronto para nota e cobrança.'};
+  return {tipo:'mudou',texto:'✏️ '+f.cliente+' — o fechamento mudou: '+f.diarias+(f.diarias===1?' diária':' diárias')+' · '+v(f.valor)+'.'};
+}
+// Um aviso por fechamento por dia e por tipo: id fixo evita encher a tela dela de
+// repetido quando o Will mexe no mesmo lançamento cinco vezes seguidas.
+async function AV_criar(feitos){
+  const dia=new Date().toISOString().slice(0,10);
+  for(const f of feitos){
+    try{
+      const {tipo,texto}=AV_texto(f);
+      if(tipo==='mudou'&&!f.divergencia)continue;        // mexida sem consequência não vira aviso
+      const id=tipo+'-'+f.id+'-'+dia;
+      const doc={tipo,texto,fechamentoId:f.id,cliente:f.cliente,valor:f.valor,saldo:f.saldo,
+        criadoEm:new Date().toISOString(),lidoEm:''};
+      const fields={};Object.entries(doc).forEach(([k,v])=>fields[k]=toFV(v));
+      await fetch(`${FS_URL}/${AV_COL}/${encodeURIComponent(id)}?key=${FB_API_KEY}`,
+        {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
+    }catch(e){console.warn('AV_criar',e.message);}
+  }
+}
+
+// O gancho único que o Receber chama: espelha e avisa. Falha aqui NUNCA derruba o
+// salvamento do lançamento — o Receber é a verdade, o espelho é consequência.
+async function FC_aoSalvarLancamento(reg,motivo){
+  try{
+    if(typeof CFI_lista!=='function'||!reg)return;
+    if(!FC_ok&&!await FC_carregar())return;
+    const feitos=await FC_espelhar(reg,motivo);
+    if(feitos.length)await AV_criar(feitos);
+    if(feitos.some(f=>f.divergencia))toast('⚠️ Nota já emitida com outro valor — confira os Avisos.','#f59e0b');
+  }catch(e){console.warn('FC_aoSalvarLancamento',e.message);}
 }

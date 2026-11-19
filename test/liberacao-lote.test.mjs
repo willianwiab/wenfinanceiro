@@ -68,6 +68,25 @@ await page.evaluate(()=>NF_montar());
 assert.equal(await page.locator('.fc-lote-cb').count(),0,'nada mais solto no recorte');
 assert((await page.textContent('#nfConteudo')).includes('Nada solto'));
 
+// ── "Carregar tudo desde outubro/2026" ignora o recorte de meses ──────────
+await page.evaluate(()=>{
+  R_todosOsDados.push({id:'OUT1',cliente:'Zeta',mes:'OUT/2026',data:'20/10/2026',horario:'-',
+    horas:2,studio:'STUDIO A',valorTotal:900,valorReserva:0,saldo:900,desc:'Antiga'});
+  NF_montar();
+});
+assert.equal(await page.locator('.fc-lote-cb').count(),0,'fora do recorte NOV, a diária de OUT não aparece');
+await page.check('#fcLoteTudo');
+await page.waitForFunction(()=>document.querySelectorAll('.fc-lote-cb').length===1);
+assert.deepEqual(await nomes(),['Zeta'],'com "tudo", a diária de outubro aparece');
+await page.click('#fcLiberarLote');
+await page.waitForFunction(()=>Object.values(FC_dados).some(f=>f.cliente==='Zeta'),null,{timeout:15000});
+
+// rodar de novo não duplica — o espelho é idempotente
+const antes=await page.evaluate(()=>Object.keys(FC_dados).length);
+await page.evaluate(async()=>{await FC_espelhar(R_todosOsDados.filter(r=>r.cliente==='Zeta'),'carga');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),antes,
+  'espelhar a mesma diária de novo não cria outro fechamento');
+
 assert.deepEqual(errors,[]);
 console.log('✅ liberacao-lote: a ficha decide quem entra, um fechamento por cliente, sem diária em dobro, 50/50 preservado');
 }finally{await browser.close();}

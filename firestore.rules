@@ -11,6 +11,15 @@ service cloud.firestore {
     }
     // Nenhuma permissão administrativa sobre lançamentos, bancos, despesas ou folha.
     match /{document=**} { allow read, write: if proprietario(); }
+    // Avisos: ela LÊ e só marca como lido. Nunca cria, nunca apaga, nunca muda o texto.
+    // Quem escreve aviso é o proprietário, pelo WEN Financeiro.
+    match /administrativo_avisos/{id} {
+      allow read: if administrativo();
+      allow update: if administrativo()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lidoEm'])
+        && request.resource.data.lidoEm is string
+        && request.resource.data.lidoEm.size() <= 30;
+    }
     match /administrativo_fechamentos/{id} {
       allow read: if administrativo();
       // Cliente, valores, diárias e permissões são definidos exclusivamente pelo proprietário.
@@ -24,6 +33,11 @@ service cloud.firestore {
           'nfSinalNumero','nfSinalData','nfSinalStatus',
           'nfSaldoNumero','nfSaldoData','nfSaldoStatus'
         ])
+        // itens, valores, vencimento e divergência são do espelho (proprietário):
+        // ela não reescreve o que veio do Receber.
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['itens','valor','recebido','saldo','vencimento','notaModo',
+                      'cliente','lancamentoIds','divergencia','grupo'])
         && request.resource.data.cobrancaStatus in ['pendente','enviada','pago']
         && request.resource.data.fiscalStatus in ['pendente','emitida','nao_solicitada']
         && request.resource.data.descricaoFiscal is string

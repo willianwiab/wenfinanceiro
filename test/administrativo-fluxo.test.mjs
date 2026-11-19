@@ -40,7 +40,11 @@ for(const c of ['Data','Horário','Studio','Horas','Total','Recebido','Saldo','S
 await page.click('#fNF');await page.waitForSelector('#modalNFBg.open');
 assert((await page.inputValue('#nfTextoArea')).includes('21.577.617/0001-44'));
 await page.click('#nfFechar');
-assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('aviso').textContent==='Envio registrado.');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');assert(requests.every(u=>u.includes('/administrativo_fechamentos')));
+assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('aviso').textContent==='Envio registrado.');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');// O portal dela toca SÓ nas duas coleções administrativas. Nenhum lançamento,
+// banco, despesa ou folha — a invariante do portal restrito.
+assert(requests.every(u=>u.includes('/administrativo_fechamentos')||u.includes('/administrativo_avisos')),
+  'o portal pediu algo fora do administrativo: '+requests.filter(u=>!/administrativo_(fechamentos|avisos)/.test(u)).join(' '));
+assert(requests.some(u=>u.includes('/administrativo_avisos')),'os avisos são lidos');
 assert(!await page.locator('body').evaluate(el=>el.textContent.includes('SIGILO FOLHA')));
 await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
 if(process.env.WEN_QA_DIR)await page.screenshot({path:process.env.WEN_QA_DIR+'/administrativo-mobile.png',fullPage:true});

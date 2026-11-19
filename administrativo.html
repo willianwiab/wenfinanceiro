@@ -170,18 +170,31 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-parte-top b{color:#5b21b6;font-size:.92rem}
 .nf-parte .nf-val{font-weight:800;color:#0f172a}
 .btn-parte{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:700;cursor:pointer;width:auto;margin-top:6px}
+.sino{position:relative;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:11px;padding:9px 13px;font-size:1.05rem;cursor:pointer;width:auto;line-height:1}
+.sino:hover{background:rgba(255,255,255,.25)}
+.sino.tem{background:#f59e0b;border-color:#f59e0b}
+.sino .sino-n{position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:.66rem;font-weight:800;border-radius:20px;min-width:18px;padding:1px 5px;line-height:1.5}
+.avisos-cx{background:#fff;border:1px solid #e5e7eb;border-radius:13px;box-shadow:0 6px 24px rgba(15,23,42,.1);margin-bottom:16px;overflow:hidden}
+.aviso{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #f1f5f9;border-left:3px solid #e2e8f0;padding:13px 16px;cursor:pointer;font:inherit}
+.aviso:last-child{border-bottom:0}
+.aviso:hover{background:#f8fafc}
+.aviso.novo{background:#fffbeb;border-left-color:#f59e0b;font-weight:600}
+.aviso.t-pago{border-left-color:#16a34a}.aviso.t-divergencia{border-left-color:#dc2626}
+.aviso-txt{font-size:.88rem;color:#0f172a;line-height:1.45}
+.aviso-dt{font-size:.72rem;color:#94a3b8}
 /* modal do Texto NF */
 .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
 .modal-bg.open{display:flex}
 .modal-bg .cx{background:#fff;border-radius:13px;padding:20px;max-width:620px;width:100%;max-height:86vh;overflow:auto}
 .modal-bg textarea{width:100%;min-height:330px;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;border:1px solid #e5e7eb;border-radius:9px;padding:12px}
-</style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><button id="sair" hidden>Sair</button></header><main>
+</style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><div style="display:flex;align-items:center;gap:10px"><button id="sino" class="sino" hidden title="Avisos">🔔</button><button id="sair" hidden>Sair</button></div></header><main>
   <div class="nf-topo">
     <h2 style="margin:0">Fiscal e Cobranças</h2>
     <p class="nf-sub">O que foi liberado para faturar e cobrar. Esta tela <b>não altera valor nem
     diária</b> — isso é feito no WEN Financeiro. Aqui se completa a descrição, registra a nota
     emitida e acompanha o pagamento.</p>
   </div>
+  <div id="avisosCx" class="avisos-cx" hidden></div>
   <div id="aviso" role="status"></div>
   <section id="login" class="login">
     <h2>Acessar administrativo</h2>
@@ -229,4 +242,4 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=ceed75ea"></script><script src="js/administrativo.js?v=c44f71b7"></script></body></html>
+<article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=ceed75ea"></script><script src="js/administrativo.js?v=0c6561b3"></script></body></html>

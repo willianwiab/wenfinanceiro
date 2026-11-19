@@ -30,13 +30,56 @@ async function carregar(){
    {...WENFechamentos.criar([
      {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
-  docs=novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;
-  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();
+  docs=novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
+  await avisosCarregar();
+ avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
 }
 // Cards do topo, no mesmo formato da aba Notas Fiscais. Conta o que ESTÁ na lista — nada
 // de total da empresa: só o que foi liberado para o administrativo.
+// ── 🔔 Avisos ───────────────────────────────────────────────────────────────
+// Ela não escreve aviso: recebe, abre e marca como lido. Igual ao "Li e estou ciente"
+// da Central de Produção. Os avisos nascem no WEN Financeiro, quando o Will mexe.
+let avisos=[], avisosAbertos=false;
+async function avisosCarregar(){
+ if(mock){avisos=[
+   {id:'a1',tipo:'novo',texto:'🧾 Cliente demonstração — 3 diárias · R$ 6.600,00. Pronto para nota e cobrança.',fechamentoId:'demo',criadoEm:new Date().toISOString(),lidoEm:''},
+   {id:'a2',tipo:'parcial',texto:'💰 Cliente demonstração — entrou um pagamento. Falta R$ 6.200,00.',fechamentoId:'demo',criadoEm:new Date().toISOString(),lidoEm:''}];
+  return;}
+ try{
+  const j=await req('/administrativo_avisos?pageSize=200');
+  avisos=(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1)}))
+    .sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
+ }catch(e){avisos=[];}
+}
+const naoLidos=()=>avisos.filter(a=>!a.lidoEm);
+function sino(){
+ const el=$('sino'); if(!el)return;
+ const n=naoLidos().length;
+ el.innerHTML='🔔'+(n?'<span class="sino-n">'+n+'</span>':'');
+ el.title=n?n+' aviso(s) não lido(s)':'Nenhum aviso novo';
+ el.classList.toggle('tem',!!n);
+ const cx=$('avisosCx'); if(!cx)return;
+ cx.hidden=!avisosAbertos;
+ if(!avisosAbertos)return;
+ cx.innerHTML=avisos.length?avisos.map(a=>{
+   const quando=a.criadoEm?new Date(a.criadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+   return `<button type="button" class="aviso${a.lidoEm?'':' novo'} t-${esc(a.tipo||'')}" data-av="${esc(a.id)}" data-f="${esc(a.fechamentoId||'')}">
+     <span class="aviso-txt">${esc(a.texto||'')}</span><span class="aviso-dt">${esc(quando)}${a.lidoEm?'':' · novo'}</span></button>`;}).join('')
+  :'<p class="muted" style="padding:14px">Nenhum aviso. Quando o Will liberar uma gravação ou der baixa num pagamento, aparece aqui.</p>';
+ cx.querySelectorAll('[data-av]').forEach(b=>b.onclick=()=>abrirAviso(b.dataset.av,b.dataset.f));
+}
+async function abrirAviso(id,fechamentoId){
+ const a=avisos.find(x=>x.id===id);
+ if(a&&!a.lidoEm){
+  a.lidoEm=new Date().toISOString();
+  if(!mock){try{await req('/administrativo_avisos/'+encodeURIComponent(id)+'?updateMask.fieldPaths=lidoEm',
+    {method:'PATCH',body:JSON.stringify({fields:{lidoEm:to(a.lidoEm)}})});}catch(e){a.lidoEm='';avisar(e.message,true);}}
+ }
+ if(fechamentoId&&docs.some(f=>f.id===fechamentoId)){avisosAbertos=false;abrir(fechamentoId);}
+ sino();
+}
 function cards(vis){
  const el=document.getElementById('cards'); if(!el)return; const base=vis||docs;
  const n=s=>base.filter(f=>f.cobrancaStatus===s).length, atr=base.filter(atrasada).length;
@@ -284,6 +327,7 @@ async function salvar(enviar){
 $('loginForm').onsubmit=async e=>{e.preventDefault();$('entrar').disabled=true;try{sessao(await auth('identitytoolkit.googleapis.com/v1/accounts:signInWithPassword',{email:$('email').value.trim(),password:$('senha').value,returnSecureToken:true}));$('senha').value='';await carregar();}catch(e){avisar(e.message,true);}finally{$('entrar').disabled=false;}};
 $('verificar').onclick=async()=>{try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:token});avisar('Link de verificação solicitado. Abra seu e-mail e depois entre novamente.');}catch(e){avisar(e.message,true);}};
 $('redefinir').onclick=async()=>{if(!$('email').checkValidity()||!$('email').value){avisar('Informe seu e-mail.',true);return;}try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'PASSWORD_RESET',email:$('email').value.trim()});avisar('Se houver uma conta para este e-mail, as instruções de senha chegarão na caixa de entrada.');}catch(e){avisar(e.message,true);}};
+$('sino').onclick=()=>{avisosAbertos=!avisosAbertos;sino();};
 $('nfFechar').onclick=()=>$('modalNFBg').classList.remove('open');
 $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota copiado.');
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
