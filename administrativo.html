@@ -1,3 +1,127 @@
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Administrativo · WEN</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17243c;font:16px system-ui,sans-serif}header{background:#142947;color:white;padding:24px max(20px,calc((100vw - 1150px)/2));display:flex;justify-content:space-between;align-items:center;gap:20px}h1{font-size:24px;margin:0}header p{color:#c7d5e6;margin:6px 0 0}main{max-width:1150px;margin:28px auto;padding:0 20px}button,.button{font:inherit;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;background:white;color:#17243c;cursor:pointer;text-decoration:none}button.primary{background:#176744;color:white;border-color:#176744}button:disabled{opacity:.5;cursor:wait}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #4a90df;outline-offset:2px}input,textarea,select{width:100%;font:inherit;padding:10px;border:1px solid #bac7d7;border-radius:7px;margin:6px 0 16px;color:#17243c;background:white}textarea{line-height:1.5}label{font-size:14px;font-weight:600}section,.card{background:white;border:1px solid #dce4ee;border-radius:12px;padding:24px;margin-bottom:18px}.login{max-width:420px;margin:60px auto}.layout{display:grid;grid-template-columns:300px 1fr;gap:22px}.list button{width:100%;text-align:left;margin-bottom:10px;line-height:1.5}.list button.active{border:2px solid #176744;background:#edf7f1}.muted{color:#566780;font-size:14px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.status{padding:10px 14px;background:#edf2f8;border-radius:7px;margin-bottom:16px;line-height:1.5}.error{color:#9a2020;background:#fff0f0}.actions{display:flex;gap:10px;flex-wrap:wrap}table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:10px 4px;border-bottom:1px solid #dce4ee}pre{white-space:pre-wrap;font:inherit;line-height:1.6}details{margin:20px 0}#printArea{display:none}[hidden]{display:none!important}@media(max-width:800px){.layout{grid-template-columns:1fr}header{align-items:start}section{padding:18px}.row{display:block}}@media print{body>*{display:none!important}#printArea{display:block!important;padding:30px;background:white}#printArea h1{color:#142947}}
-</style></head><body><header><div><h1>WEN · Administrativo</h1><p>Fechamentos, cobranças e notas</p></div><button id="sair" hidden>Sair</button></header><main><div id="aviso" role="status"></div><section id="login" class="login"><h2>Acessar administrativo</h2><form id="loginForm"><label>E-mail<input id="email" type="email" autocomplete="username" required value="financeiro@wenprodutora.com.br"></label><label>Senha<input id="senha" type="password" autocomplete="current-password" required></label><button class="primary" id="entrar">Entrar</button><button type="button" id="redefinir">Definir / recuperar senha</button><button type="button" id="verificar" hidden>Verificar meu e-mail</button></form></section><div id="app" hidden><div class="row"><label>Buscar cliente ou fechamento<input id="busca" type="search" placeholder="Nome do cliente"></label><label>Cobrança<select id="filtro"><option value="">Todas</option><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="pago">Pago</option><option value="atrasada">Em atraso</option></select></label><button id="atualizar">Atualizar</button></div><div class="layout"><aside id="lista" class="list" aria-label="Fechamentos"></aside><section id="editor"><p>Selecione um fechamento.</p></section></div></div></main><article id="printArea"></article><script src="js/fechamentos.js"></script><script src="js/administrativo.js"></script></body></html>
+*{box-sizing:border-box}
+body{margin:0;background:#f0f4f8;color:#1e293b;font:15px 'Segoe UI',system-ui,sans-serif}
+
+/* topo — mesmo gradiente e logo do WEN Financeiro */
+header{background:linear-gradient(135deg,#14532d 0%,#166534 40%,#1e3a8a 100%);color:#fff;
+  padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;position:sticky;top:0;z-index:80;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.marca{display:flex;align-items:center;gap:12px}
+.marca img{height:40px;width:auto;display:block}
+h1{font-size:1.25rem;margin:0;font-weight:800;letter-spacing:-.01em}
+h1 span{font-weight:400;opacity:.92}
+header p{color:#cbd5e1;margin:3px 0 0;font-size:.82rem}
+
+main{max-width:1180px;margin:22px auto;padding:0 20px}
+h2{font-size:1.05rem;margin:0 0 4px;color:#0f172a}
+
+/* botões — espelham .btn / .btn-blue do Financeiro */
+button,.button{font:inherit;font-size:.86rem;font-weight:600;border:1px solid #cbd5e1;border-radius:7px;
+  padding:8px 17px;background:#fff;color:#1e293b;cursor:pointer;text-decoration:none;
+  display:inline-flex;align-items:center;gap:5px;transition:all .2s}
+button:hover{border-color:#94a3b8;background:#f8fafc}
+button.primary{background:#16a34a;color:#fff;border-color:#16a34a}
+button.primary:hover{background:#15803d;border-color:#15803d}
+button:disabled{opacity:.5;cursor:wait}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #4a90df;outline-offset:2px}
+
+input,textarea,select{width:100%;font:inherit;font-size:.9rem;padding:9px 11px;border:1px solid #cbd5e1;
+  border-radius:8px;margin:6px 0 15px;color:#1e293b;background:#fff}
+input:focus,textarea:focus,select:focus{border-color:#1e40af}
+textarea{line-height:1.55}
+label{font-size:.78rem;font-weight:600;color:#475569}
+
+/* cartões — mesmo raio, sombra e barra lateral do .card-p */
+section,.card{background:#fff;border-radius:14px;padding:22px;margin-bottom:16px;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid #1e40af}
+.login{max-width:430px;margin:48px auto;border-left-color:#16a34a}
+.layout{display:grid;grid-template-columns:310px 1fr;gap:20px}
+
+.list button{width:100%;text-align:left;margin-bottom:9px;line-height:1.5;border-radius:11px;padding:12px 14px}
+.list button.active{border:2px solid #16a34a;background:#f0fdf4}
+.muted{color:#64748b;font-size:.8rem}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.row>*{flex:1}
+.status{padding:11px 15px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;
+  border-radius:9px;margin-bottom:16px;line-height:1.5;font-size:.86rem}
+.status:empty{display:none}
+.error{color:#991b1b;background:#fef2f2;border-color:#fecaca}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+td,th{text-align:left;padding:10px 4px;border-bottom:1px solid #e2e8f0}
+th{color:#64748b;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em}
+pre{white-space:pre-wrap;font:inherit;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;
+  border-radius:9px;padding:13px}
+details{margin:18px 0}
+summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
+#printArea{display:none}
+[hidden]{display:none!important}
+@media(max-width:840px){.layout{grid-template-columns:1fr}header{align-items:flex-start}section{padding:17px}.row{display:block}main{padding:0 14px}}
+@media print{body>*{display:none!important}#printArea{display:block!important;padding:30px;background:#fff}#printArea h1{color:#14532d}}
+
+/* ── estrutura copiada da aba 🧾 Notas Fiscais do WEN Financeiro ── */
+.nf-topo{margin-bottom:14px}
+.nf-topo h2{font-size:1.15rem;color:#0f172a}
+.nf-sub{font-size:.84rem;color:#64748b;margin:4px 0 0;line-height:1.5;max-width:70ch}
+.nf-filtros{display:flex;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #e5e7eb;border-radius:11px;padding:14px 16px;margin-bottom:14px;align-items:flex-end}
+.nf-filtros .fg{display:flex;flex-direction:column;gap:5px;margin:0;flex:0 1 auto}
+.nf-filtros label{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:700;margin:0}
+.nf-filtros select,.nf-filtros input{border:1px solid #e5e7eb;border-radius:7px;padding:8px 10px;font-size:.86rem;outline:none;background:#fff;min-width:170px;margin:0}
+.cards-p{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px}
+.card-p{background:#fff;border-radius:15px;padding:16px 18px;box-shadow:0 4px 18px rgba(15,23,42,.06);border:1px solid #eef0f4;border-left:4px solid #ccc;transition:transform .15s}
+.card-p:hover{transform:translateY(-2px)}
+.card-p label{font-size:.7rem;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:.05em;display:block;margin-bottom:7px}
+.card-p .val{font-size:1.2rem;font-weight:700}
+.card-p .val-sub{font-size:.72rem;color:#6b7280;margin-top:4px}
+.card-p.pendente{border-left-color:#ef4444}.card-p.pendente .val{color:#b91c1c}
+.card-p.atrasado{border-left-color:#dc2626}.card-p.atrasado .val{color:#991b1b}
+.card-p.alerta{border-left-color:#f97316}.card-p.alerta .val{color:#c2410c}
+/* cada fechamento vira uma linha igual à da fila de notas */
+.list button{width:100%;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  background:#fff;border:1px solid #e5e7eb;border-left:3px solid #f59e0b;border-radius:10px;
+  padding:13px 16px;margin-bottom:8px;line-height:1.45;font-weight:400}
+.list button b{font-weight:700;color:#0f172a;font-size:.95rem}
+.list button .muted{font-size:.76rem;color:#64748b}
+.list button.active{border-color:#16a34a;border-left-color:#16a34a;background:#f0fdf4}
+#lista>.muted{display:block;text-align:center;color:#94a3b8;padding:34px 16px;font-size:.88rem;background:#fff;border:1px dashed #e2e8f0;border-radius:11px}
+#editor{border-left:4px solid #1e40af}
+.status{background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #f59e0b;color:#92400e;border-radius:0 9px 9px 0}
+.status.error{background:#fef2f2;border-color:#fecaca;border-left-color:#dc2626;color:#b91c1c}
+</style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><button id="sair" hidden>Sair</button></header><main>
+  <div class="nf-topo">
+    <h2 style="margin:0">🧾 Fechamentos, cobranças e notas</h2>
+    <p class="nf-sub">O que foi liberado para faturar e cobrar. Esta tela <b>não altera valor nem
+    diária</b> — isso é feito no WEN Financeiro. Aqui se completa a descrição, registra a nota
+    emitida e acompanha o pagamento.</p>
+  </div>
+  <div id="aviso" role="status"></div>
+  <section id="login" class="login">
+    <h2>Acessar administrativo</h2>
+    <form id="loginForm">
+      <label>E-mail<input id="email" type="email" autocomplete="username" required value="financeiro@wenprodutora.com.br"></label>
+      <label>Senha<input id="senha" type="password" autocomplete="current-password" required></label>
+      <button class="primary" id="entrar">Entrar</button>
+      <button type="button" id="redefinir">Definir / recuperar senha</button>
+      <button type="button" id="verificar" hidden>Verificar meu e-mail</button>
+    </form>
+  </section>
+  <div id="app" hidden>
+    <div id="cards" class="cards-p"></div>
+    <div class="nf-filtros">
+      <div class="fg"><label>Cliente</label><input id="busca" type="search" placeholder="Nome do cliente"></div>
+      <div class="fg"><label>Cobrança</label><select id="filtro">
+        <option value="">Todas</option><option value="pendente">Pendente</option>
+        <option value="enviada">Enviada</option><option value="pago">Pago</option>
+        <option value="atrasada">Em atraso</option></select></div>
+      <div class="fg"><label>&nbsp;</label><button id="atualizar">↻ Atualizar</button></div>
+    </div>
+    <div class="layout">
+      <aside id="lista" class="list" aria-label="Fechamentos"></aside>
+      <section id="editor"><h2>Nenhum fechamento aberto</h2>
+        <p class="nf-sub" style="margin-top:8px">Escolha um fechamento na lista ao lado.<br><br>
+        Se a lista estiver vazia, ainda não foi liberado nenhum: os fechamentos nascem no
+        <b>WEN Financeiro</b>, em <b>🧾 Notas Fiscais → Fechamentos e cobranças</b>, onde as
+        diárias do cliente são selecionadas. Só depois disso eles aparecem aqui.</p></section>
+    </div>
+  </div>
+</main><article id="printArea"></article><script src="js/fechamentos.js?v=8a7237d7"></script><script src="js/administrativo.js?v=ae7e38b7"></script></body></html>

@@ -29,10 +29,25 @@ async function carregar(){
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
 }
+// Cards do topo, no mesmo formato da aba Notas Fiscais. Conta o que ESTÁ na lista — nada
+// de total da empresa: só o que foi liberado para o administrativo.
+function cards(){
+ const el=document.getElementById('cards'); if(!el)return;
+ const n=s=>docs.filter(f=>f.cobrancaStatus===s).length, atr=docs.filter(atrasada).length;
+ const nf=docs.filter(f=>f.exigeNota&&f.fiscalStatus==='pendente').length;
+ const plural=(q,a,b)=>q===1?a:b;
+ el.innerHTML=
+   '<div class="card-p pendente"><label>A cobrar</label><div class="val">'+n('pendente')+'</div>'
+  +'<div class="val-sub">'+n('enviada')+' já '+plural(n('enviada'),'enviada','enviadas')+' · '+n('pago')+' '+plural(n('pago'),'pago','pagos')+'</div></div>'
+  +'<div class="card-p atrasado"><label>Em atraso</label><div class="val">'+atr+'</div>'
+  +'<div class="val-sub">'+(atr?'passou do vencimento':'nada vencido')+'</div></div>'
+  +'<div class="card-p alerta"><label>Nota pendente</label><div class="val">'+nf+'</div>'
+  +'<div class="val-sub">aguardando emissão</div></div>';
+}
 function lista(){
  const termo=$('busca').value.toLocaleLowerCase('pt-BR'), filtro=$('filtro').value;
  const vis=docs.filter(f=>(f.cliente+' '+f.id).toLocaleLowerCase('pt-BR').includes(termo)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)));
- $('lista').innerHTML=vis.length?vis.map(f=>`<button data-id="${esc(f.id)}" class="${selecionado===f.id?'active':''}"><b>${esc(f.cliente)}</b><br><span class="muted">${f.itens.length} diária(s) · ${esc(f.cobrancaStatus)}${atrasada(f)?' · Em atraso':''}<br>${esc(f.exigeNota?'NF: '+f.fiscalStatus:'NF não solicitada')}</span></button>`).join(''):'<p class="muted">Nenhum fechamento neste filtro. O proprietário libera as diárias pelo financeiro.</p>';
+ cards();$('lista').innerHTML=vis.length?vis.map(f=>`<button data-id="${esc(f.id)}" class="${selecionado===f.id?'active':''}"><b>${esc(f.cliente)}</b><br><span class="muted">${f.itens.length} diária(s) · ${esc(f.cobrancaStatus)}${atrasada(f)?' · Em atraso':''}<br>${esc(f.exigeNota?'NF: '+f.fiscalStatus:'NF não solicitada')}</span></button>`).join(''):'<p class="muted">Nenhum fechamento neste filtro. O proprietário libera as diárias pelo financeiro.</p>';
  $('lista').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!dirty||confirm('Descartar as alterações não salvas?'))abrir(b.dataset.id);});
 }
 function abrir(id){

@@ -25,6 +25,11 @@ await page.route('https://identitytoolkit.googleapis.com/**',r=>r.fulfill({json:
 await page.route('https://firestore.googleapis.com/**',r=>{requests.push(r.request().url());if(r.request().method()==='PATCH'){saved=JSON.parse(r.request().postData());return r.fulfill({json:{...doc,updateTime:'2026-11-18T13:00:00.000000Z'}});}return r.fulfill({json:{documents:[doc]}});});
 await page.evaluate(()=>sessionStorage.setItem('wen_admin_rt','test-refresh'));
 await page.goto(BASE+'/administrativo.html#'+f.id);await page.waitForSelector('#descricaoCobranca');
+// Topo no formato da aba Notas Fiscais: 3 cartões de CONTAGEM. Nenhum valor somado da
+// empresa pode aparecer fora do fechamento aberto — o administrativo vê o unitário, não o total.
+assert.equal(await page.locator('#cards .card-p').count(),3);
+assert(!(await page.textContent('#cards')).includes('R$'));
+assert((await page.textContent('#cards')).includes('A cobrar'));
 assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('aviso').textContent==='Envio registrado.');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');assert(requests.every(u=>u.includes('/administrativo_fechamentos')));
 assert(!await page.locator('body').evaluate(el=>el.textContent.includes('SIGILO FOLHA')));
 await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

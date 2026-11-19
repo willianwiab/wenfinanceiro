@@ -36,5 +36,15 @@ const h = s => crypto.createHash('sha256').update(s).digest('hex').slice(0, 8);
   ok(m[1] + ' → ?v= confere com o conteúdo (' + m[2] + ')', m[2] === real);
 });
 
+// 5) páginas secundárias (administrativo.html) também carregam js com ?v= pelo conteúdo
+['administrativo.html'].filter(f => fs.existsSync(RAIZ + f)).forEach(f => {
+  const pag = fs.readFileSync(RAIZ + f, 'utf8');
+  const sem = [...pag.matchAll(/src="(js\/[A-Za-z0-9_.-]+\.js)(\?v=[^"]*)?"/g)].filter(m => !m[2]).map(m => m[1]);
+  ok(f + ': todo js local tem ?v=' + (sem.length ? ' — sem versão: ' + sem.join(', ') : ''), sem.length === 0);
+  [...pag.matchAll(/src="(js\/[A-Za-z0-9_.-]+\.js)\?v=([^"]*)"/g)].forEach(m => {
+    ok(f + ': ' + m[1] + ' → ?v= confere com o conteúdo (' + m[2] + ')', m[2] === h(fs.readFileSync(RAIZ + m[1], 'utf8')));
+  });
+});
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);

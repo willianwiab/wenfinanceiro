@@ -23,6 +23,9 @@ import { fileURLToPath } from 'node:url';
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const INDEX = path.join(RAIZ, 'index.html');
 const VERSION_JSON = path.join(RAIZ, 'version.json');
+// Páginas secundárias: não têm APP_VERSION nem version.json próprio, mas carregam js local
+// e portanto também precisam do ?v= por conteúdo — senão o Pages serve js velho por 10 min.
+const PAGINAS_EXTRA = ['administrativo.html'];
 const conferir = process.argv.includes('--conferir');
 
 const hash = s => crypto.createHash('sha256').update(s).digest('hex').slice(0, 8);
@@ -65,8 +68,22 @@ function selar() {
   }
   const jsonFinal = JSON.stringify({ v: seloFinal }) + '\n';
 
-  const mudou = (html !== original) || (jsonFinal !== jsonAtual);
-  return { html, jsonFinal, mudou, selo: seloFinal, jsUsados, original, jsonAtual };
+  // 4) páginas secundárias: só o ?v= de cada js, pelo hash do próprio arquivo
+  const extras = PAGINAS_EXTRA.filter(f => fs.existsSync(path.join(RAIZ, f))).map(f => {
+    const abs = path.join(RAIZ, f);
+    const orig = fs.readFileSync(abs, 'utf8');
+    const novo = orig.replace(/(src=")(js\/[A-Za-z0-9_.-]+\.js)(\?v=[^"]*)?(")/g, (m, a, rel, _q, z) => {
+      const alvo = path.join(RAIZ, rel);
+      if (!fs.existsSync(alvo)) { console.warn('  ⚠️  referenciado mas não existe: ' + rel); return m; }
+      const h = hash(fs.readFileSync(alvo, 'utf8'));
+      jsUsados.push({ rel: f + ' → ' + rel, h });
+      return a + rel + '?v=' + h + z;
+    });
+    return { arquivo: f, abs, novo, orig };
+  });
+
+  const mudou = (html !== original) || (jsonFinal !== jsonAtual) || extras.some(e => e.novo !== e.orig);
+  return { html, jsonFinal, mudou, selo: seloFinal, jsUsados, original, jsonAtual, extras };
 }
 
 const r = selar();
@@ -76,6 +93,7 @@ if (conferir) {
     console.error('❌ versão dessincronizada — rode: node bin/selar-versao.mjs');
     if (r.html !== r.original) console.error('   index.html: tags ?v= e/ou APP_VERSION desatualizados');
     if (r.jsonFinal !== r.jsonAtual) console.error('   version.json: ' + JSON.stringify(r.jsonAtual.trim()) + ' → ' + JSON.stringify(r.jsonFinal.trim()));
+    r.extras.filter(e => e.novo !== e.orig).forEach(e => console.error('   ' + e.arquivo + ': tags ?v= desatualizadas'));
     process.exit(1);
   }
   console.log('✅ versão em dia — selo ' + r.selo);
@@ -86,5 +104,6 @@ if (conferir) {
 if (!r.mudou) { console.log('✅ nada a selar — já está em dia (selo ' + r.selo + ')'); process.exit(0); }
 fs.writeFileSync(INDEX, r.html);
 fs.writeFileSync(VERSION_JSON, r.jsonFinal);
+r.extras.filter(e => e.novo !== e.orig).forEach(e => fs.writeFileSync(e.abs, e.novo));
 console.log('🔒 selado: ' + r.selo);
 r.jsUsados.forEach(j => console.log('   ' + j.rel + '?v=' + j.h));
