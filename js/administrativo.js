@@ -22,19 +22,25 @@ async function carregar(){
  try{
   if(!mock){if(Date.now()>expires)sessao(await auth('securetoken.googleapis.com/v1/token',{grant_type:'refresh_token',refresh_token:refresh}));const user=await auth('identitytoolkit.googleapis.com/v1/accounts:lookup',{idToken:token});const u=user.users?.[0];if(u?.email==='financeiro@wenprodutora.com.br'&&!u.emailVerified){$('verificar').hidden=false;throw Error('Verifique seu e-mail antes de acessar. Use o botão abaixo; depois de verificar, entre novamente.');}}
   let novos=[];
-  if(mock){novos=docs.length?docs:[{...WENFechamentos.criar([{id:'demo1',cliente:'Cliente demonstração',data:'18/11',mes:'2026-11',horas:3,studio:'Estúdio A',valorTotal:2400,valorReserva:400}],{exigeNota:false}),id:'demo',updateTime:'mock'}];}
+  if(mock){novos=docs.length?docs:[
+   {...WENFechamentos.criar([
+     {id:'d1',cliente:'Cliente demonstração',data:'05/11',mes:'2026-11',horario:'13:00 AS 15:00',horas:2,studio:'STUDIO A',valorTotal:2200,valorReserva:0},
+     {id:'d2',cliente:'Cliente demonstração',data:'12/11',mes:'2026-11',horario:'10:00 AS 13:00',horas:3,studio:'STUDIO B',valorTotal:2200,valorReserva:400},
+     {id:'d3',cliente:'Cliente demonstração',data:'19/11',mes:'2026-11',horario:'14:00 AS 16:00',horas:2,studio:'STUDIO A',valorTotal:2200,valorReserva:0}],{}),id:'demo',updateTime:'mock'},
+   {...WENFechamentos.criar([
+     {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
   docs=novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;
-  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');lista();
+  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
 }
 // Cards do topo, no mesmo formato da aba Notas Fiscais. Conta o que ESTÁ na lista — nada
 // de total da empresa: só o que foi liberado para o administrativo.
-function cards(){
- const el=document.getElementById('cards'); if(!el)return;
- const n=s=>docs.filter(f=>f.cobrancaStatus===s).length, atr=docs.filter(atrasada).length;
- const nf=docs.filter(f=>f.exigeNota&&f.fiscalStatus==='pendente').length;
+function cards(vis){
+ const el=document.getElementById('cards'); if(!el)return; const base=vis||docs;
+ const n=s=>base.filter(f=>f.cobrancaStatus===s).length, atr=base.filter(atrasada).length;
+ const nf=base.filter(f=>f.exigeNota&&f.fiscalStatus==='pendente').length;
  const plural=(q,a,b)=>q===1?a:b;
  el.innerHTML=
    '<div class="card-p pendente"><label>A cobrar</label><div class="val">'+n('pendente')+'</div>'
@@ -44,29 +50,195 @@ function cards(){
   +'<div class="card-p alerta"><label>Nota pendente</label><div class="val">'+nf+'</div>'
   +'<div class="val-sub">aguardando emissão</div></div>';
 }
+// ── Filtros no formato da aba Fiscal e Cobranças ────────────────────────────
+// Cliente e meses saem dos próprios fechamentos liberados: ela escolhe, não digita.
+let filtro='', abertos=new Set();
+const MESES=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+const mesChave=m=>WENFechamentos.mesChave(m);
+const mesRotulo=c=>c?MESES[Number(c.slice(5,7))-1]+'/'+c.slice(0,4):'';
+const mesesDe=f=>(f.itens||[]).map(i=>mesChave(i.mes)).filter(Boolean);
+function combo(){
+ const cli=$('busca'), atual=cli.value;
+ const nomes=[...new Set(docs.map(f=>f.cliente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+ cli.innerHTML='<option value="">— Todos —</option>'+nomes.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+ cli.value=nomes.includes(atual)?atual:'';
+ const meses=[...new Set(docs.flatMap(mesesDe))].sort();
+ for(const [id,padrao] of [['mesIni',meses[0]],['mesFim',meses.at(-1)]]){
+   const el=$(id), tinha=el.value;
+   el.innerHTML=meses.map(m=>`<option value="${m}">${mesRotulo(m)}</option>`).join('');
+   el.value=meses.includes(tinha)?tinha:(padrao||'');
+ }
+}
+function noRecorte(f){
+ const ini=$('mesIni').value, fim=$('mesFim').value, ms=mesesDe(f);
+ if(!ini&&!fim)return true;
+ return ms.some(m=>(!ini||m>=ini)&&(!fim||m<=fim));
+}
+// ── A linha é a .nf-lin da fila de notas: ▸ para abrir as diárias, nome, selos,
+//    valor e a ação. As diárias aparecem só para conferência — a composição é do dono.
+function diarias(f){
+ return '<div class="nf-itens">'+f.itens.map(i=>
+   `<div class="nf-item"><span>✅</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} · ${i.saldo>0?'⏳ não pago':'✔️ pago'}</span></div>`).join('')
+  +'<div class="nf-itens-rod">Conferência apenas. A composição do fechamento é definida no <b>WEN Financeiro</b> — aqui ela não muda.</div></div>';
+}
+function linha(f){
+ const atraso=atrasada(f), aberto=abertos.has(f.id);
+ const cor=atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
+ const selo=atraso?'<span class="nf-pill erro">em atraso</span>'
+   :f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
+   :f.cobrancaStatus==='enviada'?'<span class="nf-pill env">cobrança enviada</span>'
+   :'<span class="nf-pill pend">a cobrar</span>';
+ const selonf=!f.exigeNota?'<span class="nf-pill">NF não solicitada</span>'
+   :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
+   :'<span class="nf-pill pend">nota pendente</span>';
+ const ms=[...new Set(mesesDe(f))].sort(), per=ms.length?mesRotulo(ms[0])+(ms.length>1?' a '+mesRotulo(ms.at(-1)):''):'';
+ const horas=f.itens.reduce((t,i)=>t+(Number(i.horas)||0),0);
+ const venc=f.vencimento?' · vence '+esc(f.vencimento.split('-').reverse().join('/')):'';
+ return `<div class="nf-lin ${cor}${selecionado===f.id?' ativo':''}" data-id="${esc(f.id)}"><div style="width:100%">`
+  +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+  +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
+  +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
+  +`<div class="nf-meta"><span>${esc(per)} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h${venc}</span>${selo}${selonf}</div></div>`
+  +`<div class="nf-val">${cash(f.valor)}</div>`
+  +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}">📄 ${selecionado===f.id?'Aberto':'Abrir cobrança'}</button></div>`
+  +'</div>'+(aberto?diarias(f):'')+'</div></div>';
+}
 function lista(){
- const termo=$('busca').value.toLocaleLowerCase('pt-BR'), filtro=$('filtro').value;
- const vis=docs.filter(f=>(f.cliente+' '+f.id).toLocaleLowerCase('pt-BR').includes(termo)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)));
- cards();$('lista').innerHTML=vis.length?vis.map(f=>`<button data-id="${esc(f.id)}" class="${selecionado===f.id?'active':''}"><b>${esc(f.cliente)}</b><br><span class="muted">${f.itens.length} diária(s) · ${esc(f.cobrancaStatus)}${atrasada(f)?' · Em atraso':''}<br>${esc(f.exigeNota?'NF: '+f.fiscalStatus:'NF não solicitada')}</span></button>`).join(''):'<p class="muted">Nenhum fechamento neste filtro. O proprietário libera as diárias pelo financeiro.</p>';
- $('lista').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!dirty||confirm('Descartar as alterações não salvas?'))abrir(b.dataset.id);});
+ const cli=$('busca').value;
+ const vis=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f)
+   &&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)));
+ cards(vis);
+ $('lista').innerHTML=vis.length?vis.map(linha).join('')
+  :'<div class="nf-vazio">Nenhum fechamento neste recorte. Os fechamentos são liberados no WEN Financeiro, em 🧾 Notas Fiscais → Fechamentos e cobranças.</div>';
+ $('lista').querySelectorAll('[data-exp]').forEach(b=>b.onclick=e=>{
+   e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
+ $('lista').querySelectorAll('[data-abrir]').forEach(b=>b.onclick=()=>{
+   if(!dirty||confirm('Descartar as alterações não salvas?'))abrir(b.dataset.abrir);});
+}
+// ── O fechamento aberto é o MESMO documento do Relatórios → Fechamento do WEN
+//    Financeiro: faixa verde, cartões de resumo, tabela por mês, barra de total e
+//    as quatro ações (PDF, WhatsApp, Excel, Texto NF). Abaixo dele vem o que só o
+//    administrativo faz: vencimento, descrições, nota e situação da cobrança.
+const MESES_NOMES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const mesExtenso=c=>c?MESES_NOMES[Number(c.slice(5,7))-1]+' de '+c.slice(0,4):'—';
+const soma=(l,k)=>Math.round(l.reduce((a,r)=>a+(Number(r[k])||0),0)*100)/100;
+function fechPeriodo(f){
+ const ms=[...new Set(mesesDe(f))].sort();
+ return ms.length?(ms.length===1?mesRotulo(ms[0]):mesRotulo(ms[0])+' até '+mesRotulo(ms.at(-1))):'—';
+}
+function docFechamento(f){
+ const it=f.itens||[], tT=soma(it,'valor'), tR=soma(it,'recebido'), tS=soma(it,'saldo');
+ const tH=soma(it,'horas'), tk=tH>0?tT/tH:0;
+ const porMes={};it.forEach(r=>{const c=mesChave(r.mes)||'—';(porMes[c]=porMes[c]||[]).push(r);});
+ let corpo='';
+ Object.entries(porMes).sort(([a],[b])=>a.localeCompare(b)).forEach(([mes,regs])=>{
+  const mT=soma(regs,'valor'), mR=soma(regs,'recebido'), mS=soma(regs,'saldo'), mH=soma(regs,'horas');
+  corpo+=`<div class="fech-mes-bloco-r">
+    <div class="fech-mes-titulo-r"><span class="mn">📅 ${esc(mesExtenso(mes))}</span><span class="mt">${regs.length} grav. · ${mH}h · ${cash(mT)}</span><span class="ms ${mS>0?'pend':'quitado'}">${mS>0?'🔴 '+cash(mS):'✅'}</span></div>
+    <div class="fech-tbl-wrap"><table class="fech-tbl-r"><thead><tr><th>Data</th><th>Horário</th><th>Studio</th><th class="r">Horas</th><th class="r">Total</th><th class="r">Recebido</th><th class="r">Saldo</th><th>Status</th></tr></thead><tbody>`;
+  regs.forEach(r=>{
+   const st=(r.studio||'').toUpperCase(), sa=st.includes('A');
+   corpo+=`<tr><td>${esc(r.data||'-')}</td><td style="font-size:.8rem;color:#64748b">${esc(r.horario||'—')}</td>`
+    +`<td><span class="studio-badge-r ${sa?'sa-r':'sb-r'}">${esc(st||'—')}</span></td>`
+    +`<td class="r">${r.horas}h</td><td class="r">${cash(r.valor)}</td>`
+    +`<td class="r" style="color:#16a34a">${cash(r.recebido)}</td>`
+    +`<td class="r" style="color:${r.saldo>0?'#b91c1c':'#16a34a'};font-weight:800">${cash(r.saldo)}</td>`
+    +`<td><span class="fech-badge-r ${r.saldo>0?'pend':'ok'}">${r.saldo>0?'PENDENTE':'PAGO'}</span></td></tr>`;
+   if(r.descricao)corpo+=`<tr><td colspan="8" style="font-size:.78rem;color:#6b7280;padding:4px 11px">📝 ${esc(r.descricao)}</td></tr>`;
+  });
+  corpo+=`</tbody><tfoot><tr><td colspan="3">SUBTOTAL</td><td class="r">${mH}h</td><td class="r">${cash(mT)}</td><td class="r">${cash(mR)}</td><td class="r">${cash(mS)}</td><td></td></tr></tfoot></table></div></div>`;
+ });
+ return `<div class="fech-acoes-r no-print">
+   <button type="button" class="btn btn-green" id="fPdf">🖨 PDF / Imprimir</button>
+   <button type="button" class="btn btn-blue" id="fZap">📱 WhatsApp</button>
+   <button type="button" class="btn btn-outline" id="fXls">⬇ Excel</button>
+   <button type="button" class="btn btn-roxo" id="fNF">📋 Texto NF</button>
+  </div>
+  <div class="fech-doc-r" id="rFechDoc">
+   <div class="fech-doc-header-r">
+     <div class="empresa">WEN Produtora</div>
+     <h2>📄 Fechamento — ${esc(f.cliente)}</h2>
+     <div class="sub">${esc(fechPeriodo(f))} · ${new Date().toLocaleDateString('pt-BR')}</div>
+   </div>
+   <div class="fech-doc-body-r">
+    <div class="fech-resumo-cards-r">
+      <div class="frc-r azul"><label>🎙️ Gravações</label><div class="v">${it.length}</div></div>
+      <div class="frc-r azul"><label>⏱ Horas</label><div class="v">${tH}h</div></div>
+      <div class="frc-r"><label>💰 Faturado</label><div class="v">${cash(tT)}</div></div>
+      <div class="frc-r verde"><label>✅ Recebido</label><div class="v">${cash(tR)}</div></div>
+      <div class="frc-r ${tS>0?'vermelho':'verde'}"><label>${tS>0?'🔴 Saldo':'✅ Saldo'}</label><div class="v">${cash(tS)}</div></div>
+      <div class="frc-r laranja"><label>🎯 Ticket/h</label><div class="v">${tH>0?cash(tk):'—'}</div></div>
+    </div>
+    ${corpo||'<div class="nf-vazio">Nenhuma diária neste fechamento.</div>'}
+    <div class="fech-total-bar-r">
+      <div class="tb-item-r"><span class="tb-label-r">Total</span><span class="tb-val-r">${cash(tT)}</span></div>
+      <div class="tb-item-r"><span class="tb-label-r">Recebido</span><span class="tb-val-r green">${cash(tR)}</span></div>
+      <div class="tb-item-r"><span class="tb-label-r">Saldo</span><span class="tb-val-r ${tS>0?'red':'green'}">${cash(tS)}</span></div>
+      <div class="tb-item-r"><span class="tb-label-r">Horas</span><span class="tb-val-r">${tH}h</span></div>
+      <div class="tb-item-r"><span class="tb-label-r">Ticket/h</span><span class="tb-val-r">${tH>0?cash(tk):'—'}</span></div>
+    </div>
+    <div class="fech-nota-r ${tS>0?'pend':'ok'}">${tS>0?`⚠️ <b>Saldo em aberto: ${cash(tS)}</b><br>Por favor, entre em contato. — WEN Produtora`:'✅ <b>Tudo quitado!</b> Obrigado. — WEN Produtora'}</div>
+   </div>
+  </div>`;
+}
+// Texto do WhatsApp — mesmo formato do fechamento do WEN Financeiro.
+function textoWhats(f){
+ const it=f.itens||[], tT=soma(it,'valor'), tS=soma(it,'saldo'), tH=soma(it,'horas');
+ let txt=`🎙️ *WEN PRODUTORA — FECHAMENTO*\n━━━━━━━━━━━━━━━━━━━━━━\n👤 *${f.cliente}* · 📅 *${fechPeriodo(f)}*\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+ const porMes={};it.forEach(r=>{const c=mesChave(r.mes)||'—';(porMes[c]=porMes[c]||[]).push(r);});
+ Object.entries(porMes).sort(([a],[b])=>a.localeCompare(b)).forEach(([mes,regs])=>{
+  const mT=soma(regs,'valor'), mS=soma(regs,'saldo');
+  txt+=`📅 *${mesRotulo(mes)}*\n`;
+  regs.forEach(r=>{txt+=`  • ${r.data||'-'} | ${r.horas}h | ${cash(r.valor)}`+(r.saldo>0?` | 🔴 *${cash(r.saldo)}*`:' | ✅')+'\n';});
+  txt+=`  _Subtotal: ${cash(mT)}${mS>0?' | 🔴 '+cash(mS):' | ✅'}_\n\n`;
+ });
+ txt+=`━━━━━━━━━━━━━━━━━━━━━━\n💰 *${cash(tT)}* · ⏱ ${tH}h\n${tS>0?`🔴 *PENDENTE: ${cash(tS)}*\n⚠️ Por favor efetue o pagamento.`:'✅ *Tudo quitado!*'}\n\n_WEN Produtora · ${new Date().toLocaleDateString('pt-BR')}_`;
+ return txt;
+}
+function textoNF(f){
+ const it=f.itens||[], tH=soma(it,'horas'), tT=soma(it,'valor');
+ const d=it.length===1?'diária':'diárias';
+ const desc=`Prestação de serviços de produção audiovisual — Gravação de ${it.length} episódio${it.length>1?'s':''} de videocast.\n${it.length} ${d} totalizando ${tH}h de estúdio.\nPeríodo: ${fechPeriodo(f)}.`;
+ return `───────────────────────────\n📄 DESCRIÇÃO PARA NOTA FISCAL\n───────────────────────────\n${desc}\n\nValor total: ${cash(tT)}\n───────────────────────────\n🏦 DADOS BANCÁRIOS — WEN PRODUTORA\n───────────────────────────\nRazão Social: WEN PRODUTORA LTDA\nCNPJ: 21.577.617/0001-44\n\nPIX: wenprodutora@gmail.com\n\nBanco: Caixa Econômica Federal\nAgência: 1601\nConta Corrente: 1292 000577674871-9\n───────────────────────────`;
+}
+function excelFechamento(f){
+ if(typeof XLSX==='undefined'){avisar('A planilha ainda está carregando. Tente de novo em instantes.',true);return;}
+ const it=f.itens||[];
+ const linhas=[[`FECHAMENTO WEN — ${(f.cliente||'').toUpperCase()} — ${fechPeriodo(f)}`],[],
+  ['Mês','Data','Horário','Studio','Horas','Total','Recebido','Saldo','Status'],
+  ...it.map(r=>[mesRotulo(mesChave(r.mes)),r.data,r.horario||'',r.studio,r.horas,r.valor,r.recebido,r.saldo,r.saldo>0?'PENDENTE':'PAGO']),
+  [],['TOTAL','','','',soma(it,'horas'),soma(it,'valor'),soma(it,'recebido'),soma(it,'saldo'),'']];
+ const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(linhas),'Fechamento');
+ XLSX.writeFile(wb,`Fechamento_${(f.cliente||'cliente').replace(/\s+/g,'_')}.xlsx`);
+}
+async function copiarTexto(txt,msg){
+ try{await navigator.clipboard.writeText(txt);avisar(msg);}
+ catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();avisar(msg);}
 }
 function abrir(id){
  const f=docs.find(x=>x.id===id);if(!f)return;selecionado=id;dirty=false;lista();location.hash=id;
  const nf=(f.notasExistentes||[]).map(n=>n.numero).join(', ');
- $('editor').innerHTML=`<h2>${esc(f.cliente)}</h2><p class="muted">Fechamento ${esc(f.id.slice(0,8))} · ${f.itens.length} diária(s)</p>
- <div class="status"><b>Valores na liberação</b><br>Total ${cash(f.valor)} · Recebido ${cash(f.recebido)} · Saldo ${cash(f.saldo)}<br><span class="muted">Valores conferidos no momento da liberação. Pagamentos posteriores devem ser confirmados pelo proprietário.</span></div>
- <details><summary>Diárias e dados do cliente</summary><table><thead><tr><th>Diária</th><th>Serviço</th><th>Valor</th></tr></thead><tbody>${f.itens.map(i=>`<tr><td>${esc(i.data)} / ${esc(i.mes)}</td><td>${esc(i.studio)} · ${i.horas}h</td><td>${cash(i.valor)}</td></tr>`).join('')}</tbody></table><p>${Object.entries(f.clienteFiscal||{}).filter(([,v])=>v).map(([k,v])=>esc(k)+': '+esc(v)).join('<br>')}</p></details>
+ $('editor').innerHTML=docFechamento(f)
+ +`<section class="cartao-edicao">
+ <h2 style="margin:0 0 4px">✍️ Cobrança e nota</h2>
+ <p class="nf-sub" style="margin:0 0 14px">O que o administrativo preenche. Valor e diárias vêm do WEN Financeiro e não mudam aqui.</p>
  ${nf?`<div class="status">Notas já registradas no financeiro: ${esc(nf)}. Confira estas referências antes de registrar outra nota.</div>`:''}
  <form id="formFechamento"><div class="row"><label>Vencimento<input id="vencimento" type="date" value="${esc(f.vencimento)}"></label><label>Cobrança<select id="cobrancaStatus"><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="pago">Pagamento confirmado</option></select></label></div>
  <label>Descrição para cobrança<textarea id="descricaoCobranca" rows="8">${esc(f.descricaoCobranca)}</textarea></label><div class="actions"><button type="button" id="copiarCobranca">Copiar cobrança</button><button type="button" id="pdf">PDF / imprimir fechamento</button></div><hr>
  <div class="row"><label>Situação fiscal<select id="fiscalStatus"><option value="pendente">Nota pendente</option><option value="emitida">Nota emitida</option><option value="nao_solicitada">NF não solicitada pelo cliente</option></select></label><label>Número da nota<input id="nfNumero" value="${esc(f.nfNumero)}"></label><label>Emissão<input id="nfData" type="date" value="${esc(f.nfData)}"></label></div>
  <label>Descrição fiscal<textarea id="descricaoFiscal" rows="6">${esc(f.descricaoFiscal)}</textarea></label><button type="button" id="copiarFiscal">Copiar descrição fiscal</button><p class="muted">O registro da nota serve para controle; a emissão acontece no portal fiscal.</p>
- <div class="actions"><button class="primary" id="salvar">Salvar alterações</button><button type="button" id="enviada">Registrar cobrança enviada</button></div><p id="resultado" role="status"></p><p class="muted">${f.enviadoEm?'Último envio registrado: '+esc(new Date(f.enviadoEm).toLocaleString('pt-BR')):''}</p></form>`;
+ <div class="actions"><button class="primary" id="salvar">Salvar alterações</button><button type="button" id="enviada">Registrar cobrança enviada</button></div><p id="resultado" role="status"></p><p class="muted">${f.enviadoEm?'Último envio registrado: '+esc(new Date(f.enviadoEm).toLocaleString('pt-BR')):''}</p></form></section>`;
  $('cobrancaStatus').value=f.cobrancaStatus;$('fiscalStatus').value=f.fiscalStatus;if(f.fiscalIds?.length===0){for(const id of ['fiscalStatus','nfNumero','nfData'])$(id).disabled=true;}
+ $('editor').scrollIntoView({behavior:'smooth',block:'start'});
  $('formFechamento').oninput=()=>dirty=true;
  $('formFechamento').onsubmit=e=>{e.preventDefault();salvar(false);};$('enviada').onclick=()=>salvar(true);
  $('copiarCobranca').onclick=()=>copiar('descricaoCobranca');$('copiarFiscal').onclick=()=>copiar('descricaoFiscal');
- $('pdf').onclick=()=>{$('printArea').innerHTML=`<h1>WEN PRODUTORA</h1><h2>Fechamento · ${esc(f.cliente)}</h2><p>Referência ${esc(f.id.slice(0,8))}</p><pre>${esc($('descricaoCobranca').value)}</pre><p>${$('vencimento').value?'Vencimento: '+esc($('vencimento').value):''}</p>`;window.print();};
+ $('fZap').onclick=()=>copiarTexto(textoWhats(f),'📱 Texto do WhatsApp copiado. Revise o destinatário antes de enviar.');
+ $('fXls').onclick=()=>excelFechamento(f);
+ $('fNF').onclick=()=>{$('nfTextoArea').value=textoNF(f);$('modalNFBg').classList.add('open');};
+ const imprimir=()=>{document.body.classList.add('imprimindo');window.print();setTimeout(()=>document.body.classList.remove('imprimindo'),400);};
+ $('fPdf').onclick=imprimir;$('pdf').onclick=imprimir;
 }
 async function copiar(id){try{await navigator.clipboard.writeText($(id).value);$('resultado').textContent='Texto copiado. Revise o destinatário antes de enviar.';}catch(e){$(id).focus();$(id).select();$('resultado').textContent='Selecione e copie o texto com Ctrl/Cmd+C.';}}
 async function salvar(enviar){
@@ -85,8 +257,13 @@ async function salvar(enviar){
 $('loginForm').onsubmit=async e=>{e.preventDefault();$('entrar').disabled=true;try{sessao(await auth('identitytoolkit.googleapis.com/v1/accounts:signInWithPassword',{email:$('email').value.trim(),password:$('senha').value,returnSecureToken:true}));$('senha').value='';await carregar();}catch(e){avisar(e.message,true);}finally{$('entrar').disabled=false;}};
 $('verificar').onclick=async()=>{try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:token});avisar('Link de verificação solicitado. Abra seu e-mail e depois entre novamente.');}catch(e){avisar(e.message,true);}};
 $('redefinir').onclick=async()=>{if(!$('email').checkValidity()||!$('email').value){avisar('Informe seu e-mail.',true);return;}try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'PASSWORD_RESET',email:$('email').value.trim()});avisar('Se houver uma conta para este e-mail, as instruções de senha chegarão na caixa de entrada.');}catch(e){avisar(e.message,true);}};
+$('nfFechar').onclick=()=>$('modalNFBg').classList.remove('open');
+$('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota copiado.');
+$('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace('administrativo.html');};
-$('busca').oninput=lista;$('filtro').onchange=lista;$('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
+$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;
+document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
+$('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 (async()=>{if(mock){await carregar();return;}refresh=sessionStorage.getItem('wen_admin_rt')||localStorage.getItem('wen_auth_rt');if(refresh)await carregar();})();
 })();

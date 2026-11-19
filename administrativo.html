@@ -35,7 +35,8 @@ label{font-size:.78rem;font-weight:600;color:#475569}
 section,.card{background:#fff;border-radius:14px;padding:22px;margin-bottom:16px;
   box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid #1e40af}
 .login{max-width:430px;margin:48px auto;border-left-color:#16a34a}
-.layout{display:grid;grid-template-columns:310px 1fr;gap:20px}
+.layout{display:block}
+#lista{margin-bottom:18px}
 
 .list button{width:100%;text-align:left;margin-bottom:9px;line-height:1.5;border-radius:11px;padding:12px 14px}
 .list button.active{border:2px solid #16a34a;background:#f0fdf4}
@@ -56,8 +57,9 @@ details{margin:18px 0}
 summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 #printArea{display:none}
 [hidden]{display:none!important}
-@media(max-width:840px){.layout{grid-template-columns:1fr}header{align-items:flex-start}section{padding:17px}.row{display:block}main{padding:0 14px}}
+@media(max-width:840px){header{align-items:flex-start}section{padding:17px}.row{display:block}main{padding:0 14px}}
 @media print{body>*{display:none!important}#printArea{display:block!important;padding:30px;background:#fff}#printArea h1{color:#14532d}}
+@media print{body.imprimindo>*{display:none!important}body.imprimindo #app{display:block!important}body.imprimindo #app>*{display:none!important}body.imprimindo .layout,body.imprimindo #editor,body.imprimindo #rFechDoc{display:block!important}body.imprimindo #lista,body.imprimindo .fech-acoes-r,body.imprimindo #formFechamento,body.imprimindo #cards{display:none!important}}
 
 /* ── estrutura copiada da aba 🧾 Notas Fiscais do WEN Financeiro ── */
 .nf-topo{margin-bottom:14px}
@@ -76,20 +78,101 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .card-p.pendente{border-left-color:#ef4444}.card-p.pendente .val{color:#b91c1c}
 .card-p.atrasado{border-left-color:#dc2626}.card-p.atrasado .val{color:#991b1b}
 .card-p.alerta{border-left-color:#f97316}.card-p.alerta .val{color:#c2410c}
-/* cada fechamento vira uma linha igual à da fila de notas */
-.list button{width:100%;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
-  background:#fff;border:1px solid #e5e7eb;border-left:3px solid #f59e0b;border-radius:10px;
-  padding:13px 16px;margin-bottom:8px;line-height:1.45;font-weight:400}
-.list button b{font-weight:700;color:#0f172a;font-size:.95rem}
-.list button .muted{font-size:.76rem;color:#64748b}
-.list button.active{border-color:#16a34a;border-left-color:#16a34a;background:#f0fdf4}
-#lista>.muted{display:block;text-align:center;color:#94a3b8;padding:34px 16px;font-size:.88rem;background:#fff;border:1px dashed #e2e8f0;border-radius:11px}
-#editor{border-left:4px solid #1e40af}
+/* .nf-lin — copiada da fila de notas do index.html, mesma medida e mesmas cores */
+.nf-lin{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  background:#fff;border:1px solid #e5e7eb;border-left:3px solid #cbd5e1;border-radius:10px;padding:13px 16px;margin-bottom:8px;flex-wrap:wrap}
+
+.nf-lin.fila{border-left-color:#f59e0b}
+.nf-lin.env{border-left-color:#2563eb}
+.nf-lin.emit{border-left-color:#16a34a}
+.nf-lin.div{border-left-color:#dc2626}
+.nf-lin .nf-info{flex:1;min-width:190px}
+.nf-lin .nf-nome{font-weight:700;color:#0f172a;font-size:.95rem}
+.nf-lin .nf-meta{font-size:.76rem;color:#64748b;margin-top:3px;line-height:1.45;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.nf-lin .nf-val{font-weight:800;font-size:1.02rem;white-space:nowrap;color:#0f172a}
+.nf-lin .nf-acao{display:flex;gap:6px;flex-wrap:wrap}
+.nf-lin .abrir{background:#16a34a;border:1px solid #16a34a;color:#fff;border-radius:8px;padding:8px 15px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.nf-lin .abrir:hover{background:#15803d;border-color:#15803d}
+.nf-lin.ativo .abrir{background:#fff;color:#15803d}
+.nf-lin.ativo{border-color:#16a34a;background:#f0fdf4}
+.nf-pill{font-size:.68rem;font-weight:700;border-radius:20px;padding:2px 9px;white-space:nowrap}
+.nf-pill.ok{background:#dcfce7;color:#15803d}
+.nf-pill.pend{background:#fef3c7;color:#92400e}
+.nf-pill.erro{background:#fee2e2;color:#b91c1c}
+.nf-pill.env{background:#dbeafe;color:#1d4ed8}
+.nf-abas{display:flex;gap:5px;flex-wrap:wrap}
+.nf-abas button{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px 13px;font-size:.8rem;font-weight:700;color:#64748b;cursor:pointer;white-space:nowrap}
+.nf-abas button.on{background:#1e40af;border-color:#1e40af;color:#fff}
+.nf-abas button:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
+.nf-filtros .fg.cli{flex:1 1 320px}
+.nf-filtros .fg.cli select{width:100%}
+.nf-exp{background:#fff;border:1px solid #e2e8f0;border-radius:7px;width:28px;height:28px;cursor:pointer;color:#64748b;font-size:.8rem;flex-shrink:0}
+.nf-exp:hover{background:#f1f5f9;color:#0f172a}
+.nf-exp:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
+.nf-itens{margin:12px 0 2px;padding:10px 12px;background:#f8fafc;border:1px solid #e9eef5;border-radius:9px}
+.nf-item{display:flex;align-items:center;gap:9px;padding:7px 2px;font-size:.84rem;color:#334155;border-bottom:1px solid #eef2f7}
+.nf-item:last-of-type{border-bottom:0}
+.nf-itens-rod{font-size:.76rem;color:#64748b;padding-top:9px;margin-top:4px;border-top:1px dashed #cbd5e1}
+.nf-vazio{text-align:center;color:#94a3b8;padding:38px 16px;font-size:.9rem;background:#fff;border:1px dashed #e2e8f0;border-radius:11px}
+#editor{background:none;box-shadow:none;border:0;padding:0}
+.cartao-edicao{background:#fff;border-radius:15px;box-shadow:0 4px 18px rgba(15,23,42,.06);border:1px solid #eef0f4;border-left:4px solid #1e40af;padding:22px 24px}
 .status{background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #f59e0b;color:#92400e;border-radius:0 9px 9px 0}
 .status.error{background:#fef2f2;border-color:#fecaca;border-left-color:#dc2626;color:#b91c1c}
+
+/* ── documento de fechamento — copiado do Relatórios → Fechamento do index.html ── */
+.fech-acoes-r{display:flex;gap:9px;flex-wrap:wrap;padding:0 0 12px 0}
+.fech-acoes-r .btn{border:none;border-radius:9px;padding:11px 19px;font-size:.86rem;font-weight:700;cursor:pointer;background:#f1f5f9;color:#334155;width:auto}
+.fech-acoes-r .btn-green{background:#16a34a;color:#fff}
+.fech-acoes-r .btn-blue{background:#1e40af;color:#fff}
+.fech-acoes-r .btn-outline{background:#fff;border:1px solid #16a34a;color:#16a34a}
+.fech-acoes-r .btn-roxo{background:#7c3aed;color:#fff}
+.fech-doc-r{background:#fff;border-radius:13px;box-shadow:0 2px 10px rgba(0,0,0,.1);overflow:hidden;margin-bottom:14px}
+.fech-doc-header-r{background:linear-gradient(135deg,#14532d,#16a34a);color:#fff;padding:24px 28px}
+.fech-doc-header-r .empresa{font-size:.76rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.75;margin-bottom:5px}
+.fech-doc-header-r h2{font-size:1.4rem;font-weight:800;margin-bottom:3px;color:#fff}
+.fech-doc-header-r .sub{font-size:.82rem;opacity:.8}
+.fech-doc-body-r{padding:24px 28px}
+.fech-resumo-cards-r{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:24px}
+.frc-r{background:#f8fafc;border-radius:9px;padding:12px 14px;border-left:3px solid #e2e8f0}
+.frc-r.verde{border-left-color:#22c55e}.frc-r.vermelho{border-left-color:#ef4444}.frc-r.azul{border-left-color:#3b82f6}.frc-r.laranja{border-left-color:#f97316}
+.frc-r label{font-size:.65rem;text-transform:uppercase;color:#94a3b8;font-weight:700;letter-spacing:.06em;margin:0}
+.frc-r .v{font-size:1rem;font-weight:800;margin-top:4px;color:#1e293b}
+.frc-r.vermelho .v{color:#b91c1c}.frc-r.verde .v{color:#15803d}
+.fech-mes-bloco-r{margin-bottom:22px}
+.fech-mes-titulo-r{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;background:#f0fdf4;border-radius:7px 7px 0 0;border-left:4px solid #16a34a;flex-wrap:wrap}
+.fech-mes-titulo-r .mn{font-weight:800;font-size:.9rem;color:#14532d}
+.fech-mes-titulo-r .mt{font-size:.8rem;color:#6b7280}
+.fech-mes-titulo-r .ms{font-size:.78rem;font-weight:700;padding:2px 9px;border-radius:20px}
+.fech-mes-titulo-r .ms.pend{background:#fee2e2;color:#b91c1c}.fech-mes-titulo-r .ms.quitado{background:#dcfce7;color:#15803d}
+.fech-tbl-wrap{overflow-x:auto}
+.fech-tbl-r{width:100%;border-collapse:collapse;font-size:.82rem}
+.fech-tbl-r thead th{background:#f1f5f9;color:#475569;padding:8px 11px;text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;font-weight:700;border-bottom:2px solid #e2e8f0}
+.fech-tbl-r thead th.r{text-align:right}
+.fech-tbl-r tbody tr{border-bottom:1px solid #f1f5f9}
+.fech-tbl-r td{padding:9px 11px;vertical-align:middle}
+.fech-tbl-r td.r{text-align:right;font-weight:600}
+.fech-tbl-r tfoot td{background:#1e293b;color:#fff;font-weight:700;padding:9px 11px;font-size:.82rem}
+.fech-tbl-r tfoot td.r{text-align:right}
+.fech-badge-r{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700}
+.fech-badge-r.pend{background:#fee2e2;color:#b91c1c}.fech-badge-r.ok{background:#dcfce7;color:#15803d}
+.studio-badge-r{font-size:.68rem;padding:1px 6px;border-radius:3px;font-weight:700}
+.sa-r{background:#dbeafe;color:#1e40af}.sb-r{background:#ede9fe;color:#7c3aed}
+.fech-total-bar-r{background:#1e293b;color:#fff;border-radius:0 0 9px 9px;padding:12px 18px;display:flex;gap:18px;flex-wrap:wrap;font-size:.83rem;font-weight:700;align-items:center}
+.fech-total-bar-r .tb-item-r{display:flex;flex-direction:column;gap:1px}
+.fech-total-bar-r .tb-label-r{font-size:.63rem;font-weight:600;opacity:.6;text-transform:uppercase;letter-spacing:.06em}
+.fech-total-bar-r .tb-val-r{font-size:.92rem;font-weight:800}
+.fech-total-bar-r .tb-val-r.red{color:#fca5a5}.fech-total-bar-r .tb-val-r.green{color:#86efac}
+.fech-nota-r{border-radius:7px;padding:12px 16px;font-size:.84rem;font-weight:500;margin-top:18px}
+.fech-nota-r.pend{background:#fff7ed;border:1px solid #fed7aa;color:#92400e}
+.fech-nota-r.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d}
+/* modal do Texto NF */
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
+.modal-bg.open{display:flex}
+.modal-bg .cx{background:#fff;border-radius:13px;padding:20px;max-width:620px;width:100%;max-height:86vh;overflow:auto}
+.modal-bg textarea{width:100%;min-height:330px;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;border:1px solid #e5e7eb;border-radius:9px;padding:12px}
 </style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><button id="sair" hidden>Sair</button></header><main>
   <div class="nf-topo">
-    <h2 style="margin:0">🧾 Fechamentos, cobranças e notas</h2>
+    <h2 style="margin:0">Fiscal e Cobranças</h2>
     <p class="nf-sub">O que foi liberado para faturar e cobrar. Esta tela <b>não altera valor nem
     diária</b> — isso é feito no WEN Financeiro. Aqui se completa a descrição, registra a nota
     emitida e acompanha o pagamento.</p>
@@ -106,22 +189,39 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
     </form>
   </section>
   <div id="app" hidden>
-    <div id="cards" class="cards-p"></div>
     <div class="nf-filtros">
-      <div class="fg"><label>Cliente</label><input id="busca" type="search" placeholder="Nome do cliente"></div>
-      <div class="fg"><label>Cobrança</label><select id="filtro">
-        <option value="">Todas</option><option value="pendente">Pendente</option>
-        <option value="enviada">Enviada</option><option value="pago">Pago</option>
-        <option value="atrasada">Em atraso</option></select></div>
-      <div class="fg"><label>&nbsp;</label><button id="atualizar">↻ Atualizar</button></div>
+      <div class="fg cli"><label>Cliente</label><select id="busca"><option value="">— Todos —</option></select></div>
+      <div class="fg"><label>Mês inicial</label><select id="mesIni"></select></div>
+      <div class="fg"><label>Mês final</label><select id="mesFim"></select></div>
+      <div class="fg"><label>Exibir</label>
+        <div class="nf-abas">
+          <button type="button" id="abaTudo" class="on" data-f="">Todos</button>
+          <button type="button" id="abaPend" data-f="pendente">📋 A cobrar</button>
+          <button type="button" id="abaEnv" data-f="enviada">📨 Enviadas</button>
+          <button type="button" id="abaPago" data-f="pago">✅ Pagas</button>
+          <button type="button" id="abaAtr" data-f="atrasada">⚠️ Em atraso</button>
+          <button type="button" id="atualizar">↻ Atualizar</button>
+        </div>
+      </div>
     </div>
+    <div id="cards" class="cards-p"></div>
     <div class="layout">
-      <aside id="lista" class="list" aria-label="Fechamentos"></aside>
-      <section id="editor"><h2>Nenhum fechamento aberto</h2>
-        <p class="nf-sub" style="margin-top:8px">Escolha um fechamento na lista ao lado.<br><br>
+      <div id="lista" aria-label="Fechamentos"></div>
+      <section id="editor"><div class="cartao-edicao"><h2 style="margin:0">Nenhum fechamento aberto</h2>
+        <p class="nf-sub" style="margin-top:8px">Escolha um fechamento na lista acima.<br><br>
         Se a lista estiver vazia, ainda não foi liberado nenhum: os fechamentos nascem no
         <b>WEN Financeiro</b>, em <b>🧾 Notas Fiscais → Fechamentos e cobranças</b>, onde as
-        diárias do cliente são selecionadas. Só depois disso eles aparecem aqui.</p></section>
+        diárias do cliente são selecionadas. Só depois disso eles aparecem aqui.</p></div></section>
     </div>
   </div>
-</main><article id="printArea"></article><script src="js/fechamentos.js?v=8a7237d7"></script><script src="js/administrativo.js?v=ae7e38b7"></script></body></html>
+</main>
+<div class="modal-bg" id="modalNFBg"><div class="cx">
+  <h2 style="margin:0 0 4px">📋 Texto para a nota fiscal</h2>
+  <p class="nf-sub" style="margin:0 0 12px">Descrição do serviço e dados bancários da WEN. Confira antes de enviar.</p>
+  <textarea id="nfTextoArea" readonly></textarea>
+  <div style="display:flex;gap:9px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+    <button type="button" class="btn" id="nfFechar" style="background:#f1f5f9;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">Fechar</button>
+    <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
+  </div>
+</div></div>
+<article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=bceea495"></script><script src="js/administrativo.js?v=e35fe7dd"></script></body></html>

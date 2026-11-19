@@ -30,6 +30,16 @@ await page.goto(BASE+'/administrativo.html#'+f.id);await page.waitForSelector('#
 assert.equal(await page.locator('#cards .card-p').count(),3);
 assert(!(await page.textContent('#cards')).includes('R$'));
 assert((await page.textContent('#cards')).includes('A cobrar'));
+// O fechamento aberto é o documento do Relatórios → Fechamento: faixa, 6 cartões,
+// tabela por mês com Horário/Studio/Status, barra de total e as 4 ações.
+assert.equal(await page.locator('#rFechDoc .frc-r').count(),6);
+assert.equal(await page.locator('#rFechDoc .fech-total-bar-r').count(),1);
+for(const id of ['fPdf','fZap','fXls','fNF'])assert.equal(await page.locator('#'+id).count(),1,'falta a ação '+id);
+const cab=await page.locator('#rFechDoc thead').first().textContent();
+for(const c of ['Data','Horário','Studio','Horas','Total','Recebido','Saldo','Status'])assert(cab.includes(c),'falta a coluna '+c);
+await page.click('#fNF');await page.waitForSelector('#modalNFBg.open');
+assert((await page.inputValue('#nfTextoArea')).includes('21.577.617/0001-44'));
+await page.click('#nfFechar');
 assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('aviso').textContent==='Envio registrado.');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');assert(requests.every(u=>u.includes('/administrativo_fechamentos')));
 assert(!await page.locator('body').evaluate(el=>el.textContent.includes('SIGILO FOLHA')));
 await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

@@ -19,7 +19,7 @@
       const total=cents(r.valorTotal), recebido=cents(r.valorReserva);
       if(recebido<0||recebido>total)throw Error('Revise o valor recebido da diária '+r.id+'.');
       return {id:String(r.id),data:String(r.data||''),mes:String(r.mes||''),horas:Number(r.horas)||0,
-        studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
+        horario:String(r.horario||''),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
     });
     const valor=itens.reduce((s,r)=>s+cents(r.valor),0)/100;
     const recebido=itens.reduce((s,r)=>s+cents(r.recebido),0)/100;
