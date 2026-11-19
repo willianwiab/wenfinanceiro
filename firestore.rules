@@ -17,7 +17,12 @@ service cloud.firestore {
       allow update: if administrativo()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData',
-          'descricaoFiscal','descricaoCobranca','enviadoEm','atualizadoEm'
+          'descricaoFiscal','descricaoCobranca','enviadoEm','atualizadoEm',
+          // 50/50: quando o cliente pede nota do sinal e nota do saldo separadas.
+          // O MODO (notaModo) e os valores continuam só do proprietário — aqui ela
+          // registra apenas o que foi emitido em cada parte.
+          'nfSinalNumero','nfSinalData','nfSinalStatus',
+          'nfSaldoNumero','nfSaldoData','nfSaldoStatus'
         ])
         && request.resource.data.cobrancaStatus in ['pendente','enviada','pago']
         && request.resource.data.fiscalStatus in ['pendente','emitida','nao_solicitada']
@@ -37,7 +42,21 @@ service cloud.firestore {
         && request.resource.data.atualizadoEm is string
         && request.resource.data.atualizadoEm.size() <= 30
         && (request.resource.data.fiscalStatus != 'emitida'
-          || (request.resource.data.nfNumero.size() > 0 && request.resource.data.nfData.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+          || request.resource.data.get('notaModo', 'junto') == 'separado'
+          || (request.resource.data.nfNumero.size() > 0 && request.resource.data.nfData.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+        // cada parte: status válido e, se emitida, número e data de verdade
+        && request.resource.data.get('nfSinalStatus', 'pendente') in ['pendente', 'emitida']
+        && request.resource.data.get('nfSaldoStatus', 'pendente') in ['pendente', 'emitida']
+        && request.resource.data.get('nfSinalNumero', '').size() <= 200
+        && request.resource.data.get('nfSaldoNumero', '').size() <= 200
+        && (request.resource.data.get('nfSinalStatus', 'pendente') != 'emitida'
+          || (request.resource.data.get('nfSinalNumero', '').size() > 0
+            && request.resource.data.get('nfSinalData', '').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+        && (request.resource.data.get('nfSaldoStatus', 'pendente') != 'emitida'
+          || (request.resource.data.get('nfSaldoNumero', '').size() > 0
+            && request.resource.data.get('nfSaldoData', '').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+        // o modo é do proprietário: o administrativo não pode trocá-lo
+        && request.resource.data.get('notaModo', 'junto') == resource.data.get('notaModo', 'junto');
     }
   }
 }

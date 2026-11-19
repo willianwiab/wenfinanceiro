@@ -195,10 +195,12 @@ function textoWhats(f){
  txt+=`━━━━━━━━━━━━━━━━━━━━━━\n💰 *${cash(tT)}* · ⏱ ${tH}h\n${tS>0?`🔴 *PENDENTE: ${cash(tS)}*\n⚠️ Por favor efetue o pagamento.`:'✅ *Tudo quitado!*'}\n\n_WEN Produtora · ${new Date().toLocaleDateString('pt-BR')}_`;
  return txt;
 }
-function textoNF(f){
- const it=f.itens||[], tH=soma(it,'horas'), tT=soma(it,'valor');
+function textoNF(f,parte){
+ const it=f.itens||[], tH=soma(it,'horas');
+ const tT=parte==='sinal'?f.recebido:parte==='saldo'?f.saldo:soma(it,'valor');
  const d=it.length===1?'diária':'diárias';
- const desc=`Prestação de serviços de produção audiovisual — Gravação de ${it.length} episódio${it.length>1?'s':''} de videocast.\n${it.length} ${d} totalizando ${tH}h de estúdio.\nPeríodo: ${fechPeriodo(f)}.`;
+ const sufixo=parte==='sinal'?'\nReferente ao sinal (parcela de entrada).':parte==='saldo'?'\nReferente ao saldo final.':'';
+ const desc=`Prestação de serviços de produção audiovisual — Gravação de ${it.length} episódio${it.length>1?'s':''} de videocast.\n${it.length} ${d} totalizando ${tH}h de estúdio.\nPeríodo: ${fechPeriodo(f)}.${sufixo}`;
  return `───────────────────────────\n📄 DESCRIÇÃO PARA NOTA FISCAL\n───────────────────────────\n${desc}\n\nValor total: ${cash(tT)}\n───────────────────────────\n🏦 DADOS BANCÁRIOS — WEN PRODUTORA\n───────────────────────────\nRazão Social: WEN PRODUTORA LTDA\nCNPJ: 21.577.617/0001-44\n\nPIX: wenprodutora@gmail.com\n\nBanco: Caixa Econômica Federal\nAgência: 1601\nConta Corrente: 1292 000577674871-9\n───────────────────────────`;
 }
 function excelFechamento(f){
@@ -216,6 +218,23 @@ async function copiarTexto(txt,msg){
  try{await navigator.clipboard.writeText(txt);avisar(msg);}
  catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();avisar(msg);}
 }
+// Sinal e saldo: o cliente pode querer UMA nota pelo total ou DUAS, uma de cada parte.
+// Quem decide é o Will, na ficha do cliente — aqui só se registra o que foi emitido.
+function blocoFiscal(f){
+ const campoUm=`<div class="row"><label>Situação fiscal<select id="fiscalStatus"><option value="pendente">Nota pendente</option><option value="emitida">Nota emitida</option><option value="nao_solicitada">NF não solicitada pelo cliente</option></select></label><label>Número da nota<input id="nfNumero" value="${esc(f.nfNumero)}"></label><label>Emissão<input id="nfData" type="date" value="${esc(f.nfData)}"></label></div>`;
+ if(f.notaModo!=='separado')return campoUm;
+ const parte=(rot,pre,val)=>`<div class="nf-parte"><div class="nf-parte-top"><b>${rot}</b><span class="nf-val">${cash(val)}</span></div>
+   <div class="row"><label>Situação<select id="${pre}Status"><option value="pendente">Pendente</option><option value="emitida">Emitida</option></select></label>`
+   +`<label>Número<input id="${pre}Numero" value="${esc(f[pre+'Numero']||'')}"></label>`
+   +`<label>Emissão<input id="${pre}Data" type="date" value="${esc(f[pre+'Data']||'')}"></label></div>`
+   +`<button type="button" class="btn-parte" data-nf="${pre}">📋 Texto NF — ${rot.toLowerCase()}</button></div>`;
+ return `<div class="status">Este cliente pede a nota <b>separada</b>: uma do sinal e outra do saldo. O valor de cada uma já vem calculado.</div>`
+  +parte('Nota do sinal','nfSinal',f.recebido)
+  +parte('Nota do saldo','nfSaldo',f.saldo)
+  +campoUm.replace('<div class="row">','<div class="row" style="margin-top:12px">')
+     .replace('Situação fiscal','Situação geral (as duas)')
+     .replace('Número da nota','Números (as duas)');
+}
 function abrir(id){
  const f=docs.find(x=>x.id===id);if(!f)return;selecionado=id;dirty=false;lista();location.hash=id;
  const nf=(f.notasExistentes||[]).map(n=>n.numero).join(', ');
@@ -226,10 +245,16 @@ function abrir(id){
  ${nf?`<div class="status">Notas já registradas no financeiro: ${esc(nf)}. Confira estas referências antes de registrar outra nota.</div>`:''}
  <form id="formFechamento"><div class="row"><label>Vencimento<input id="vencimento" type="date" value="${esc(f.vencimento)}"></label><label>Cobrança<select id="cobrancaStatus"><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="pago">Pagamento confirmado</option></select></label></div>
  <label>Descrição para cobrança<textarea id="descricaoCobranca" rows="8">${esc(f.descricaoCobranca)}</textarea></label><div class="actions"><button type="button" id="copiarCobranca">Copiar cobrança</button><button type="button" id="pdf">PDF / imprimir fechamento</button></div><hr>
- <div class="row"><label>Situação fiscal<select id="fiscalStatus"><option value="pendente">Nota pendente</option><option value="emitida">Nota emitida</option><option value="nao_solicitada">NF não solicitada pelo cliente</option></select></label><label>Número da nota<input id="nfNumero" value="${esc(f.nfNumero)}"></label><label>Emissão<input id="nfData" type="date" value="${esc(f.nfData)}"></label></div>
+ ${blocoFiscal(f)}
  <label>Descrição fiscal<textarea id="descricaoFiscal" rows="6">${esc(f.descricaoFiscal)}</textarea></label><button type="button" id="copiarFiscal">Copiar descrição fiscal</button><p class="muted">O registro da nota serve para controle; a emissão acontece no portal fiscal.</p>
  <div class="actions"><button class="primary" id="salvar">Salvar alterações</button><button type="button" id="enviada">Registrar cobrança enviada</button></div><p id="resultado" role="status"></p><p class="muted">${f.enviadoEm?'Último envio registrado: '+esc(new Date(f.enviadoEm).toLocaleString('pt-BR')):''}</p></form></section>`;
- $('cobrancaStatus').value=f.cobrancaStatus;$('fiscalStatus').value=f.fiscalStatus;if(f.fiscalIds?.length===0){for(const id of ['fiscalStatus','nfNumero','nfData'])$(id).disabled=true;}
+ $('cobrancaStatus').value=f.cobrancaStatus;$('fiscalStatus').value=f.fiscalStatus;
+ if(f.notaModo==='separado'){
+  $('nfSinalStatus').value=f.nfSinalStatus||'pendente';$('nfSaldoStatus').value=f.nfSaldoStatus||'pendente';
+  $('editor').querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
+    const sinal=b.dataset.nf==='nfSinal';
+    $('nfTextoArea').value=textoNF(f,sinal?'sinal':'saldo');$('modalNFBg').classList.add('open');});
+ }if(f.fiscalIds?.length===0){for(const id of ['fiscalStatus','nfNumero','nfData'])$(id).disabled=true;}
  $('editor').scrollIntoView({behavior:'smooth',block:'start'});
  $('formFechamento').oninput=()=>dirty=true;
  $('formFechamento').onsubmit=e=>{e.preventDefault();salvar(false);};$('enviada').onclick=()=>salvar(true);
@@ -244,7 +269,9 @@ async function copiar(id){try{await navigator.clipboard.writeText($(id).value);$
 async function salvar(enviar){
  if(busy)return;
  const f=docs.find(f=>f.id===selecionado), update={};
- for(const k of ['vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData','descricaoFiscal','descricaoCobranca'])update[k]=$(k).value;
+ const campos=['vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData','descricaoFiscal','descricaoCobranca'];
+ if(f.notaModo==='separado')campos.push('nfSinalStatus','nfSinalNumero','nfSinalData','nfSaldoStatus','nfSaldoNumero','nfSaldoData');
+ for(const k of campos){const el=$(k);if(el)update[k]=el.value;}
  if(enviar){if(update.cobrancaStatus==='pago'){avisar('Este fechamento já está pago.',true);return;}update.cobrancaStatus='enviada';update.enviadoEm=new Date().toISOString();}
  update.atualizadoEm=new Date().toISOString();
  try{

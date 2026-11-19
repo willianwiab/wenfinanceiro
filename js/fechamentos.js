@@ -8,6 +8,15 @@
     return i>=0&&/^\d{4}$/.test(a[1])?a[1]+'-'+String(i+1).padStart(2,'0'):'';
   }
   const noPeriodo=r=>mesChave(r.mes)>='2026-10';
+  // O vencimento NÃO é digitado de novo aqui: ele vem do lançamento do Receber, que é
+  // onde o Will define a data. '-' e vazio contam como sem data.
+  function vencIso(v){
+    const t=String(v||'').trim();
+    if(!t||t==='-')return '';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;
+    const m=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m?m[3]+'-'+m[2]+'-'+m[1]:'';
+  }
   function criar(regs, ficha={}, campos=['data','horas','studio','descricao']){
     if(!regs.length)throw Error('Selecione pelo menos uma diária.');
     if(regs.some(r=>!noPeriodo(r)))throw Error('O administrativo começa em outubro de 2026.');
@@ -19,7 +28,7 @@
       const total=cents(r.valorTotal), recebido=cents(r.valorReserva);
       if(recebido<0||recebido>total)throw Error('Revise o valor recebido da diária '+r.id+'.');
       return {id:String(r.id),data:String(r.data||''),mes:String(r.mes||''),horas:Number(r.horas)||0,
-        horario:String(r.horario||''),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
+        horario:String(r.horario||''),vencimento:vencIso(r.vencimento),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
     });
     const valor=itens.reduce((s,r)=>s+cents(r.valor),0)/100;
     const recebido=itens.reduce((s,r)=>s+cents(r.recebido),0)/100;
@@ -31,14 +40,24 @@
     const clienteFiscal={};
     for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro'])clienteFiscal[k]=String(ficha[k]||'');
     return {cliente:regs[0].cliente,clienteFiscal,itens,lancamentoIds:itens.map(r=>r.id),valor,recebido,saldo,
-      exigeNota:ficha.exigeNota!==false,descricaoFiscal,descricaoCobranca,vencimento:'',
+      exigeNota:ficha.exigeNota!==false,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
       fiscalStatus:ficha.exigeNota===false?'nao_solicitada':'pendente',cobrancaStatus:saldo===0?'pago':'pendente',
-      nfNumero:'',nfData:'',enviadoEm:'',criadoEm:new Date().toISOString(),atualizadoEm:new Date().toISOString()};
+      nfNumero:'',nfData:'',enviadoEm:'',
+      notaModo:(ficha.exigeNota!==false&&ficha.notaSinal==='separado'&&recebido>0&&saldo>0)?'separado':'junto',
+      nfSinalNumero:'',nfSinalData:'',nfSinalStatus:'pendente',
+      nfSaldoNumero:'',nfSaldoData:'',nfSaldoStatus:'pendente',criadoEm:new Date().toISOString(),atualizadoEm:new Date().toISOString()};
   }
   function validarEdicao(f){
     if(!f.descricaoCobranca.trim())throw Error('Preencha a descrição da cobrança.');
     if(f.exigeNota&&!f.descricaoFiscal.trim())throw Error('Preencha a descrição fiscal.');
-    if(f.fiscalStatus==='emitida'&&(!f.nfNumero.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(f.nfData)))throw Error('Informe número e data da nota emitida.');
+    if(f.notaModo==='separado'){
+      for(const [rot,n,d,st] of [['do sinal','nfSinalNumero','nfSinalData','nfSinalStatus'],['do saldo','nfSaldoNumero','nfSaldoData','nfSaldoStatus']]){
+        if(!['pendente','emitida'].includes(String(f[st]||'pendente')))throw Error('Situação inválida na nota '+rot+'.');
+        if(f[st]==='emitida'&&(!String(f[n]||'').trim()||!/^\d{4}-\d{2}-\d{2}$/.test(String(f[d]||''))))throw Error('Informe número e data da nota '+rot+'.');
+      }
+      if(f.fiscalStatus==='emitida'&&!(f.nfSinalStatus==='emitida'&&f.nfSaldoStatus==='emitida'))throw Error('No modo separado, as duas notas precisam estar emitidas.');
+    }
+    else if(f.fiscalStatus==='emitida'&&(!f.nfNumero.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(f.nfData)))throw Error('Informe número e data da nota emitida.');
     if(f.vencimento&&!/^\d{4}-\d{2}-\d{2}$/.test(f.vencimento))throw Error('Vencimento inválido.');
     if(!['pendente','enviada','pago'].includes(f.cobrancaStatus))throw Error('Situação inválida.');
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');

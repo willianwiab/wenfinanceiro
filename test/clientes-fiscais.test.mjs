@@ -134,5 +134,27 @@ if (!bks.length) {
   console.log(`   (backup ${bks[bks.length-1]}: ${pend.length} clientes de 2026 sem ficha, maior = ${pend[0].nome})`);
 }
 
+// ── CFI_liberavel — quem o administrativo atende ────────────────────────────
+// A decisão do Will (19/11): sem ficha ENTRA. Só fica de fora quem foi desmarcado
+// nas duas coisas — não exige nota E não é a Natália quem cobra.
+ok(C.CFI_liberavel(null), 'cliente sem ficha é atendido pelo administrativo');
+ok(C.CFI_liberavel(undefined), 'ficha indefinida também');
+{
+  const f = C.CFI_novaFicha('Fulano');
+  ok(f.exigeNota === true && f.cobrancaAdministrativo === true, 'ficha nova nasce com os dois ligados');
+  ok(C.CFI_liberavel(f), 'ficha nova é liberável');
+
+  ok(C.CFI_liberavel({ ...f, exigeNota: false }), 'sem NF mas com cobrança: entra');
+  ok(C.CFI_liberavel({ ...f, cobrancaAdministrativo: false }), 'com NF mas cobrança do Will: entra');
+  ok(!C.CFI_liberavel({ ...f, exigeNota: false, cobrancaAdministrativo: false }),
+     'desmarcado nos dois: fica de fora');
+
+  // ficha antiga, gravada antes do campo existir, não pode sumir da liberação
+  const antiga = { ...f }; delete antiga.cobrancaAdministrativo;
+  ok(C.CFI_liberavel(antiga), 'ficha antiga sem o campo continua sendo atendida');
+  const antigaSemNota = { ...antiga, exigeNota: false };
+  ok(C.CFI_liberavel(antigaSemNota), 'ficha antiga que não exige nota segue cobrável pelo administrativo');
+}
+
 if (falhas.length) { console.error('❌ clientes-fiscais\n   - ' + falhas.join('\n   - ')); process.exit(1); }
 console.log(`✅ clientes-fiscais: ${pass} verificações, sem navegador`);

@@ -119,7 +119,7 @@ function CFI_novaFicha(nome){
     codigoIbge:'',                       // exigido na DPS; preenchido na Fase F
     emailNota:'',
     contatoFinanceiro:'', whatsappFinanceiro:'', emailFinanceiro:'',
-    exigeNota:true, fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
+    exigeNota:true, cobrancaAdministrativo:true, notaSinal:'junto', fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
     instrucoes:'', observacoes:'',
     criadoEm:'', atualizadoEm:''
   };
@@ -128,6 +128,14 @@ function CFI_novaFicha(nome){
 // ── casar lançamento → ficha ──────────────────────────────────────────────────────
 // Primeiro pelo slug do nome; depois pelos apelidos já vistos. Devolve null se não achar
 // — nunca "chuta" um cliente parecido: errar o tomador é emitir nota no CNPJ errado.
+// Quem o administrativo atende. Sem ficha = atende (é o padrão do sistema desde sempre:
+// `exigeNota` só sai do caminho quando alguém desmarca). Só fica de fora quem foi
+// desmarcado nas DUAS coisas — não exige nota E não é a Natália quem cobra.
+function CFI_liberavel(ficha){
+  if (!ficha) return true;
+  return ficha.exigeNota !== false || ficha.cobrancaAdministrativo !== false;
+}
+
 function CFI_casar(nomeLancamento, fichas){
   const alvo = CFI_slug(nomeLancamento);
   if (!alvo) return null;
@@ -180,5 +188,5 @@ function CFI_resumo(lancamentos, fichas, ano){
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_DESEJAVEIS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
     CFI_validarDoc, CFI_tipoDoc, CFI_formatarDoc, CFI_validarCEP, CFI_validarUF, CFI_validarEmail,
-    CFI_completude, CFI_novaFicha, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
+    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
 }

@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-c1fec563';
+window.APP_VERSION='20261119-1feed3ad';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1949,6 +1949,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="fg"><label>Exibir</label>
       <div class="nf-abas">
         <button id="nfAbaFech" onclick="NF_setAba('fechamentos')">Fechamentos e cobranças</button>
+        <button id="nfAbaAvisos" onclick="NF_setAba('avisos')">🔔 Avisos</button>
         <button id="nfAbaFila" class="on" onclick="NF_setAba('fila')">📋 A faturar</button>
         <button id="nfAbaEmit" onclick="NF_setAba('emitidas')">✅ Emitidas</button>
         <button id="nfAbaDiv" onclick="NF_setAba('diverg')">⚠️ Divergências</button>
@@ -2009,6 +2010,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="fg"><label>Instruções de faturamento</label><input id="cfiF_instrucoes"/></div>
       <div class="fg"><label>Observações</label><input id="cfiF_observacoes"/></div>
       <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_exigeNota" checked/> Exige nota fiscal</label></div>
+      <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_cobrancaAdm" checked/> Cobrança pelo administrativo</label></div>
+      <div class="fg"><label>Nota do sinal (50/50)</label><select id="cfiF_notaSinal"><option value="junto">Uma nota só, pelo total</option><option value="separado">Separado: nota do sinal + nota do saldo</option></select></div>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="btn btn-outline-b" onclick="CFI_fechar()">Cancelar</button>
@@ -2787,8 +2790,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="js/fechamentos.js?v=bceea495"></script>
-<script src="js/fechamentos-admin.js?v=ac64aa37"></script>
+<script src="js/fechamentos.js?v=3772398a"></script>
+<script src="js/fechamentos-admin.js?v=e934a7a9"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3815,11 +3818,12 @@ function NF_montar(){
   // para uma lista que pode estar cheia, e faria o Will faturar de novo o que já faturou.
   if(aviso)aviso.innerHTML=NF_ok?'':'<div class="nf-alerta erro"><b>Não consegui ler as notas já registradas.</b> '
     +'Sem isso eu não sei o que já foi faturado, então a fila abaixo pode estar errada. Recarregue a página antes de registrar qualquer nota.</div>';
-  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli','nfAbaFech'].forEach((id,i)=>{const b=document.getElementById(id);
-    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes','fechamentos'][i]);});
+  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli','nfAbaFech','nfAbaAvisos'].forEach((id,i)=>{const b=document.getElementById(id);
+    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes','fechamentos','avisos'][i]);});
   // O cadastro fiscal tem cards e lista próprios: sai antes de montar fila/notas.
   if(NF_aba==='clientes'){CFI_render();return;}
   if(NF_aba==='fechamentos'){FC_render();return;}
+  if(NF_aba==='avisos'){FC_renderAvisos();return;}
 
   const fila=NF_fila(), notas=NF_notasDoPeriodo(), divs=NF_divergencias();
   const somaFila=fila.reduce((a,g)=>a+g.valor,0);
@@ -3940,6 +3944,8 @@ window.CFI_abrir=function(id,nomeSugerido){
    'diaVencimento','instrucoes','observacoes'].forEach(k=>v('cfiF_'+k,f[k]));
   v('cfiF_fechamentoPadrao',f.fechamentoPadrao||'mensal');
   const ex=document.getElementById('cfiF_exigeNota'); if(ex)ex.checked=f.exigeNota!==false;
+  const ca=document.getElementById('cfiF_cobrancaAdm'); if(ca)ca.checked=f.cobrancaAdministrativo!==false;
+  v('cfiF_notaSinal',f.notaSinal==='separado'?'separado':'junto');
   CFI_conferir();
   document.getElementById('cfiModalBg').classList.add('open');
 };
@@ -3977,6 +3983,8 @@ window.CFI_salvar=async function(){
     emailNota:g('emailNota'), contatoFinanceiro:g('contatoFinanceiro'),
     whatsappFinanceiro:g('whatsappFinanceiro'), emailFinanceiro:g('emailFinanceiro'),
     exigeNota:!!(document.getElementById('cfiF_exigeNota')||{}).checked,
+    cobrancaAdministrativo:!!(document.getElementById('cfiF_cobrancaAdm')||{}).checked,
+    notaSinal:g('notaSinal')==='separado'?'separado':'junto',
     fechamentoPadrao:g('fechamentoPadrao')||'mensal',
     prazoPagamento:g('prazoPagamento'), diaVencimento:parseInt(g('diaVencimento'),10)||null,
     instrucoes:g('instrucoes'), observacoes:g('observacoes'),
@@ -9670,7 +9678,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/clientes-fiscais.js?v=5b6d80e4"></script>
+<script src="js/clientes-fiscais.js?v=1a92028f"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>
