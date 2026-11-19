@@ -62,3 +62,29 @@ console.log('50/50: sinal e saldo separados, cada nota com seu valor e sua valid
   assert.equal(criar([comVenc('30/11/2026')]).itens[0].vencimento,'2026-11-30','cada diária guarda a sua');
 }
 console.log('Vencimento herdado do Receber OK');
+
+// ── somar diárias, horas e edições para a nota ──────────────────────────────
+// É o número que o emissor copia. Uma função só, usada pelo fechamento e pelas telas.
+{
+  const { resumir, textoResumo } = require('../js/fechamentos.js');
+  const d=(horas,edicoes,valor)=>({horas,edicoes,valor});
+  assert.deepEqual(resumir([d(2,1,2200),d(3,2,3300)]),{diarias:2,horas:5,edicoes:3,valor:5500});
+  assert.deepEqual(resumir([]),{diarias:0,horas:0,edicoes:0,valor:0});
+  assert.equal(resumir([d(2,undefined,100)]).edicoes,0,'diária antiga, sem o campo, conta zero');
+  assert.equal(resumir([d(2,'3',100)]).edicoes,3,'texto do formulário vira número');
+  assert.equal(resumir([d(2,-5,100)]).edicoes,0,'negativo não desconta');
+  assert.equal(resumir([d(1.5,0,100),d(2.5,0,100)]).horas,4,'meia hora soma certo');
+
+  assert.equal(textoResumo([d(2,1,100)]),'1 diária · 2h de estúdio · 1 edição');
+  assert.equal(textoResumo([d(2,2,100),d(3,0,100)]),'2 diárias · 5h de estúdio · 2 edições');
+  assert.equal(textoResumo([d(2,0,100)]),'1 diária · 2h de estúdio','sem edição não inventa a palavra');
+  assert.equal(textoResumo([d(2.5,0,100)]),'1 diária · 2,5h de estúdio','meia hora com vírgula');
+
+  // a quantidade viaja do lançamento para a diária e aparece na descrição fiscal
+  const f=criar([{...base,qtdEdicao:2,valorTotal:2200,valorReserva:0}]);
+  assert.equal(f.itens[0].edicoes,2,'qtdEdicao do Receber vira edicoes na diária');
+  assert(f.descricaoFiscal.includes('2 edições'),'a descrição fiscal já vem somada');
+  assert(f.descricaoFiscal.includes('1 diária'));
+  assert.equal(criar([base]).itens[0].edicoes,0,'lançamento sem o campo não quebra');
+}
+console.log('Resumo para a nota (diárias, horas, edições) OK');

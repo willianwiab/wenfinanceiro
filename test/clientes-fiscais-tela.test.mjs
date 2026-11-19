@@ -48,7 +48,8 @@ const r = await page.evaluate(async () => {
     .find(c => /Sem cadastro/.test(c.querySelector('label').textContent))?.querySelector('.val')?.textContent;
 
   // abre pelo botão "Cadastrar" da pendência → nome vem preenchido
-  document.querySelector('#nfConteudo .cfi-lin.pend button').click();
+  // (a linha também tem os chips 🧾/💰; o Cadastrar é o azul)
+  document.querySelector('#nfConteudo .cfi-lin.pend .btn-blue').click();
   await new Promise(r => setTimeout(r, 300));
   out.modalAbriu = document.getElementById('cfiModalBg').classList.contains('open');
   out.nomeVeioPreenchido = document.getElementById('cfiF_nome').value;

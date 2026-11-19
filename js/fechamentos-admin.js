@@ -45,14 +45,12 @@ function FC_loteHTML(){
     Estes clientes têm diárias ainda não liberadas no recorte. Desmarque quem não entra —
     quem a ficha tirou do caminho (não exige nota <b>e</b> não é cobrado pelo administrativo) já não aparece aqui.</div>
    <div id="fcLoteLista">${grupos.map(g=>{
-     const fora=FC_loteFora.has(g.cliente), fi=g.ficha||{};
-     const selos=(fi.exigeNota===false?'<span class="nf-pill">sem NF</span>':'<span class="nf-pill pend">exige NF</span>')
-       +(fi.cobrancaAdministrativo===false?' <span class="nf-pill">cobrança com o Will</span>':'')
-       +(g.ficha?'':' <span class="nf-pill">sem ficha</span>');
+     const fora=FC_loteFora.has(g.cliente);
      return `<div class="nf-lin${fora?'':' fila'}" style="${fora?'opacity:.5':''}">
        <input type="checkbox" class="fc-lote-cb" data-cli="${NF_esc(g.cliente)}" ${fora?'':'checked'} style="width:18px;height:18px;flex-shrink:0">
        <div class="nf-info"><div class="nf-nome">${NF_esc(g.cliente)}</div>
-       <div class="nf-meta">${g.regs.length} ${g.regs.length===1?'diária':'diárias'} · ${g.horas}h ${selos}</div></div>
+       <div class="nf-meta">${g.regs.length} ${g.regs.length===1?'diária':'diárias'} · ${g.horas}h${g.ficha?'':' <span class="nf-pill">sem ficha</span>'}</div></div>
+       ${CFI_chipsDe(g.cliente)}
        <div class="nf-val">${fmt(g.valor)}</div></div>`;}).join('')}</div>
    <div class="nf-resumo"><b>${marcados.length} cliente(s) · ${diarias} diária(s) · ${fmt(total)}</b><br>
      Cada cliente vira um fechamento. O vencimento e as descrições ficam para o administrativo ajustar.</div>

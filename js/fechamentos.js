@@ -17,6 +17,24 @@
     const m=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     return m?m[3]+'-'+m[2]+'-'+m[1]:'';
   }
+  // O que o emissor da nota quer ver somado: quantas diárias, quantas horas,
+  // quantas edições. Função própria para o teste e para as telas usarem o MESMO número.
+  function resumir(itens){
+    const l=itens||[];
+    return {
+      diarias:l.length,
+      horas:Math.round(l.reduce((a,r)=>a+(Number(r.horas)||0),0)*100)/100,
+      edicoes:l.reduce((a,r)=>a+(Math.max(0,parseInt(r.edicoes,10)||0)),0),
+      valor:l.reduce((a,r)=>a+cents(r.valor),0)/100
+    };
+  }
+  function textoResumo(itens){
+    const r=resumir(itens), p=[];
+    p.push(r.diarias+(r.diarias===1?' diária':' diárias'));
+    if(r.horas)p.push((Number.isInteger(r.horas)?r.horas:r.horas.toFixed(1).replace('.',','))+'h de estúdio');
+    if(r.edicoes)p.push(r.edicoes+(r.edicoes===1?' edição':' edições'));
+    return p.join(' · ');
+  }
   function criar(regs, ficha={}, campos=['data','horas','studio','descricao']){
     if(!regs.length)throw Error('Selecione pelo menos uma diária.');
     if(regs.some(r=>!noPeriodo(r)))throw Error('O administrativo começa em outubro de 2026.');
@@ -28,13 +46,13 @@
       const total=cents(r.valorTotal), recebido=cents(r.valorReserva);
       if(recebido<0||recebido>total)throw Error('Revise o valor recebido da diária '+r.id+'.');
       return {id:String(r.id),data:String(r.data||''),mes:String(r.mes||''),horas:Number(r.horas)||0,
-        horario:String(r.horario||''),vencimento:vencIso(r.vencimento),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
+        horario:String(r.horario||''),vencimento:vencIso(r.vencimento),edicoes:Math.max(0,parseInt(r.qtdEdicao,10)||0),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
     });
     const valor=itens.reduce((s,r)=>s+cents(r.valor),0)/100;
     const recebido=itens.reduce((s,r)=>s+cents(r.recebido),0)/100;
     const saldo=(cents(valor)-cents(recebido))/100;
     const linhas=itens.map(r=>[campos.includes('data')?[r.data,r.mes].filter(Boolean).join(' / '):'',campos.includes('horas')?r.horas+'h':'',campos.includes('studio')?r.studio:'',campos.includes('descricao')?r.descricao:''].filter(Boolean).join(' · ')||'Serviço audiovisual');
-    const descricaoFiscal='Prestação de serviços de produção audiovisual.\n'+linhas.join('\n');
+    const descricaoFiscal='Prestação de serviços de produção audiovisual.\n'+textoResumo(itens)+'.\n'+linhas.join('\n');
     const descricaoCobranca='Olá! Segue o fechamento de '+regs[0].cliente+'.\n\n'+linhas.map((s,i)=>s+' — '+money(itens[i].valor)).join('\n')+'\n\nTotal: '+money(valor)+'\nRecebido: '+money(recebido)+'\nSaldo a pagar: '+money(saldo);
     // Não copiar a ficha ou lançamento inteiro: eles podem conter informação interna.
     const clienteFiscal={};
@@ -63,6 +81,6 @@
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');
     return f;
   }
-  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo};
+  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo};
   if(typeof module!=='undefined')module.exports=root.WENFechamentos;
 })(globalThis);

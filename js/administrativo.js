@@ -164,6 +164,7 @@ function docFechamento(f){
     <div class="fech-resumo-cards-r">
       <div class="frc-r azul"><label>🎙️ Gravações</label><div class="v">${it.length}</div></div>
       <div class="frc-r azul"><label>⏱ Horas</label><div class="v">${tH}h</div></div>
+      ${WENFechamentos.resumir(it).edicoes?`<div class="frc-r laranja"><label>✂️ Edições</label><div class="v">${WENFechamentos.resumir(it).edicoes}</div></div>`:''}
       <div class="frc-r"><label>💰 Faturado</label><div class="v">${cash(tT)}</div></div>
       <div class="frc-r verde"><label>✅ Recebido</label><div class="v">${cash(tR)}</div></div>
       <div class="frc-r ${tS>0?'vermelho':'verde'}"><label>${tS>0?'🔴 Saldo':'✅ Saldo'}</label><div class="v">${cash(tS)}</div></div>
@@ -198,9 +199,8 @@ function textoWhats(f){
 function textoNF(f,parte){
  const it=f.itens||[], tH=soma(it,'horas');
  const tT=parte==='sinal'?f.recebido:parte==='saldo'?f.saldo:soma(it,'valor');
- const d=it.length===1?'diária':'diárias';
  const sufixo=parte==='sinal'?'\nReferente ao sinal (parcela de entrada).':parte==='saldo'?'\nReferente ao saldo final.':'';
- const desc=`Prestação de serviços de produção audiovisual — Gravação de ${it.length} episódio${it.length>1?'s':''} de videocast.\n${it.length} ${d} totalizando ${tH}h de estúdio.\nPeríodo: ${fechPeriodo(f)}.${sufixo}`;
+ const desc=`Prestação de serviços de produção audiovisual — Gravação de ${it.length} episódio${it.length>1?'s':''} de videocast.\n${WENFechamentos.textoResumo(it)}.\nPeríodo: ${fechPeriodo(f)}.${sufixo}`;
  return `───────────────────────────\n📄 DESCRIÇÃO PARA NOTA FISCAL\n───────────────────────────\n${desc}\n\nValor total: ${cash(tT)}\n───────────────────────────\n🏦 DADOS BANCÁRIOS — WEN PRODUTORA\n───────────────────────────\nRazão Social: WEN PRODUTORA LTDA\nCNPJ: 21.577.617/0001-44\n\nPIX: wenprodutora@gmail.com\n\nBanco: Caixa Econômica Federal\nAgência: 1601\nConta Corrente: 1292 000577674871-9\n───────────────────────────`;
 }
 function excelFechamento(f){

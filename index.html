@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-1feed3ad';
+window.APP_VERSION='20261119-7810e326';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -271,6 +271,11 @@ body{background:#f0f4f8;color:#1e293b}
 .cfi-info{flex:1;min-width:190px}
 .cfi-nome{font-weight:700;color:#1e293b;font-size:.94rem}
 .cfi-sub{font-size:.78rem;color:#6b7280;margin-top:2px}
+.cfi-chips{display:flex;gap:6px;flex-shrink:0}
+.cfi-chip{background:#f1f5f9;border:1px solid #e2e8f0;color:#94a3b8;border-radius:20px;padding:4px 11px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;width:auto;transition:all .12s}
+.cfi-chip:hover{border-color:#cbd5e1}
+.cfi-chip.on{background:#dcfce7;border-color:#86efac;color:#15803d}
+.cfi-chip:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .cfi-selo{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .cfi-selo.ok{background:#dcfce7;color:#166534}
 .cfi-selo.falta{background:#fef3c7;color:#92400e}
@@ -2223,7 +2228,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <div class="modal">
     <h2 id="rModalTitle" style="color:#16a34a">➕ Novo Lançamento</h2>
     <div class="form-row">
-      <div class="form-group"><label>Cliente *</label><input type="text" id="rFCliente" placeholder="Ex: CARTPANDA" list="rClientesList"/><datalist id="rClientesList"></datalist></div>
+      <div class="form-group"><label>Cliente *</label><input type="text" id="rFCliente" placeholder="Ex: CARTPANDA" list="rClientesList" oninput="R_padraoRender()" onchange="R_padraoRender()"/><datalist id="rClientesList"></datalist></div>
       <div class="form-group">
         <label>📅 Data da Gravação</label>
         <div class="data-selects">
@@ -2240,16 +2245,17 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     </div>
     <div class="form-row3">
       <div class="form-group"><label>Horário</label><input type="text" id="rFHorario" placeholder="10:00 AS 12:00"/></div>
-      <div class="form-group"><label>Studio</label><select id="rFStudio"><option>STUDIO A</option><option>STUDIO B</option><option>EXTERNO</option></select></div>
-      <div class="form-group"><label>Horas</label><input type="number" id="rFHoras" placeholder="2" min="0.5" step="0.5" oninput="calcPreviewR()"/></div>
+      <div class="form-group"><label>Studio</label><select id="rFStudio" onchange="R_descAuto()"><option>STUDIO A</option><option>STUDIO B</option><option>EXTERNO</option></select></div>
+      <div class="form-group"><label>Horas</label><input type="number" id="rFHoras" placeholder="2" min="0.5" step="0.5" oninput="R_descAuto()"/></div>
     </div>
     <div class="form-row3">
       <div class="form-group"><label>🎬 Locação (R$)</label><input type="number" id="rFValorLocacao" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
-      <div class="form-group"><label>✂️ Edição (R$)</label><input type="number" id="rFValorEdicao" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
+      <div class="form-group"><label>✂️ Edição (R$)</label><input type="number" id="rFValorEdicao" placeholder="0,00" step="0.01" oninput="R_descAuto()"/></div>
       <div class="form-group"><label>💰 Total (calculado)</label><input type="number" id="rFValorTotal" placeholder="0,00" readonly style="background:#f1f5f9;color:#6b7280;cursor:not-allowed"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Valor Reserva (R$)</label><input type="number" id="rFValorReserva" placeholder="0,00" step="0.01" oninput="calcPreviewR()"/></div>
+      <div class="form-group"><label>✂️ Edições (qtd)</label><input type="number" id="rFQtdEdicao" placeholder="0" min="0" step="1" oninput="R_descAuto()"/></div>
     </div>
     <div class="calc-preview" id="rCalcPreview"></div>
     <div class="form-group"><label>Descrição</label><input type="text" id="rFDesc" placeholder="1 DIÁRIA DE 2 HORAS"/></div>
@@ -2268,6 +2274,13 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <div class="venc-eco" id="rVencEco"></div>
       </div>
       <div class="form-group"><label>Observação</label><textarea id="rFObs" rows="2"></textarea></div>
+    <!-- Padrão do CLIENTE, não deste lançamento. Grava em clientes_fiscais; o Receber
+         não ganha campo nenhum e R_salvar não encosta nisso. -->
+    <div class="form-group" id="rPadraoCliente" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:12px 14px">
+      <label style="margin-bottom:6px">🎯 Padrão deste cliente <span style="font-size:.72rem;color:#9ca3af;font-weight:400">(vale para todas as gravações dele)</span></label>
+      <div id="rPadraoChips"></div>
+      <div style="font-size:.72rem;color:#94a3b8;margin-top:7px">Verde = o administrativo cuida. Salva na hora, separado do lançamento.</div>
+    </div>
     <div id="rAgendaEventoInfo" style="display:none;background:#e0e7ff;border-radius:7px;padding:9px 13px;font-size:.8rem;color:#4f46e5;font-weight:600;margin-bottom:7px">📅 Criando a partir da Agenda Google.</div>
     <div class="modal-actions">
       <button class="btn btn-outline" id="rBtnCancelarModal">Cancelar</button>
@@ -2790,8 +2803,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="js/fechamentos.js?v=3772398a"></script>
-<script src="js/fechamentos-admin.js?v=e934a7a9"></script>
+<script src="js/fechamentos.js?v=ceed75ea"></script>
+<script src="js/fechamentos-admin.js?v=2067d245"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3850,6 +3863,7 @@ function NF_montar(){
       +'<div class="nf-info"><div class="nf-nome">'+NF_esc(g.cliente)+'</div><div class="nf-meta">'+g.mes+' · '
       +(parcial?('<b>'+sel.length+' de '+g.grav+'</b> selecionada(s)'):(g.grav+(g.grav===1?' gravação':' gravações')))
       +' · '+g.horas+'h'+(g.aberto?' · <span class="nf-pill pend">'+g.aberto+' ainda não pago</span>':'')+'</div></div>'
+      +CFI_chipsDe(g.cliente)
       +'<div class="nf-val">'+fmt(parcial?selVal:g.valor)+(parcial?'<div class="nf-de">de '+fmt(g.valor)+'</div>':'')+'</div>'
       +'<div class="nf-acao"><button class="btn btn-green" style="width:auto;padding:7px 14px;font-size:.82rem"'
       +(sel.length?'':' disabled')+' onclick="NF_abrirNova('+i+')">🧾 Registrar nota</button></div></div>'
@@ -3897,6 +3911,28 @@ async function CFI_carregar(){
 function CFI_lista(){return Object.values(CFI_FICHAS||{}).filter(Boolean).sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));}
 function CFI_ano(){return String(new Date().getFullYear());}
 
+// Dois botõezinhos por cliente: 🧾 nota e 💰 cobrança. Verde = o administrativo cuida.
+// Cinza = não. Quem está desligado nos DOIS some da liberação em lote.
+// O modal do Receber mostra o padrão do cliente que estiver no campo Cliente.
+function R_padraoRender(){
+  const alvo=document.getElementById('rPadraoChips'); if(!alvo)return;
+  const nome=(document.getElementById('rFCliente')||{}).value||'';
+  const caixa=document.getElementById('rPadraoCliente');
+  if(caixa)caixa.style.display=nome.trim()?'':'none';
+  alvo.innerHTML=nome.trim()?CFI_chipsDe(nome.trim()):'';
+}
+function CFI_chipsDe(nome){
+  const f=CFI_casar(nome,CFI_lista());
+  return CFI_chips(f?f.id:CFI_slug(nome),f,nome);
+}
+function CFI_chips(id,f,nome){
+  const on=c=>!f||f[c]!==false;
+  const chip=(campo,rot,ico)=>'<button type="button" class="cfi-chip'+(on(campo)?' on':'')+'"'
+    +' title="'+(on(campo)?'Clique para tirar':'Clique para ligar')+'"'
+    +' data-k="'+NF_esc(id)+'" data-c="'+campo+'" data-n="'+NF_esc(nome||'')+'"'
+    +' onclick="CFI_alternar(this.dataset.k,this.dataset.c,this.dataset.n)">'+ico+' '+rot+'</button>';
+  return '<div class="cfi-chips">'+chip('exigeNota','Nota','🧾')+chip('cobrancaAdministrativo','Cobrança','💰')+'</div>';
+}
 function CFI_render(){
   const raiz=document.getElementById('nfConteudo'); if(!raiz)return;
   const recentes=(R_todosOsDados||[]).filter(WENFechamentos.noPeriodo);
@@ -3916,6 +3952,7 @@ function CFI_render(){
     h+=res.pendencias.map(p=>'<div class="cfi-lin pend"><div class="cfi-info">'
       +'<div class="cfi-nome">'+NF_esc(p.nome)+'</div>'
       +'<div class="cfi-sub">'+p.diarias+' diária(s) · '+fmt(p.faturado)+'</div></div>'
+      +CFI_chips(CFI_slug(p.nome),CFI_FICHAS[CFI_slug(p.nome)],p.nome)
       +'<button class="btn btn-blue" style="padding:6px 13px;font-size:.82rem" data-nome="'+NF_esc(p.nome)+'" onclick="CFI_abrir(null,this.dataset.nome)">Cadastrar</button></div>').join('');
   }
   h+='<div class="cfi-sec">📇 Cadastrados ('+lista.length+')'
@@ -3927,6 +3964,7 @@ function CFI_render(){
       const doc=f.doc?CFI_formatarDoc(f.doc):'sem CPF/CNPJ';
       return '<div class="cfi-lin"><div class="cfi-info"><div class="cfi-nome">'+NF_esc(f.nome||f.id)+'</div>'
         +'<div class="cfi-sub">'+NF_esc(doc)+(f.municipio?' · '+NF_esc(f.municipio)+'/'+NF_esc(f.uf||''):'')+'</div></div>'
+        +CFI_chips(f.id,f,f.nome)
         +selo+'<button class="btn btn-outline-b" style="padding:6px 12px;font-size:.82rem" data-id="'+NF_esc(f.id)+'" onclick="CFI_abrir(this.dataset.id)">✏️ Editar</button></div>';
     }).join('')
     :'<p class="nf-vazio">Nenhum cliente cadastrado ainda. Comece pelos que mais faturam, na lista acima.</p>';
@@ -3965,6 +4003,32 @@ window.CFI_conferir=function(){
   const el=document.getElementById('cfiStatus');
   if(el)el.innerHTML=c.pronto?('<span class="cfi-selo ok">✅ com CPF/CNPJ</span>'+(c.leves.length?' <span class="cfi-selo falta">falta '+NF_esc(c.leves.join(', '))+'</span>':''))
     :'<span class="cfi-selo falta">⚠️ falta: '+NF_esc(c.faltam.join(', '))+'</span>';
+};
+
+// Os dois padrões do cliente ligam e desligam DIRETO na lista — sem abrir a ficha.
+// Clicar num cliente que ainda não tem ficha cria a ficha mínima (só o nome) já com a
+// escolha aplicada: é assim que os 76 clientes sem cadastro entram no jogo sem 76 formulários.
+window.CFI_alternar=async function(chave,campo,nomeSugerido){
+  if(!['exigeNota','cobrancaAdministrativo'].includes(campo))return;
+  let f=CFI_FICHAS[chave];
+  const novo=!f;
+  if(novo){
+    const nome=String(nomeSugerido||chave||'').trim();
+    if(!nome)return;
+    f=CFI_adicionarApelido(CFI_novaFicha(nome),nome);
+    f.criadoEm=f.atualizadoEm=new Date().toISOString();
+  }else f=Object.assign({},f);
+  f[campo]=f[campo]===false;                      // undefined e true contam como ligado
+  f.atualizadoEm=new Date().toISOString();
+  CFI_FICHAS[f.id]=f; CFI_salvarCache();
+  try{const pg=document.getElementById('page-notas');if(pg&&pg.classList.contains('active'))NF_montar();}catch(e){}
+  try{R_padraoRender();}catch(e){}
+  try{
+    await BC_fbUpsert(CFI_COL,f.id,f);
+    const rot=campo==='exigeNota'?'nota fiscal':'cobrança pelo administrativo';
+    toast((f[campo]?'✅ ':'🚫 ')+f.nome+' — '+rot+(f[campo]?' ligada':' desligada'));
+    try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,'Padrão: '+rot+' = '+(f[campo]?'sim':'não'),null,null);}catch(e){}
+  }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
 };
 
 window.CFI_salvar=async function(){
@@ -4509,6 +4573,7 @@ function calcPreviewR(){
 }
 function R_abrirModal(id=null){
   console.log('[WEN] R_abrirModal chamada, id=', id);
+  setTimeout(()=>{try{R_padraoRender();}catch(e){}},0);
   R_editandoId=id;
   const titleEl=document.getElementById('rModalTitle');
   if(titleEl)titleEl.textContent=id?'✏️ Editar Lançamento':'➕ Novo Lançamento';
@@ -4525,6 +4590,8 @@ function R_abrirModal(id=null){
     document.getElementById('rFValorLocacao').value=temSplit?(r.valorLocacao||0):(r.valorTotal||0);
     document.getElementById('rFValorEdicao').value=temSplit?(r.valorEdicao||0):0;
     document.getElementById('rFValorTotal').value=r.valorTotal;
+    document.getElementById('rFQtdEdicao').value=r.qtdEdicao||'';
+    R_descUltima=R_descTexto();   // se a descrição salva for igual à automática, segue automática
     const partesMes=(r.mes||R_mesAtual).split('/'),miAbrev=partesMes[0],anoR=partesMes[1],miNum=String(MESES_ABREV.indexOf(miAbrev)+1).padStart(2,'0'),data=r.data||'-';
     if(data&&data!=='-'){const pts=data.split('/');document.getElementById('rFDia').value=pts[0]||'';}else document.getElementById('rFDia').value='';
     // Carrega vencimento
@@ -4533,8 +4600,9 @@ function R_abrirModal(id=null){
     document.getElementById('rFMes').value=miNum;document.getElementById('rFAno').value=anoR||new Date().getFullYear();
     atualizarMesDoFormularioR();
   }else{
-    ['rFCliente','rFHorario','rFHoras','rFValorLocacao','rFValorEdicao','rFValorTotal','rFValorReserva','rFDesc','rFObs'].forEach(x=>document.getElementById(x).value='');
+    ['rFCliente','rFHorario','rFHoras','rFValorLocacao','rFValorEdicao','rFQtdEdicao','rFValorTotal','rFValorReserva','rFDesc','rFObs'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('rFDia').value='';document.getElementById('rFStudio').value='STUDIO A';
+    R_descUltima='';
     const partesMes=R_mesAtual.split('/'),miNum=String(MESES_ABREV.indexOf(partesMes[0])+1).padStart(2,'0');
     document.getElementById('rFMes').value=miNum;document.getElementById('rFAno').value=partesMes[1]||new Date().getFullYear();
     atualizarMesDoFormularioR();
@@ -4548,6 +4616,32 @@ function R_fecharModal(){
   // Limpa vencimento
   R_vencSet(null);
   R_pendingGoogleEventId=null;document.getElementById('rAgendaEventoInfo').style.display='none';}
+// A descrição se escreve sozinha com o que está preenchido:
+//   STUDIO A · 1 DIÁRIA DE 2 HORAS + 2 EDIÇÕES
+// Só escreve enquanto o campo estiver vazio ou com um texto que ela mesma gerou —
+// se o Will escrever à mão, ela cala a boca e não mexe mais.
+function R_descTexto(){
+  const g=id=>(document.getElementById(id)||{}).value||'';
+  const horas=parseFloat(g('rFHoras'))||0, studio=g('rFStudio');
+  const qtd=parseInt(g('rFQtdEdicao'),10)||0, valEd=parseFloat(g('rFValorEdicao'))||0;
+  if(!horas&&!qtd&&!valEd)return '';
+  const partes=[];
+  if(studio)partes.push(studio);
+  if(horas)partes.push('1 DIÁRIA DE '+(Number.isInteger(horas)?horas:horas.toFixed(1).replace('.',','))+(horas===1?' HORA':' HORAS'));
+  if(qtd)partes.push(qtd+(qtd===1?' EDIÇÃO':' EDIÇÕES'));
+  else if(valEd>0)partes.push('EDIÇÃO');
+  return partes.join(' · ');
+}
+let R_descUltima='';
+function R_descAuto(){
+  calcPreviewR();
+  const el=document.getElementById('rFDesc'); if(!el)return;
+  const atual=el.value.trim();
+  if(atual&&atual!==R_descUltima)return;      // texto escrito à mão: não encosta
+  const novo=R_descTexto();
+  el.value=novo; R_descUltima=novo;
+}
+
 async function R_salvarLancamento(){
   const cliente=document.getElementById('rFCliente').value.trim().toUpperCase();if(!cliente){toast('Informe o cliente.','#ef4444');return;}
   const vl=parseFloat(document.getElementById('rFValorLocacao').value)||0,ve=parseFloat(document.getElementById('rFValorEdicao').value)||0;
@@ -4557,7 +4651,7 @@ async function R_salvarLancamento(){
   let mesLanc=R_mesAtual;if(mi&&ano)mesLanc=MESES_ABREV[parseInt(mi)-1]+'/'+ano;
   // Vencimento: se preenchido usa esse, senão usa data de gravação
   const vencFmt=R_vencValor()||dataFmt;
-  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorLocacao:vl,valorEdicao:ve,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
+  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorLocacao:vl,valorEdicao:ve,qtdEdicao:parseInt(document.getElementById('rFQtdEdicao').value,10)||0,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
   if(R_pendingGoogleEventId)base.googleEventId=R_pendingGoogleEventId;
   loading(true,R_editandoId?'Atualizando...':'Salvando...');setSyncStatus('saving');
   try{
