@@ -119,7 +119,7 @@ function CFI_novaFicha(nome){
     codigoIbge:'',                       // exigido na DPS; preenchido na Fase F
     emailNota:'',
     contatoFinanceiro:'', whatsappFinanceiro:'', emailFinanceiro:'',
-    exigeNota:true, cobrancaAdministrativo:true, notaSinal:'junto', condicaoPagamento:'avista', condicaoTexto:'', envioPreferido:'whatsapp', fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
+    exigeNota:true, notaRegra:'gravacao', cobrancaAdministrativo:true, notaSinal:'junto', condicaoPagamento:'avista', condicaoTexto:'', envioPreferido:'whatsapp', fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
     instrucoes:'', observacoes:'',
     criadoEm:'', atualizadoEm:''
   };
@@ -131,6 +131,22 @@ function CFI_novaFicha(nome){
 // Quem o administrativo atende. Sem ficha = atende (é o padrão do sistema desde sempre:
 // `exigeNota` só sai do caminho quando alguém desmarca). Só fica de fora quem foi
 // desmarcado nas DUAS coisas — não exige nota E não é a Natália quem cobra.
+// Uma ficha só, quatro respostas. Lê fichas ANTIGAS (exigeNota + notaSinal) sem
+// precisar migrar nada: quem não tem notaRegra cai no que os campos velhos diziam.
+const CFI_NOTA_REGRAS = {
+  gravacao:  {rotulo:'1 nota após a gravação', emite:true,  separa:false, quando:'gravacao'},
+  pagamento: {rotulo:'1 nota no pagamento',    emite:true,  separa:false, quando:'pagamento'},
+  reserva:   {rotulo:'1 nota já na reserva',   emite:true,  separa:false, quando:'reserva'},
+  duas:      {rotulo:'2 notas: sinal e saldo', emite:true,  separa:true,  quando:'parcela'},
+  nenhuma:   {rotulo:'Não emite nota',         emite:false, separa:false, quando:''}
+};
+function CFI_notaRegra(ficha){
+  const f = ficha || {};
+  if (CFI_NOTA_REGRAS[f.notaRegra]) return f.notaRegra;
+  if (f.exigeNota === false) return 'nenhuma';
+  return f.notaSinal === 'separado' ? 'duas' : 'gravacao';
+}
+
 function CFI_liberavel(ficha){
   if (!ficha) return true;
   return ficha.exigeNota !== false || ficha.cobrancaAdministrativo !== false;
@@ -188,5 +204,5 @@ function CFI_resumo(lancamentos, fichas, ano){
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_DESEJAVEIS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
     CFI_validarDoc, CFI_tipoDoc, CFI_formatarDoc, CFI_validarCEP, CFI_validarUF, CFI_validarEmail,
-    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
+    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_NOTA_REGRAS, CFI_notaRegra, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
 }

@@ -215,3 +215,17 @@ console.log('Condição de pagamento (o que cobrar agora) OK');
   assert(!soData.includes('STUDIO A'));
 }
 console.log('Mensagem de cobrança (ícones, meses, como pagar) OK');
+
+// Fechamento mensal como condição: acumula o mês e cobra uma vez (Will, 20/11).
+{
+  const { cobranca } = require('../js/fechamentos.js');
+  const m = cobranca({valor:11250, recebido:0}, 'mensal');
+  assert.equal(m.rotulo, 'Fechamento mensal');
+  assert.equal(m.parcelas.length, 1, 'uma cobrança só');
+  assert.equal(m.parcelas[0].nome, 'Fechamento do mês');
+  assert.equal(m.cobrarAgora, 11250);
+  assert.equal(cobranca({valor:11250, recebido:11250}, 'mensal').quitado, true);
+  // parcialmente pago continua cobrando a diferença
+  assert.equal(cobranca({valor:11250, recebido:4000}, 'mensal').cobrarAgora, 7250);
+}
+console.log('Condição "fechamento mensal" OK');

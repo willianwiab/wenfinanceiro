@@ -46,7 +46,8 @@
   const CONDICOES = {
     avista:    {rotulo:'À vista', parcelas:[['Pagamento', 1]]},
     sinal50:   {rotulo:'50% de sinal + 50%', parcelas:[['Sinal (50%)', .5], ['Saldo (50%)', .5]]},
-    sinal30:   {rotulo:'30% de sinal + 70%', parcelas:[['Sinal (30%)', .3], ['Saldo (70%)', .7]]}
+    sinal30:   {rotulo:'30% de sinal + 70%', parcelas:[['Sinal (30%)', .3], ['Saldo (70%)', .7]]},
+    mensal:    {rotulo:'Fechamento mensal', parcelas:[['Fechamento do mês', 1]]}
   };
   // Devolve o que cobrar AGORA e o que fica para depois, já descontando o que entrou.
   // Em centavos o tempo todo: meio de R$ 3.750,01 não pode virar dízima.
@@ -79,6 +80,15 @@
       return {id:String(r.id),data:String(r.data||''),mes:String(r.mes||''),horas:Number(r.horas)||0,
         horario:String(r.horario||''),vencimento:vencIso(r.vencimento),edicoes:Math.max(0,parseInt(r.qtdEdicao,10)||0),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
     });
+    // Regra da nota: o que, quantas e quando. Fichas antigas caem no equivalente.
+    const REGRAS={gravacao:{emite:true,separa:false,quando:'gravacao'},
+      pagamento:{emite:true,separa:false,quando:'pagamento'},
+      reserva:{emite:true,separa:false,quando:'reserva'},
+      duas:{emite:true,separa:true,quando:'parcela'},
+      nenhuma:{emite:false,separa:false,quando:''}};
+    const chaveRegra=REGRAS[ficha.notaRegra]?ficha.notaRegra
+      :ficha.exigeNota===false?'nenhuma':ficha.notaSinal==='separado'?'duas':'gravacao';
+    const regraNota=REGRAS[chaveRegra];
     const valor=itens.reduce((s,r)=>s+cents(r.valor),0)/100;
     const recebido=itens.reduce((s,r)=>s+cents(r.recebido),0)/100;
     const saldo=(cents(valor)-cents(recebido))/100;
@@ -121,10 +131,10 @@
     const clienteFiscal={};
     for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro','envioPreferido'])clienteFiscal[k]=String(ficha[k]||'');
     return {cliente:regs[0].cliente,clienteFiscal,itens,lancamentoIds:itens.map(r=>r.id),valor,recebido,saldo,
-      exigeNota:ficha.exigeNota!==false,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
-      fiscalStatus:ficha.exigeNota===false?'nao_solicitada':'pendente',cobrancaStatus:saldo===0?'pago':'pendente',
+      exigeNota:regraNota.emite,notaRegra:chaveRegra,notaQuando:regraNota.quando,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
+      fiscalStatus:regraNota.emite?'pendente':'nao_solicitada',cobrancaStatus:saldo===0?'pago':'pendente',
       nfNumero:'',nfData:'',enviadoEm:'',promessaData:'',promessaObs:'',
-      notaModo:(ficha.exigeNota!==false&&ficha.notaSinal==='separado'&&recebido>0&&saldo>0)?'separado':'junto',
+      notaModo:(regraNota.separa&&recebido>0&&saldo>0)?'separado':'junto',
       condicao:CONDICOES[ficha.condicaoPagamento]?ficha.condicaoPagamento:'avista',
       condicaoTexto:String(ficha.condicaoTexto||''),
       nfSinalNumero:'',nfSinalData:'',nfSinalStatus:'pendente',

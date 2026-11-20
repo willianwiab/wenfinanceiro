@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-3b5d16d0';
+window.APP_VERSION='20261120-2257dee5';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -275,6 +275,8 @@ body{background:#f0f4f8;color:#1e293b}
 .cfi-chip{background:#f1f5f9;border:1px solid #e2e8f0;color:#94a3b8;border-radius:20px;padding:4px 11px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;width:auto;transition:all .12s}
 .cfi-chip:hover{border-color:#cbd5e1}
 .cfi-chip.on{background:#dcfce7;border-color:#86efac;color:#15803d}
+
+.cfi-cond.nota{max-width:190px}
 .cfi-cond{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;border-radius:20px;padding:4px 8px;font-size:.72rem;font-weight:700;cursor:pointer;min-width:0;margin:0;outline:none}
 .cfi-cond:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .cfi-chip:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
@@ -2025,6 +2027,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         <option value="avista">À vista — tudo no vencimento</option>
         <option value="sinal50">50% de sinal + 50%</option>
         <option value="sinal30">30% de sinal + 70%</option>
+        <option value="mensal">Fechamento mensal</option>
       </select></div>
       <div class="fg"><label>Nota do sinal (50/50)</label><select id="cfiF_notaSinal"><option value="junto">Uma nota só, pelo total</option><option value="separado">Separado: nota do sinal + nota do saldo</option></select></div>
     </div>
@@ -2815,7 +2818,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="js/fechamentos.js?v=8898f7c3"></script>
+<script src="js/fechamentos.js?v=797115b3"></script>
 <script src="js/fechamentos-admin.js?v=6d0e5ef9"></script>
 <script>
 'use strict';
@@ -3947,10 +3950,17 @@ function CFI_chips(id,f,nome){
   const sel='<select class="cfi-cond" title="Como este cliente paga"'
     +' data-k="'+NF_esc(id)+'" data-n="'+NF_esc(nome||'')+'"'
     +' onchange="CFI_condicao(this.dataset.k,this.value,this.dataset.n)">'
-    +[['avista','💳 À vista'],['sinal50','💳 50% + 50%'],['sinal30','💳 30% + 70%']]
+    +[['avista','💳 À vista'],['sinal50','💳 50% + 50%'],['sinal30','💳 30% + 70%'],['mensal','💳 Fechamento mensal']]
       .map(([v,r])=>'<option value="'+v+'"'+(cond===v?' selected':'')+'>'+r+'</option>').join('')
     +'</select>';
-  return '<div class="cfi-chips">'+chip('exigeNota','Nota','🧾')+chip('cobrancaAdministrativo','Cobrança','💰')+sel+'</div>';
+  const regra=CFI_notaRegra(f);
+  const selNota='<select class="cfi-cond nota" title="Como e quando emitir a nota deste cliente"'
+    +' data-k="'+NF_esc(id)+'" data-n="'+NF_esc(nome||'')+'"'
+    +' onchange="CFI_regraNota(this.dataset.k,this.value,this.dataset.n)">'
+    +Object.entries(CFI_NOTA_REGRAS).map(([v,r])=>
+       '<option value="'+v+'"'+(regra===v?' selected':'')+'>🧾 '+r.rotulo+'</option>').join('')
+    +'</select>';
+  return '<div class="cfi-chips">'+selNota+chip('cobrancaAdministrativo','Cobrança','💰')+sel+'</div>';
 }
 function CFI_render(){
   const raiz=document.getElementById('nfConteudo'); if(!raiz)return;
@@ -4029,8 +4039,40 @@ window.CFI_conferir=function(){
 // Os dois padrões do cliente ligam e desligam DIRETO na lista — sem abrir a ficha.
 // Clicar num cliente que ainda não tem ficha cria a ficha mínima (só o nome) já com a
 // escolha aplicada: é assim que os 76 clientes sem cadastro entram no jogo sem 76 formulários.
+window.CFI_regraNota=async function(chave,valor,nomeSugerido){
+  if(!CFI_NOTA_REGRAS[valor])return;
+  await CFI_gravarCampo(chave,nomeSugerido,f=>{
+    f.notaRegra=valor;
+    // mantém os campos antigos coerentes, para quem ainda os lê
+    f.exigeNota=CFI_NOTA_REGRAS[valor].emite;
+    f.notaSinal=CFI_NOTA_REGRAS[valor].separa?'separado':'junto';
+  },'Nota: '+CFI_NOTA_REGRAS[valor].rotulo);
+};
+// Um caminho só para gravar um pedaço da ficha: cria a ficha mínima se ainda não existir,
+// atualiza a tela e salva. Evita três cópias quase iguais de CFI_alternar.
+async function CFI_gravarCampo(chave,nomeSugerido,mudar,rotulo){
+  let f=CFI_FICHAS[chave];
+  const novo=!f;
+  if(novo){
+    const nome=String(nomeSugerido||chave||'').trim();
+    if(!nome)return;
+    f=CFI_adicionarApelido(CFI_novaFicha(nome),nome);
+    f.criadoEm=f.atualizadoEm=new Date().toISOString();
+  }else f=Object.assign({},f);
+  mudar(f);
+  f.atualizadoEm=new Date().toISOString();
+  CFI_FICHAS[f.id]=f; CFI_salvarCache();
+  try{const pg=document.getElementById('page-notas');if(pg&&pg.classList.contains('active'))NF_montar();}catch(e){}
+  try{R_padraoRender();}catch(e){}
+  try{
+    await BC_fbUpsert(CFI_COL,f.id,f);
+    toast('✅ '+f.nome+' — '+rotulo);
+    try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,rotulo,null,null);}catch(e){}
+  }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
+}
+
 window.CFI_condicao=async function(chave,valor,nomeSugerido){
-  if(!['avista','sinal50','sinal30'].includes(valor))return;
+  if(!['avista','sinal50','sinal30','mensal'].includes(valor))return;
   let f=CFI_FICHAS[chave];
   const novo=!f;
   if(novo){
@@ -4046,7 +4088,7 @@ window.CFI_condicao=async function(chave,valor,nomeSugerido){
   try{R_padraoRender();}catch(e){}
   try{
     await BC_fbUpsert(CFI_COL,f.id,f);
-    const rot={avista:'à vista',sinal50:'50% + 50%',sinal30:'30% + 70%'}[valor];
+    const rot={avista:'à vista',sinal50:'50% + 50%',sinal30:'30% + 70%',mensal:'fechamento mensal'}[valor];
     toast('💳 '+f.nome+' — '+rot);
     try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,'Condição de pagamento = '+rot,null,null);}catch(e){}
   }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
@@ -4093,7 +4135,7 @@ window.CFI_salvar=async function(){
     exigeNota:!!(document.getElementById('cfiF_exigeNota')||{}).checked,
     cobrancaAdministrativo:!!(document.getElementById('cfiF_cobrancaAdm')||{}).checked,
     notaSinal:g('notaSinal')==='separado'?'separado':'junto',
-    condicaoPagamento:['avista','sinal50','sinal30'].includes(g('condicaoPagamento'))?g('condicaoPagamento'):'avista',
+    condicaoPagamento:['avista','sinal50','sinal30','mensal'].includes(g('condicaoPagamento'))?g('condicaoPagamento'):'avista',
     envioPreferido:['whatsapp','email','ambos'].includes(g('envioPreferido'))?g('envioPreferido'):'whatsapp',
     fechamentoPadrao:g('fechamentoPadrao')||'mensal',
     prazoPagamento:g('prazoPagamento'), diaVencimento:parseInt(g('diaVencimento'),10)||null,
@@ -9824,7 +9866,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/clientes-fiscais.js?v=02a843fe"></script>
+<script src="js/clientes-fiscais.js?v=c5049a75"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>

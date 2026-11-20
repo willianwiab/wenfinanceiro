@@ -441,7 +441,35 @@ async function copiarTexto(txt,msg){
 }
 // Sinal e saldo: o cliente pode querer UMA nota pelo total ou DUAS, uma de cada parte.
 // Quem decide é o Will, na ficha do cliente — aqui só se registra o que foi emitido.
+// Quando emitir. Resolve a pergunta do Will: "posso jogar 1 nota só para após a
+// gravação?" — sim, e a tela avisa se ainda não chegou a hora, em vez de deixar
+// ela emitir cedo e depois ter que cancelar.
+function quandoEmitir(f){
+ const hoje=today();
+ const ultima=(f.itens||[]).map(i=>{
+   const d=String(i.data||'').split('/'), m=WENFechamentos.mesChave(i.mes)||'';
+   return d.length>=2?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):'';
+ }).filter(Boolean).sort().at(-1)||'';
+ switch(f.notaQuando){
+  case 'gravacao':
+    return ultima&&ultima>hoje
+      ? {ok:false,txt:'Emitir <b>depois da gravação</b> — a última é '+esc(ultima.split('-').reverse().join('/'))+'.'}
+      : {ok:true,txt:'Emitir <b>depois da gravação</b> — já pode.'};
+  case 'pagamento':
+    return Number(f.saldo)>0
+      ? {ok:false,txt:'Emitir <b>quando o cliente pagar</b> — ainda falta '+cash(f.saldo)+'.'}
+      : {ok:true,txt:'Emitir <b>no pagamento</b> — já foi pago, pode emitir.'};
+  case 'reserva': return {ok:true,txt:'Emitir <b>já na reserva</b> — não precisa esperar a gravação.'};
+  case 'parcela': return {ok:true,txt:'<b>Duas notas</b>: uma do sinal e uma do saldo.'};
+  default: return null;
+ }
+}
 function blocoFiscal(f){
+ const q=quandoEmitir(f);
+ const aviso=q?`<div class="emitir ${q.ok?'ok':'espera'}">${q.ok?'✅':'⏳'} ${q.txt}</div>`:'';
+ return aviso+blocoFiscalCampos(f);
+}
+function blocoFiscalCampos(f){
  const campoUm=`<div class="row"><label>Situação fiscal<select id="fiscalStatus"><option value="pendente">Nota pendente</option><option value="emitida">Nota emitida</option><option value="nao_solicitada">NF não solicitada pelo cliente</option></select></label><label>Número da nota<input id="nfNumero" value="${esc(f.nfNumero)}"></label><label>Emissão<input id="nfData" type="date" value="${esc(f.nfData)}"></label></div>`;
  if(f.notaModo!=='separado')return campoUm;
  const parte=(rot,pre,val)=>`<div class="nf-parte"><div class="nf-parte-top"><b>${rot}</b><span class="nf-val">${cash(val)}</span></div>
