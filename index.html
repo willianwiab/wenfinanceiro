@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-a8d9260d';
+window.APP_VERSION='20261119-f9adc46e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1972,7 +1972,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <div class="modal" style="max-width:680px">
     <h3 id="cfiTit" style="margin:0 0 4px">➕ Novo cliente</h3>
     <p style="font-size:.8rem;color:#6b7280;margin:0 0 8px">O <b>nome</b> tem que ser igual ao que aparece no Receber — é por ele que o cadastro se liga às diárias.</p>
-    <div id="cfiStatus" style="margin-bottom:12px"></div>
+    <div id="cfiStatus" role="status" style="margin-bottom:12px"></div>
     <div class="cfi-sec" style="margin-top:0">Comercial</div>
     <div class="cfi-grid">
       <div class="fg"><label>Nome no Receber *</label><input id="cfiF_nome" oninput="CFI_conferir()" placeholder="Ex: CARTPANDA"/></div>
@@ -2018,6 +2018,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_cobrancaAdm" checked/> Cobrança pelo administrativo</label></div>
       <div class="fg"><label>Nota do sinal (50/50)</label><select id="cfiF_notaSinal"><option value="junto">Uma nota só, pelo total</option><option value="separado">Separado: nota do sinal + nota do saldo</option></select></div>
     </div>
+    <div id="cfiStatusRodape" role="status" style="margin-top:12px"></div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="btn btn-outline-b" onclick="CFI_fechar()">Cancelar</button>
       <button class="btn btn-blue" onclick="CFI_salvar()">Salvar</button>
@@ -2804,8 +2805,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="js/fechamentos.js?v=ceed75ea"></script>
-<script src="js/fechamentos-admin.js?v=d810e259"></script>
+<script src="js/fechamentos.js?v=f92205b9"></script>
+<script src="js/fechamentos-admin.js?v=0d87deef"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4001,9 +4002,9 @@ window.CFI_conferir=function(){
   ['doc','razaoSocial','logradouro','numero','bairro','municipio','uf','cep','email','emailNota','emailFinanceiro']
     .forEach(k=>{const el=g(k);prov[k]=el?el.value.trim():'';});
   const c=CFI_completude(prov);
-  const el=document.getElementById('cfiStatus');
-  if(el)el.innerHTML=c.pronto?('<span class="cfi-selo ok">✅ com CPF/CNPJ</span>'+(c.leves.length?' <span class="cfi-selo falta">falta '+NF_esc(c.leves.join(', '))+'</span>':''))
+  const status=c.pronto?('<span class="cfi-selo ok">✅ com CPF/CNPJ</span>'+(c.leves.length?' <span class="cfi-selo falta">falta '+NF_esc(c.leves.join(', '))+'</span>':''))
     :'<span class="cfi-selo falta">⚠️ falta: '+NF_esc(c.faltam.join(', '))+'</span>';
+  ['cfiStatus','cfiStatusRodape'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=status;});
 };
 
 // Os dois padrões do cliente ligam e desligam DIRETO na lista — sem abrir a ficha.
@@ -9466,6 +9467,7 @@ async function init(){
 
   // 2. Carrega Receber do Firebase
   await R_carregarTodos();
+  FC_sincronizarPendentes().catch(e=>toast('Não foi possível atualizar o administrativo: '+e.message,'#ef4444'));
   renderMesSelectR();
   // O Receber também usa o indicador global e pode ter colocado um ✅ por cima do erro
   // do Pagar. Reafirma o estado seguro depois que os dois módulos terminaram.

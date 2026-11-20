@@ -40,7 +40,9 @@ for(const c of ['Data','Horário','Studio','Horas','Total','Recebido','Saldo','S
 await page.click('#fNF');await page.waitForSelector('#modalNFBg.open');
 assert((await page.inputValue('#nfTextoArea')).includes('21.577.617/0001-44'));
 await page.click('#nfFechar');
-assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('aviso').textContent==='Envio registrado.');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');// O portal dela toca SÓ nas duas coleções administrativas. Nenhum lançamento,
+assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('toast').textContent==='Envio registrado.');
+assert(await page.locator('#toast.show').count()===1,'a confirmação aparece como toast no rodapé');
+assert.equal((await page.textContent('#aviso')).trim(),'','e a tarja não fica suja com mensagem de sucesso');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');// O portal dela toca SÓ nas duas coleções administrativas. Nenhum lançamento,
 // banco, despesa ou folha — a invariante do portal restrito.
 assert(requests.every(u=>u.includes('/administrativo_fechamentos')||u.includes('/administrativo_avisos')),
   'o portal pediu algo fora do administrativo: '+requests.filter(u=>!/administrativo_(fechamentos|avisos)/.test(u)).join(' '));

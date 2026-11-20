@@ -91,7 +91,7 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-lin .nf-meta{font-size:.76rem;color:#64748b;margin-top:3px;line-height:1.45;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
 .nf-lin .nf-val{font-weight:800;font-size:1.02rem;white-space:nowrap;color:#0f172a}
 .nf-lin .nf-acao{display:flex;gap:6px;flex-wrap:wrap}
-.nf-lin .abrir{background:#16a34a;border:1px solid #16a34a;color:#fff;border-radius:8px;padding:8px 15px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.nf-lin .abrir{display:inline-block;text-decoration:none;background:#16a34a;border:1px solid #16a34a;color:#fff;border-radius:8px;padding:8px 15px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .nf-lin .abrir:hover{background:#15803d;border-color:#15803d}
 .nf-lin.ativo .abrir{background:#fff;color:#15803d}
 .nf-lin.ativo{border-color:#16a34a;background:#f0fdf4}
@@ -182,19 +182,38 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .aviso.t-pago{border-left-color:#16a34a}.aviso.t-divergencia{border-left-color:#dc2626}
 .aviso-txt{font-size:.88rem;color:#0f172a;line-height:1.45}
 .aviso-dt{font-size:.72rem;color:#94a3b8}
+.toast{position:fixed;bottom:22px;right:22px;background:#16a34a;color:#fff;padding:11px 18px;border-radius:9px;font-size:.86rem;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px;box-shadow:0 6px 20px rgba(15,23,42,.2)}
+.toast.show{opacity:1}
+@media(max-width:620px){.toast{left:14px;right:14px;bottom:14px;max-width:none;text-align:center}}
 /* modal do Texto NF */
 .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
 .modal-bg.open{display:flex}
 .modal-bg .cx{background:#fff;border-radius:13px;padding:20px;max-width:620px;width:100%;max-height:86vh;overflow:auto}
 .modal-bg textarea{width:100%;min-height:330px;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;border:1px solid #e5e7eb;border-radius:9px;padding:12px}
-</style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><div style="display:flex;align-items:center;gap:10px"><button id="sino" class="sino" hidden title="Avisos">🔔</button><button id="sair" hidden>Sair</button></div></header><main>
+#cobrancaDialog{width:min(1100px,94vw);max-width:94vw;max-height:92dvh;box-sizing:border-box;border:0;border-radius:16px;padding:0 22px 22px;background:#f1f5f9;color:#0f172a}
+#cobrancaDialog::backdrop{background:rgba(15,23,42,.65)}
+.cobranca-topo{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f1f5f9;padding:16px 0}
+.cobranca-topo h2{margin:0;font-size:1.1rem}
+body.cobranca-aberta{overflow:hidden}
+@media(max-width:600px){#cobrancaDialog{padding:0 12px 12px;max-height:96dvh;width:96vw;max-width:96vw}}
+@media print{body.imprimindo #cobrancaDialog{display:block!important;position:static!important;max-height:none!important;width:100%!important;max-width:none!important;overflow:visible!important;padding:0!important}#cobrancaDialog::backdrop{background:transparent}body.imprimindo .cobranca-topo,body.imprimindo #avisoCobranca,body.imprimindo .cartao-edicao{display:none!important}}
+#avisosCx{position:fixed;top:90px;right:20px;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 110px);margin:0;z-index:100;box-sizing:border-box;box-shadow:0 16px 48px #0f172a40;border:1px solid #dbe3ed;border-radius:14px;background:white;overflow:hidden}
+.avisos-topo{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0}
+.avisos-topo button,.avisos-filtro button{width:auto;padding:6px 10px;font-size:.8rem}
+.avisos-filtro{padding:8px 16px;background:#f8fafc}
+.avisos-lista{max-height:min(480px,calc(100dvh - 220px));overflow-y:auto;overscroll-behavior:contain}
+#avisosCx .aviso{padding:12px 16px;text-align:left;width:100%;border-radius:0}
+#avisosCx .aviso-txt{font-size:.82rem;line-height:1.4}
+.aviso-periodo{font-size:.75rem;color:#166534;font-weight:700}
+@media(max-width:600px){#avisosCx{right:12px;top:82px}}
+</style></head><body><header><div class="marca"><img src="assets/logo-wen.png" alt="WEN Produtora"/><div><h1>WEN <span>Administrativo</span></h1><p>Fechamentos, cobranças e notas fiscais</p></div></div><div style="display:flex;align-items:center;gap:10px"><button id="sino" aria-controls="avisosCx" aria-expanded="false" class="sino" hidden title="Avisos">🔔</button><button id="sair" hidden>Sair</button></div></header><main>
   <div class="nf-topo">
     <h2 style="margin:0">Fiscal e Cobranças</h2>
     <p class="nf-sub">O que foi liberado para faturar e cobrar. Esta tela <b>não altera valor nem
     diária</b> — isso é feito no WEN Financeiro. Aqui se completa a descrição, registra a nota
     emitida e acompanha o pagamento.</p>
   </div>
-  <div id="avisosCx" class="avisos-cx" hidden></div>
+  <div id="avisosCx" role="region" aria-label="Avisos" class="avisos-cx" hidden></div>
   <div id="aviso" role="status"></div>
   <section id="login" class="login">
     <h2>Acessar administrativo</h2>
@@ -211,11 +230,20 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
       <div class="fg cli"><label>Cliente</label><select id="busca"><option value="">— Todos —</option></select></div>
       <div class="fg"><label>Mês inicial</label><select id="mesIni"></select></div>
       <div class="fg"><label>Mês final</label><select id="mesFim"></select></div>
+      <div class="fg"><label>Ordenar por</label><select id="ordem">
+        <option value="venc">Vencimento — o mais urgente primeiro</option>
+        <option value="venc-desc">Vencimento — o mais distante primeiro</option>
+        <option value="grav">Data da gravação — a mais recente</option>
+        <option value="grav-asc">Data da gravação — a mais antiga</option>
+        <option value="valor">Maior valor</option>
+        <option value="cliente">Cliente (A–Z)</option>
+      </select></div>
       <div class="fg"><label>Exibir</label>
         <div class="nf-abas">
           <button type="button" id="abaTudo" class="on" data-f="">Todos</button>
           <button type="button" id="abaPend" data-f="pendente">📋 A cobrar</button>
           <button type="button" id="abaEnv" data-f="enviada">📨 Enviadas</button>
+          <button type="button" data-f="informado">Pagamento comunicado</button>
           <button type="button" id="abaPago" data-f="pago">✅ Pagas</button>
           <button type="button" id="abaAtr" data-f="atrasada">⚠️ Em atraso</button>
           <button type="button" id="atualizar">↻ Atualizar</button>
@@ -225,11 +253,11 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
     <div id="cards" class="cards-p"></div>
     <div class="layout">
       <div id="lista" aria-label="Fechamentos"></div>
-      <section id="editor"><div class="cartao-edicao"><h2 style="margin:0">Nenhum fechamento aberto</h2>
-        <p class="nf-sub" style="margin-top:8px">Escolha um fechamento na lista acima.<br><br>
-        Se a lista estiver vazia, ainda não foi liberado nenhum: os fechamentos nascem no
-        <b>WEN Financeiro</b>, em <b>🧾 Notas Fiscais → Fechamentos e cobranças</b>, onde as
-        diárias do cliente são selecionadas. Só depois disso eles aparecem aqui.</p></div></section>
+      <dialog id="cobrancaDialog" aria-labelledby="cobrancaTitulo">
+        <header class="cobranca-topo"><h2 id="cobrancaTitulo">Cobrança</h2><button type="button" id="fecharCobranca" autofocus>✕ Fechar</button></header>
+        <p id="avisoCobranca" role="status"></p>
+        <section id="editor"></section>
+      </dialog>
     </div>
   </div>
 </main>
@@ -242,4 +270,4 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=ceed75ea"></script><script src="js/administrativo.js?v=9d293202"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=f92205b9"></script><script src="js/administrativo.js?v=f27a434b"></script></body></html>

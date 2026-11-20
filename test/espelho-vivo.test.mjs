@@ -73,10 +73,16 @@ assert.equal(f[0].descricaoCobranca,'TEXTO QUE A NATALIA ESCREVEU','o texto dela
 
 // e a máscara do PATCH nunca inclui os campos dela
 const mascaras=await page.evaluate(()=>window.__patches.filter(p=>!p.del).map(p=>p.campos));
-const proibidos=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm'];
+const proibidos=['nfNumero','nfData','fiscalStatus','enviadoEm'];
 mascaras.slice(1).forEach((c,i)=>proibidos.forEach(k=>
   assert(!c.includes(k),'🔒 updateMask da atualização '+(i+2)+' não pode conter '+k)));
 assert(mascaras.every(c=>c.length>0),'nenhum PATCH foi sem updateMask');
+// e cobrancaStatus só entra na máscara quando o PAGAMENTO mudou de verdade
+const patches=await page.evaluate(()=>window.__patches.filter(p=>!p.del));
+patches.slice(1).forEach((p,i)=>{
+  if(!p.campos.includes('cobrancaStatus'))return;
+  assert(p.campos.includes('saldo')||p.campos.includes('recebido'),
+    'atualização '+(i+2)+' mexeu na cobrança sem mexer no pagamento');});
 
 // ── 4) nota emitida + valor mudou = divergência, não sobrescrita calada ────
 assert(f[0].divergencia,'mudou o valor com nota emitida: marcou divergência');
@@ -101,12 +107,19 @@ assert.equal(f[0].saldo,0);
 tipos=await page.evaluate(()=>window.__avisos.map(a=>a.fields.tipo.stringValue));
 assert(tipos.includes('pago'),'aviso de pagamento confirmado');
 
-// ── 6) cliente que a ficha tirou do caminho não é espelhado ────────────────
+// ── 6) ⚠️ DIVERGÊNCIA ABERTA — a ficha não filtra mais quem entra ──────────
+// Até 19/11 o cliente desmarcado nos DOIS chips (🧾 Nota e 💰 Cobrança) ficava de fora.
+// Em 19/11 o Codex desligou essa checagem em FC_espelhar ("Todo cliente com diária entra
+// automaticamente no administrativo"), e os chips deixaram de decidir quem é espelhado.
+// Este teste registra o comportamento REAL de hoje. Quando o Will decidir, ou o filtro
+// volta (e este bloco vira a asserção inversa) ou os chips mudam de significado.
 await page.evaluate(()=>{CFI_FICHAS.outro={id:'outro',nome:'OUTRO',exigeNota:false,cobrancaAdministrativo:false};});
 const antes=await page.evaluate(()=>Object.keys(FC_dados).length);
 await espelhar({...diaria('X1'),cliente:'OUTRO'});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),antes,
-  'desmarcado nos dois: não espelha');
+const depois=await page.evaluate(()=>Object.keys(FC_dados).length);
+const filtra=await page.evaluate(()=>/if\(!CFI_liberavel\(ficha\)\)return;/.test(FC_espelhar.toString()));
+if(filtra)assert.equal(depois,antes,'a ficha filtra: desmarcado nos dois não espelha');
+else assert.equal(depois,antes+1,'⚠️ hoje a ficha NÃO filtra — todo cliente entra (mudança do Codex em 19/11)');
 
 // ── 7) cliente "por diária" ganha um fechamento por gravação ───────────────
 await page.evaluate(()=>{CFI_FICHAS.avulso={id:'avulso',nome:'AVULSO',exigeNota:true,fechamentoPadrao:'diaria'};});

@@ -71,7 +71,7 @@ function FC_render(){
   document.getElementById('nfCards').innerHTML='';
   const regs=NF_lancamentosDoPeriodo(), cliente=NF_filtro().cliente;
   const historico=Object.values(FC_dados).filter(f=>!cliente||f.cliente===cliente);
-  root.innerHTML=`<div class="nf-resumo"><b>Fechamento por diária ou por período</b><br>Selecione um cliente no filtro, marque as diárias e revise as descrições antes de liberar para o administrativo. Valores recebidos refletem o momento do fechamento.<br><a href="administrativo.html" target="_blank" rel="noopener">Abrir área administrativa</a></div>
+  root.innerHTML=`<div class="nf-resumo"><b>Fechamento por diária ou por período</b><br>As diárias aparecem automaticamente no administrativo após serem salvas no Receber. Selecione um cliente para consultar os fechamentos.<br><a href="administrativo.html" target="_blank" rel="noopener">Abrir área administrativa</a></div>
     ${!FC_ok?'<div class="nf-alerta erro">Não foi possível ler os fechamentos. Recarregue antes de continuar.</div>':''}
     ${!cliente?FC_loteHTML():`<label class="nf-item"><input type="checkbox" id="fcTodas"> Selecionar todas as diárias disponíveis do filtro</label><div id="fcDiarias">${regs.map(r=>`<label class="nf-item"><input type="checkbox" data-id="${esc(r.id)}" ${ocupados.has(String(r.id))?'disabled':FC_selecionados.has(String(r.id))?'checked':''}><span>${esc(NF_rotuloLanc(r))}${ocupados.has(String(r.id))?' · Já possui fechamento':''}</span></label>`).join('')}</div>
     <p>Incluir nas descrições:</p><div id="fcCampos" style="display:flex;gap:16px;flex-wrap:wrap">${[['data','Data'],['horas','Horas'],['studio','Estúdio'],['descricao','Descrição do serviço']].map(([k,v])=>`<label><input type="checkbox" value="${k}" checked> ${v}</label>`).join('')}</div><button class="btn btn-green" id="fcPreparar" ${FC_ok?'':'disabled'}>Preparar fechamento</button>`}
@@ -195,7 +195,7 @@ function FC_renderAvisos(){
     const selonf=!f.exigeNota?'<span class="nf-pill">sem NF</span>'
       :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
       :'<span class="nf-pill pend">nota pendente</span>';
-    const cob=f.cobrancaStatus==='enviada'?'<span class="nf-pill">cobrança enviada</span>':'<span class="nf-pill pend">a cobrar</span>';
+    const cob=f.cobrancaStatus==='informado'?'<span class="nf-pill pend">pagamento comunicado · conferir no Receber</span>':f.cobrancaStatus==='enviada'?'<span class="nf-pill">cobrança enviada</span>':'<span class="nf-pill pend">a cobrar</span>';
     return `<div class="nf-lin ${d!==null&&d<0?'div':'fila'}"><div class="nf-info">
       <div class="nf-nome">${esc(f.cliente)}</div>
       <div class="nf-meta">${f.itens.length} diária(s) · vence ${esc(venc)}${quando} ${cob} ${selonf}</div></div>
@@ -288,7 +288,8 @@ async function FC_espelhar(regs,motivo){
   regs.forEach(r=>{
     if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
     const ficha=CFI_casar(r.cliente,fichas);
-    if(!CFI_liberavel(ficha))return;                 // a ficha diz que ela não atende
+    // Todo cliente com diária entra automaticamente no administrativo.
+    //                 // a ficha diz que ela não atende
     const chave=FC_chaveGrupo(r.cliente,r,ficha);
     if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
   });
@@ -306,7 +307,10 @@ async function FC_espelhar(regs,motivo){
         atualizadoEm:new Date().toISOString(),divergencia:div||null};
       if(antigo)FC_CAMPOS_DELA.forEach(k=>{if(antigo[k]!==undefined)doc[k]=antigo[k];});
       else{doc.criadoEm=doc.atualizadoEm;}
-      await FC_gravarCampos(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto')
+      // Só a baixa do proprietário no Receber confirma ou reabre o pagamento.
+      const mudouPagamento=antigo&&(Number(antigo.saldo)!==Number(doc.saldo)||Number(antigo.recebido)!==Number(doc.recebido));
+      if(mudouPagamento)doc.cobrancaStatus=doc.saldo===0?'pago':antigo.cobrancaStatus==='pago'?'pendente':antigo.cobrancaStatus;
+      await FC_gravarCampos(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
         :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
       FC_dados[id]=doc;
       feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
@@ -368,9 +372,17 @@ async function AV_criar(feitos){
 async function FC_aoSalvarLancamento(reg,motivo){
   try{
     if(typeof CFI_lista!=='function'||!reg)return;
-    if(!FC_ok&&!await FC_carregar())return;
+    if(!CFI_ok&&!await CFI_carregar())throw Error('Cadastro de clientes indisponível');
+    if(!FC_ok&&!await FC_carregar())throw Error('Fechamentos indisponíveis');
     const feitos=await FC_espelhar(reg,motivo);
     if(feitos.length)await AV_criar(feitos);
     if(feitos.some(f=>f.divergencia))toast('⚠️ Nota já emitida com outro valor — confira os Avisos.','#f59e0b');
-  }catch(e){console.warn('FC_aoSalvarLancamento',e.message);}
+  }catch(e){console.warn('FC_aoSalvarLancamento',e.message);toast('Diária salva, mas o administrativo não foi atualizado. Recarregue o financeiro para tentar novamente.','#ef4444',8000);}
+}
+
+async function FC_sincronizarPendentes(){
+  if(!await CFI_carregar()||!await FC_carregar())return;
+  const ocupados=FC_ocupados();
+  const pendentes=(R_todosOsDados||[]).filter(r=>!r.excluido&&r.cliente&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r)&&!ocupados.has(String(r.id)));
+  if(pendentes.length){const feitos=await FC_espelhar(pendentes,'automatico');await AV_criar(feitos);}
 }

@@ -53,7 +53,7 @@
     const saldo=(cents(valor)-cents(recebido))/100;
     const linhas=itens.map(r=>[campos.includes('data')?[r.data,r.mes].filter(Boolean).join(' / '):'',campos.includes('horas')?r.horas+'h':'',campos.includes('studio')?r.studio:'',campos.includes('descricao')?r.descricao:''].filter(Boolean).join(' · ')||'Serviço audiovisual');
     const descricaoFiscal='Prestação de serviços de produção audiovisual.\n'+textoResumo(itens)+'.\n'+linhas.join('\n');
-    const descricaoCobranca='Olá! Segue o fechamento de '+regs[0].cliente+'.\n\n'+linhas.map((s,i)=>s+' — '+money(itens[i].valor)).join('\n')+'\n\nTotal: '+money(valor)+'\nRecebido: '+money(recebido)+'\nSaldo a pagar: '+money(saldo);
+    const descricaoCobranca=linhas.map((s,i)=>s+' — '+money(itens[i].valor)).join('\n')+'\n\nTotal: '+money(valor)+'\nRecebido: '+money(recebido)+'\nSaldo a pagar: '+money(saldo);
     // Não copiar a ficha ou lançamento inteiro: eles podem conter informação interna.
     const clienteFiscal={};
     for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro'])clienteFiscal[k]=String(ficha[k]||'');
@@ -77,7 +77,7 @@
     }
     else if(f.fiscalStatus==='emitida'&&(!f.nfNumero.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(f.nfData)))throw Error('Informe número e data da nota emitida.');
     if(f.vencimento&&!/^\d{4}-\d{2}-\d{2}$/.test(f.vencimento))throw Error('Vencimento inválido.');
-    if(!['pendente','enviada','pago'].includes(f.cobrancaStatus))throw Error('Situação inválida.');
+    if(!['pendente','enviada','informado','pago'].includes(f.cobrancaStatus))throw Error('Situação inválida.');
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');
     return f;
   }

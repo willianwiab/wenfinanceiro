@@ -1,10 +1,25 @@
 'use strict';
 (()=>{
+// A nova aba herda a sessão; desliga o vínculo assim que inicia.
+if(window.opener)window.opener=null;
 const KEY='AIzaSyC7hYN3__Q_4MNAu6VCTXbTdvVSW37IneI', BASE='https://firestore.googleapis.com/v1/projects/wencontasapagar/databases/(default)/documents';
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cash=WENFechamentos.money, mock=new URLSearchParams(location.search).get('mock')==='1';
 let token='',refresh='',expires=0,docs=[],selecionado='',busy=false,dirty=false;
-const avisar=(s,error=false)=>{$('aviso').textContent=s;$('aviso').className='status'+(error?' error':'');};
+let _toastT;
+function toast(msg,cor='#16a34a',ms=3000){
+  const t=$('toast'); if(!t)return;
+  t.textContent=msg;t.style.background=cor;t.classList.add('show');
+  clearTimeout(_toastT);_toastT=setTimeout(()=>t.classList.remove('show'),ms);
+}
+const avisar=(s,error=false)=>{
+  if(!error){toast(s);$('aviso').textContent='';$('aviso').className='';
+    if($('cobrancaDialog').open){$('avisoCobranca').textContent='';$('avisoCobranca').className='';}
+    return;}
+  $('aviso').textContent=s;$('aviso').className='status error';
+  if($('cobrancaDialog').open){$('avisoCobranca').textContent=s;$('avisoCobranca').className='status error';}
+  toast(s,'#dc2626',6000);
+};
 const from=v=>v.stringValue??(v.doubleValue!==undefined?Number(v.doubleValue):v.integerValue!==undefined?Number(v.integerValue):v.booleanValue!==undefined?v.booleanValue:v.arrayValue?(v.arrayValue.values||[]).map(from):v.mapValue?Object.fromEntries(Object.entries(v.mapValue.fields||{}).map(([k,v])=>[k,from(v)])):null);
 const to=v=>typeof v==='string'?{stringValue:v}:typeof v==='number'?{doubleValue:v}:typeof v==='boolean'?{booleanValue:v}:Array.isArray(v)?{arrayValue:{values:v.map(to)}}:{mapValue:{fields:Object.fromEntries(Object.entries(v).map(([k,v])=>[k,to(v)]))}};
 function sessao(j){token=j.idToken||j.id_token;refresh=j.refreshToken||j.refresh_token;expires=Date.now()+(Number(j.expiresIn||j.expires_in)-60)*1000;sessionStorage.setItem('wen_admin_rt',refresh);}
@@ -41,7 +56,7 @@ async function carregar(){
 // ── 🔔 Avisos ───────────────────────────────────────────────────────────────
 // Ela não escreve aviso: recebe, abre e marca como lido. Igual ao "Li e estou ciente"
 // da Central de Produção. Os avisos nascem no WEN Financeiro, quando o Will mexe.
-let avisos=[], avisosAbertos=false;
+let avisos=[], avisosAbertos=false, apenasNaoLidos=true;
 async function avisosCarregar(){
  if(mock){avisos=[
    {id:'a1',tipo:'novo',texto:'🧾 Cliente demonstração — 3 diárias · R$ 6.600,00. Pronto para nota e cobrança.',fechamentoId:'demo',criadoEm:new Date().toISOString(),lidoEm:''},
@@ -61,13 +76,18 @@ function sino(){
  el.title=n?n+' aviso(s) não lido(s)':'Nenhum aviso novo';
  el.classList.toggle('tem',!!n);
  const cx=$('avisosCx'); if(!cx)return;
- cx.hidden=!avisosAbertos;
+ cx.hidden=!avisosAbertos;el.setAttribute('aria-expanded',String(avisosAbertos));
  if(!avisosAbertos)return;
- cx.innerHTML=avisos.length?avisos.map(a=>{
+ const vis=apenasNaoLidos?naoLidos():avisos;
+ cx.innerHTML='<div class="avisos-topo"><strong>Avisos · '+n+' não lidos</strong><button type="button" id="avisosFechar" aria-label="Fechar avisos">✕</button></div>'
+ +'<div class="avisos-filtro"><button type="button" id="avisosFiltro">'+(apenasNaoLidos?'Mostrar todos':'Mostrar só não lidos')+'</button></div><div class="avisos-lista">'
+ +(vis.length?vis.map(a=>{
    const quando=a.criadoEm?new Date(a.criadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
    return `<button type="button" class="aviso${a.lidoEm?'':' novo'} t-${esc(a.tipo||'')}" data-av="${esc(a.id)}" data-f="${esc(a.fechamentoId||'')}">
-     <span class="aviso-txt">${esc(a.texto||'')}</span><span class="aviso-dt">${esc(quando)}${a.lidoEm?'':' · novo'}</span></button>`;}).join('')
-  :'<p class="muted" style="padding:14px">Nenhum aviso. Quando o Will liberar uma gravação ou der baixa num pagamento, aparece aqui.</p>';
+     <span class="aviso-txt">${esc(a.texto||'')}</span>${(()=>{const f=docs.find(f=>f.id===a.fechamentoId);return f?'<span class="aviso-periodo">'+esc(fechPeriodo(f))+'</span>':'';})()}<span class="aviso-dt">${esc(quando)}${a.lidoEm?'':' · novo'}</span></button>`;}).join('')
+  :'<p class="muted" style="padding:14px">Nenhum aviso pendente neste filtro.</p>')+'</div>';
+ $('avisosFechar').onclick=()=>{avisosAbertos=false;sino();el.focus();};
+ $('avisosFiltro').onclick=()=>{apenasNaoLidos=!apenasNaoLidos;sino();$('avisosFiltro').focus();};
  cx.querySelectorAll('[data-av]').forEach(b=>b.onclick=()=>abrirAviso(b.dataset.av,b.dataset.f));
 }
 async function abrirAviso(id,fechamentoId){
@@ -127,7 +147,7 @@ function diarias(f){
 function linha(f){
  const atraso=atrasada(f), aberto=abertos.has(f.id);
  const cor=atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
- const selo=atraso?'<span class="nf-pill erro">em atraso</span>'
+ const selo=f.cobrancaStatus==='informado'?'<span class="nf-pill pend">pagamento comunicado · aguardando Will</span>':atraso?'<span class="nf-pill erro">em atraso</span>'
    :f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
    :f.cobrancaStatus==='enviada'?'<span class="nf-pill env">cobrança enviada</span>'
    :'<span class="nf-pill pend">a cobrar</span>';
@@ -143,22 +163,40 @@ function linha(f){
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
   +`<div class="nf-meta"><span>${esc(per)} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h${venc}</span>${selo}${selonf}</div></div>`
   +`<div class="nf-val">${cash(f.valor)}</div>`
-  +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}">📄 ${selecionado===f.id?'Aberto':'Abrir cobrança'}</button></div>`
+  +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
   +'</div>'+(aberto?diarias(f):'')+'</div></div>';
+}
+// Ordem da lista. Sem data de vencimento vai para o fim em "o mais urgente primeiro" —
+// o que não tem prazo não pode encabeçar a fila de quem está vencendo.
+const gravDe=f=>(f.itens||[]).map(i=>{
+  const d=String(i.data||'').split('/');
+  const m=WENFechamentos.mesChave(i.mes)||'';
+  return d.length>=2?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):m+'-00';
+}).sort().at(-1)||'';
+function ordenador(modo){
+ const venc=f=>f.vencimento||'';
+ const txt=(a,b)=>String(a||'').localeCompare(String(b||''),'pt-BR');
+ switch(modo){
+  case 'venc-desc': return (a,b)=>txt(venc(b),venc(a));
+  case 'grav':      return (a,b)=>txt(gravDe(b),gravDe(a))||txt(a.cliente,b.cliente);
+  case 'grav-asc':  return (a,b)=>txt(gravDe(a),gravDe(b))||txt(a.cliente,b.cliente);
+  case 'valor':     return (a,b)=>(Number(b.saldo)||0)-(Number(a.saldo)||0);
+  case 'cliente':   return (a,b)=>txt(a.cliente,b.cliente);
+  default:          return (a,b)=>txt(venc(a)||'9999-99-99',venc(b)||'9999-99-99')||txt(a.cliente,b.cliente);
+ }
 }
 function lista(){
  const cli=$('busca').value;
  const vis=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f)
-   &&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)));
+   &&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
+   .sort(ordenador($('ordem')?$('ordem').value:'venc'));
  cards(vis);
  $('lista').innerHTML=vis.length?vis.map(linha).join('')
-  :'<div class="nf-vazio">Nenhum fechamento neste recorte. Os fechamentos são liberados no WEN Financeiro, em 🧾 Notas Fiscais → Fechamentos e cobranças.</div>';
+  :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>';
  $('lista').querySelectorAll('[data-exp]').forEach(b=>b.onclick=e=>{
    e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
- $('lista').querySelectorAll('[data-abrir]').forEach(b=>b.onclick=()=>{
-   const url=new URL(location.href);url.hash=b.dataset.abrir;
-   const nova=window.open(url.href,'_blank');
-   if(nova)nova.opener=null;else avisar('Permita abrir novas abas neste navegador e clique novamente em Abrir cobrança.',true);});
+
+ $('lista').querySelectorAll('[data-abrir]').forEach(b=>b.onclick=()=>abrir(b.dataset.abrir));
 }
 // ── O fechamento aberto é o MESMO documento do Relatórios → Fechamento do WEN
 //    Financeiro: faixa verde, cartões de resumo, tabela por mês, barra de total e
@@ -280,6 +318,15 @@ function blocoFiscal(f){
      .replace('Situação fiscal','Situação geral (as duas)')
      .replace('Número da nota','Números (as duas)');
 }
+const DADOS_BANCARIOS='DADOS BANCÁRIOS — WEN PRODUTORA\nRazão Social: WEN PRODUTORA LTDA\nCNPJ: 21.577.617/0001-44\nPIX: wenprodutora@gmail.com\nBanco: Caixa Econômica Federal\nAgência: 1601\nConta Corrente: 1292 000577674871-9';
+function descricaoFiscalComBanco(texto){
+ const t=String(texto||'').trim();
+ return /1601/.test(t)&&/577674871/.test(t)?t:t+'\n\n'+DADOS_BANCARIOS;
+}
+function cobrancaSemSaudacao(texto,cliente){
+ const t=String(texto||''),inicio='Olá! Segue o fechamento de '+cliente+'.';
+ return t.startsWith(inicio)?t.slice(inicio.length).trimStart():t;
+}
 function abrir(id){
  const f=docs.find(x=>x.id===id);if(!f)return;selecionado=id;dirty=false;lista();location.hash=id;
  const nf=(f.notasExistentes||[]).map(n=>n.numero).join(', ');
@@ -288,19 +335,22 @@ function abrir(id){
  <h2 style="margin:0 0 4px">✍️ Cobrança e nota</h2>
  <p class="nf-sub" style="margin:0 0 14px">O que o administrativo preenche. Valor e diárias vêm do WEN Financeiro e não mudam aqui.</p>
  ${nf?`<div class="status">Notas já registradas no financeiro: ${esc(nf)}. Confira estas referências antes de registrar outra nota.</div>`:''}
- <form id="formFechamento"><div class="row"><label>Vencimento<input id="vencimento" type="date" value="${esc(f.vencimento)}"></label><label>Cobrança<select id="cobrancaStatus"><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="pago">Pagamento confirmado</option></select></label></div>
- <label>Descrição para cobrança<textarea id="descricaoCobranca" rows="8">${esc(f.descricaoCobranca)}</textarea></label><div class="actions"><button type="button" id="copiarCobranca">Copiar cobrança</button><button type="button" id="pdf">PDF / imprimir fechamento</button></div><hr>
+ <form id="formFechamento"><div class="row"><label>Vencimento<input id="vencimento" type="date" value="${esc(f.vencimento)}"></label><label>Cobrança<select id="cobrancaStatus"><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="informado">Pagamento comunicado — aguardando Will</option>${f.cobrancaStatus==='pago'?'<option value="pago">Pagamento confirmado por Will</option>':''}</select></label></div>
+ <label>Descrição para cobrança<textarea id="descricaoCobranca" rows="8">${esc(cobrancaSemSaudacao(f.descricaoCobranca,f.cliente))}</textarea></label><div class="actions"><button type="button" id="copiarCobranca">Copiar cobrança</button><button type="button" id="pdf">PDF / imprimir fechamento</button></div><hr>
  ${blocoFiscal(f)}
- <label>Descrição fiscal<textarea id="descricaoFiscal" rows="6">${esc(f.descricaoFiscal)}</textarea></label><button type="button" id="copiarFiscal">Copiar descrição fiscal</button><p class="muted">O registro da nota serve para controle; a emissão acontece no portal fiscal.</p>
+ <label>Descrição fiscal<textarea id="descricaoFiscal" rows="6">${esc(descricaoFiscalComBanco(f.descricaoFiscal))}</textarea></label><button type="button" id="copiarFiscal">Copiar descrição fiscal</button><p class="muted">O registro da nota serve para controle; a emissão acontece no portal fiscal.</p>
  <div class="actions"><button class="primary" id="salvar">Salvar alterações</button><button type="button" id="enviada">Registrar cobrança enviada</button></div><p id="resultado" role="status"></p><p class="muted">${f.enviadoEm?'Último envio registrado: '+esc(new Date(f.enviadoEm).toLocaleString('pt-BR')):''}</p></form></section>`;
- $('cobrancaStatus').value=f.cobrancaStatus;$('fiscalStatus').value=f.fiscalStatus;
+ $('cobrancaStatus').value=f.cobrancaStatus;$('cobrancaStatus').disabled=f.cobrancaStatus==='pago';$('fiscalStatus').value=f.fiscalStatus;
  if(f.notaModo==='separado'){
   $('nfSinalStatus').value=f.nfSinalStatus||'pendente';$('nfSaldoStatus').value=f.nfSaldoStatus||'pendente';
   $('editor').querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
     const sinal=b.dataset.nf==='nfSinal';
     $('nfTextoArea').value=textoNF(f,sinal?'sinal':'saldo');$('modalNFBg').classList.add('open');});
  }if(f.fiscalIds?.length===0){for(const id of ['fiscalStatus','nfNumero','nfData'])$(id).disabled=true;}
- $('editor').scrollIntoView({behavior:'smooth',block:'start'});
+ $('cobrancaTitulo').textContent='Cobrança — '+f.cliente;
+ $('avisoCobranca').textContent='';
+ if(!$('cobrancaDialog').open){$('cobrancaDialog').showModal();document.body.classList.add('cobranca-aberta');}
+ $('cobrancaDialog').scrollTop=0;
  $('formFechamento').oninput=()=>dirty=true;
  $('formFechamento').onsubmit=e=>{e.preventDefault();salvar(false);};$('enviada').onclick=()=>salvar(true);
  $('copiarCobranca').onclick=()=>copiar('descricaoCobranca');$('copiarFiscal').onclick=()=>copiar('descricaoFiscal');
@@ -317,6 +367,8 @@ async function salvar(enviar){
  const campos=['vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData','descricaoFiscal','descricaoCobranca'];
  if(f.notaModo==='separado')campos.push('nfSinalStatus','nfSinalNumero','nfSinalData','nfSaldoStatus','nfSaldoNumero','nfSaldoData');
  for(const k of campos){const el=$(k);if(el)update[k]=el.value;}
+ if(update.cobrancaStatus==='pago'&&f.cobrancaStatus!=='pago'){avisar('Só Will pode confirmar o pagamento no financeiro.',true);return;}
+ if(f.cobrancaStatus==='pago')update.cobrancaStatus='pago';
  if(enviar){if(update.cobrancaStatus==='pago'){avisar('Este fechamento já está pago.',true);return;}update.cobrancaStatus='enviada';update.enviadoEm=new Date().toISOString();}
  update.atualizadoEm=new Date().toISOString();
  try{
@@ -326,17 +378,33 @@ async function salvar(enviar){
   Object.assign(f,update,{updateTime:time});dirty=false;abrir(f.id);avisar(enviar?'Envio registrado.':'Alterações salvas na nuvem.');
  }catch(e){avisar(e.message,true);}finally{busy=false;if($('salvar'))$('salvar').disabled=false;if($('enviada'))$('enviada').disabled=false;}
 }
+// Mantém o texto fiscal acessível dentro da camada modal.
+$('cobrancaDialog').appendChild($('modalNFBg'));
+function fecharCobranca(){
+ if(busy)return;
+ if(dirty&&!confirm('Descartar as alterações não salvas?'))return;
+ const id=selecionado;dirty=false;selecionado='';
+ $('modalNFBg').classList.remove('open');
+ $('cobrancaDialog').close();document.body.classList.remove('cobranca-aberta');
+ history.replaceState(null,'',location.pathname+location.search);lista();
+ [...$('lista').querySelectorAll('[data-abrir]')].find(b=>b.dataset.abrir===id)?.focus();
+}
+$('fecharCobranca').onclick=fecharCobranca;
+$('cobrancaDialog').addEventListener('cancel',e=>{e.preventDefault();if($('modalNFBg').classList.contains('open'))$('modalNFBg').classList.remove('open');else fecharCobranca();});
 $('loginForm').onsubmit=async e=>{e.preventDefault();$('entrar').disabled=true;try{sessao(await auth('identitytoolkit.googleapis.com/v1/accounts:signInWithPassword',{email:$('email').value.trim(),password:$('senha').value,returnSecureToken:true}));$('senha').value='';await carregar();}catch(e){avisar(e.message,true);}finally{$('entrar').disabled=false;}};
 $('verificar').onclick=async()=>{try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:token});avisar('Link de verificação solicitado. Abra seu e-mail e depois entre novamente.');}catch(e){avisar(e.message,true);}};
 $('redefinir').onclick=async()=>{if(!$('email').checkValidity()||!$('email').value){avisar('Informe seu e-mail.',true);return;}try{await auth('identitytoolkit.googleapis.com/v1/accounts:sendOobCode',{requestType:'PASSWORD_RESET',email:$('email').value.trim()});avisar('Se houver uma conta para este e-mail, as instruções de senha chegarão na caixa de entrada.');}catch(e){avisar(e.message,true);}};
-$('sino').onclick=()=>{avisosAbertos=!avisosAbertos;sino();};
+$('sino').onclick=()=>{avisosAbertos=!avisosAbertos;sino();if(avisosAbertos)$('avisosFechar').focus();};
+document.addEventListener('click',e=>{if(avisosAbertos&&!$('avisosCx').contains(e.target)&&!$('sino').contains(e.target)){avisosAbertos=false;sino();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&avisosAbertos){avisosAbertos=false;sino();$('sino').focus();}});
 $('nfFechar').onclick=()=>$('modalNFBg').classList.remove('open');
 $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota copiado.');
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace('administrativo.html');};
-$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;
+$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;$('ordem').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
+window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar();});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 (async()=>{if(mock){await carregar();return;}refresh=sessionStorage.getItem('wen_admin_rt')||localStorage.getItem('wen_auth_rt');if(refresh)await carregar();})();
 })();
