@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manual · Fiscal e Cobranças</title>
+<link rel="icon" href="assets/favicon-32.png">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --verde:#16a34a; --verde-esc:#14532d; --azul:#1e40af; --azul-esc:#1e3a8a;
+  --roxo:#7c3aed; --ambar:#f59e0b; --vermelho:#dc2626;
+  --tinta:#0f172a; --tinta2:#334155; --suave:#64748b; --fraco:#94a3b8;
+  --fundo:#f1f5f9; --papel:#fff; --borda:#e5e7eb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--tinta);
+  font-family:Outfit,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.6}
+
+/* ── topo ── */
+header{background:linear-gradient(135deg,#14532d 0%,#166534 40%,#1e3a8a 100%);color:#fff;padding:34px 0 30px}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px}
+header .marca{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+header img{width:44px;height:44px;border-radius:11px;background:#fff;padding:3px}
+header .marca b{font-size:1.15rem;font-weight:800;letter-spacing:.01em}
+header .marca span{font-weight:400;opacity:.85}
+header h1{margin:0 0 7px;font-size:2rem;font-weight:800;line-height:1.2}
+header p{margin:0;color:#fff;opacity:.92;font-size:1rem;max-width:62ch}
+.selo{display:inline-block;margin-top:16px;background:rgba(255,255,255,.17);
+  border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:5px 14px;font-size:.78rem;font-weight:600}
+
+/* ── índice ── */
+nav{background:var(--papel);border-bottom:1px solid var(--borda);position:sticky;top:0;z-index:20;
+  box-shadow:0 1px 8px rgba(15,23,42,.05)}
+nav .wrap{display:flex;gap:4px;overflow-x:auto;padding-top:9px;padding-bottom:9px;scrollbar-width:thin}
+nav a{color:var(--suave);text-decoration:none;font-size:.82rem;font-weight:700;white-space:nowrap;
+  padding:7px 13px;border-radius:8px}
+nav a:hover{background:var(--fundo);color:var(--tinta)}
+
+main{padding:30px 0 60px}
+section{background:var(--papel);border:1px solid var(--borda);border-radius:15px;
+  padding:26px 28px;margin-bottom:20px;scroll-margin-top:62px}
+section>h2{margin:0 0 4px;font-size:1.32rem;font-weight:800;color:var(--tinta)}
+section>.sub{margin:0 0 20px;color:var(--suave);font-size:.92rem;max-width:66ch}
+h3{margin:26px 0 9px;font-size:1.02rem;font-weight:700;color:var(--tinta)}
+h3:first-of-type{margin-top:4px}
+p{margin:0 0 12px;color:var(--tinta2)}
+b,strong{color:var(--tinta);font-weight:700}
+code{background:var(--fundo);border:1px solid var(--borda);border-radius:5px;
+  padding:1px 6px;font-size:.86em;font-family:ui-monospace,Menlo,monospace}
+
+/* ── passo a passo ── */
+ol.passos{counter-reset:p;list-style:none;padding:0;margin:14px 0}
+ol.passos li{counter-increment:p;position:relative;padding:11px 0 11px 46px;
+  border-bottom:1px solid #f1f5f9;color:var(--tinta2)}
+ol.passos li:last-child{border-bottom:0}
+ol.passos li::before{content:counter(p);position:absolute;left:0;top:11px;
+  width:28px;height:28px;border-radius:50%;background:var(--azul);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:800}
+
+/* ── caixas ── */
+.nota{border-radius:11px;padding:14px 17px;margin:16px 0;font-size:.92rem;line-height:1.55}
+.nota b:first-child{display:block;margin-bottom:3px}
+.nota.aviso{background:#fff7ed;border:1px solid #fed7aa;color:#92400e}
+.nota.perigo{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.nota.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d}
+.nota.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a}
+
+/* ── tabelas ── */
+table{width:100%;border-collapse:collapse;font-size:.88rem;margin:14px 0}
+th{background:var(--fundo);color:var(--tinta2);text-align:left;padding:9px 12px;
+  font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;font-weight:800;
+  border-bottom:2px solid var(--borda)}
+td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;color:var(--tinta2)}
+tr:last-child td{border-bottom:0}
+
+/* ── chips e selos ── */
+.chip{display:inline-block;border-radius:20px;padding:3px 11px;font-size:.76rem;font-weight:700;white-space:nowrap}
+.chip.on{background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.chip.off{background:#f1f5f9;color:#94a3b8;border:1px solid var(--borda)}
+.chip.sel{background:#f1f5f9;color:#475569;border:1px solid var(--borda)}
+.chip.pend{background:#fef3c7;color:#92400e}
+.chip.erro{background:#fee2e2;color:#b91c1c}
+.chip.ok2{background:#dcfce7;color:#15803d}
+
+/* ── tela de exemplo ── */
+.tela{background:var(--fundo);border:1px solid var(--borda);border-radius:11px;padding:15px 17px;margin:14px 0}
+.tela .lin{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid var(--borda);
+  border-left:3px solid var(--ambar);border-radius:9px;padding:11px 14px;margin-bottom:7px;flex-wrap:wrap}
+.tela .lin:last-child{margin-bottom:0}
+.tela .nome{font-weight:800;font-size:.88rem;flex:1;min-width:150px}
+.tela .meta{font-size:.74rem;color:var(--suave);width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tela .val{font-weight:800;font-size:.95rem;white-space:nowrap}
+
+/* ── mensagem pronta ── */
+pre.msg{background:#0f172a;color:#e2e8f0;border-radius:11px;padding:16px 18px;overflow-x:auto;
+  font-family:ui-monospace,Menlo,monospace;font-size:.78rem;line-height:1.65;margin:14px 0;white-space:pre-wrap}
+pre.msg em{color:#fbbf24;font-style:normal;font-weight:700}
+
+/* ── perguntas ── */
+details{background:var(--fundo);border:1px solid var(--borda);border-radius:10px;
+  padding:13px 16px;margin-bottom:9px}
+details[open]{background:#fff}
+summary{cursor:pointer;font-weight:700;color:var(--tinta);font-size:.93rem}
+summary::marker{color:var(--fraco)}
+details p{margin:10px 0 0;font-size:.9rem}
+details p:last-child{margin-bottom:0}
+
+footer{text-align:center;color:var(--fraco);font-size:.82rem;padding:28px 20px 44px}
+
+@media(max-width:620px){
+  header h1{font-size:1.5rem}
+  section{padding:20px 17px;border-radius:12px}
+  .wrap{padding:0 16px}
+  /* tabela de 3 colunas no celular: rola em vez de espremer as palavras */
+  table{font-size:.82rem;display:block;overflow-x:auto;white-space:nowrap;
+    -webkit-overflow-scrolling:touch}
+  table td,table th{white-space:normal;min-width:118px}
+  table td:last-child,table th:last-child{min-width:150px}
+  th,td{padding:8px 10px}
+}
+@media print{
+  nav{display:none}
+  body{background:#fff}
+  section{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
+  details{break-inside:avoid}
+  details:not([open])>*:not(summary){display:block}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="marca">
+      <img src="assets/logo-wen.png" alt="WEN Produtora">
+      <b>WEN <span>Produtora</span></b>
+    </div>
+    <h1>Manual do Fiscal e Cobranças</h1>
+    <p>Como emitir as notas e cobrar os clientes da WEN, do começo ao fim. Escrito para quem
+       nunca usou o sistema antes.</p>
+    <div class="selo">Atualizado em 20/11/2026</div>
+  </div>
+</header>
+
+<nav><div class="wrap">
+  <a href="#inicio">Começar</a>
+  <a href="#tela">A tela</a>
+  <a href="#cobrar">Cobrar</a>
+  <a href="#nota">Emitir nota</a>
+  <a href="#5050">50% + 50%</a>
+  <a href="#promessa">Promessas</a>
+  <a href="#ficha">Ficha do cliente</a>
+  <a href="#avisos">Avisos</a>
+  <a href="#limites">O que não dá</a>
+  <a href="#duvidas">Dúvidas</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="inicio">
+  <h2>Por onde começar</h2>
+  <p class="sub">A tela fica em <b>wenfinanceiro-source.vercel.app/administrativo.html</b>.
+     Guarde nos favoritos — é a única página que você usa.</p>
+
+  <h3>Entrar</h3>
+  <ol class="passos">
+    <li>Abra o endereço acima.</li>
+    <li>E-mail: <code>financeiro@wenprodutora.com.br</code>.</li>
+    <li>Senha: a que você definiu. Primeira vez? Clique em <b>Definir / recuperar senha</b> e
+        siga o link que chega no e-mail.</li>
+    <li>Pronto. A lista de cobranças aparece sozinha.</li>
+  </ol>
+
+  <div class="nota info">
+    <b>Como o trabalho chega até você</b>
+    Você não precisa pedir nada. Quando o Will lança uma gravação no sistema financeiro, ela
+    aparece aqui automaticamente — às vezes até antes da gravação acontecer, quando o cliente
+    já pagou um sinal.
+  </div>
+
+  <h3>O que é seu e o que é do Will</h3>
+  <table>
+    <tr><th>Você faz</th><th>O Will faz</th></tr>
+    <tr>
+      <td>Emitir a nota fiscal e registrar o número<br>
+          Enviar a cobrança ao cliente<br>
+          Anotar promessas de pagamento<br>
+          Preencher CNPJ e contato do cliente</td>
+      <td>Lançar as gravações e os valores<br>
+          Definir quem precisa de nota<br>
+          Definir a forma de pagamento<br>
+          <b>Confirmar que o dinheiro entrou</b></td>
+    </tr>
+  </table>
+
+  <div class="nota aviso">
+    <b>Você nunca marca um pagamento como recebido</b>
+    Quem confirma é o Will, no banco. Se o cliente disser que pagou, use
+    <b>“Pagamento comunicado”</b> (explicado na seção <a href="#cobrar">Cobrar</a>) — assim ele
+    confere e dá baixa.
+  </div>
+</section>
+
+<section id="tela">
+  <h2>Entendendo a tela</h2>
+  <p class="sub">Cada linha é um cliente com gravações a cobrar. Tudo que você precisa saber
+     está na própria linha.</p>
+
+  <div class="tela">
+    <div class="lin">
+      <span class="nome">CARTPANDA</span>
+      <span class="val">R$ 8.800,00</span>
+      <span class="meta">
+        NOV/2026 · 02/11 a 28/11 · 4 diárias · 9h · <b>vence 05/12/2026</b>
+        <span class="chip pend">a cobrar</span>
+        <span class="chip pend">nota pendente</span>
+      </span>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>O que aparece</th><th>O que quer dizer</th></tr>
+    <tr><td><b>CARTPANDA</b></td><td>O cliente.</td></tr>
+    <tr><td>02/11 a 28/11 · 4 diárias · 9h</td><td>As gravações que entram nesta cobrança.</td></tr>
+    <tr><td><b>vence 05/12/2026</b></td><td>A data combinada. Vem do financeiro — você não define.</td></tr>
+    <tr><td>R$ 8.800,00</td><td>O valor das gravações. Se já entrou parte, aparece o <b>saldo</b> embaixo.</td></tr>
+  </table>
+
+  <h3>Os selos de situação</h3>
+  <table>
+    <tr><th>Selo</th><th>Significa</th><th>O que fazer</th></tr>
+    <tr><td><span class="chip pend">a cobrar</span></td><td>Ninguém cobrou ainda.</td><td>Mandar a cobrança.</td></tr>
+    <tr><td><span class="chip sel">cobrança enviada</span></td><td>Você já mandou.</td><td>Esperar ou fazer follow-up.</td></tr>
+    <tr><td><span class="chip pend">pagamento comunicado</span></td><td>O cliente disse que pagou.</td><td>Nada — o Will vai conferir.</td></tr>
+    <tr><td><span class="chip ok2">pago</span></td><td>O Will confirmou no banco.</td><td>Nada. Acabou.</td></tr>
+    <tr><td><span class="chip erro">em atraso</span></td><td>Passou do vencimento.</td><td>Cobrar de novo, com prioridade.</td></tr>
+    <tr><td><span class="chip pend">nota pendente</span></td><td>Precisa de nota e não foi emitida.</td><td>Emitir no portal e registrar aqui.</td></tr>
+    <tr><td><span class="chip sel">NF não solicitada</span></td><td>Este cliente não quer nota.</td><td>Só cobrar.</td></tr>
+    <tr><td><span class="chip erro">não cobrar</span></td><td>Quem cobra este cliente é o Will.</td><td>Nada. Só a nota, se pedir.</td></tr>
+  </table>
+
+  <h3>Achar o que você procura</h3>
+  <p>No alto da tela há quatro filtros. Eles se combinam.</p>
+  <table>
+    <tr><td><b>Cliente</b></td><td>Um cliente específico.</td></tr>
+    <tr><td><b>Mês inicial / final</b></td><td>O período das gravações.</td></tr>
+    <tr><td><b>Ordenar por</b></td><td>Comece sempre por <b>“Vencimento — o mais urgente primeiro”</b>.</td></tr>
+    <tr><td><b>Exibir</b></td><td>Atalhos: <b>A cobrar</b>, <b>Enviadas</b>, <b>Pagas</b>, <b>Em atraso</b>.</td></tr>
+  </table>
+
+  <div class="nota ok">
+    <b>Sua rotina do dia, em dois cliques</b>
+    Clique em <b>⚠️ Em atraso</b> e resolva essas primeiro. Depois clique em <b>📋 A cobrar</b>,
+    com a ordem por vencimento. Pronto — você trabalhou pelo que é mais urgente.
+  </div>
+</section>
+
+<section id="cobrar">
+  <h2>Cobrar um cliente</h2>
+  <p class="sub">A mensagem já vem escrita. Seu trabalho é conferir e enviar.</p>
+
+  <ol class="passos">
+    <li>Clique em <b>📄 Abrir cobrança</b> na linha do cliente.</li>
+    <li>Confira o quadro <b>💳 Como cobrar</b> — ele diz exatamente quanto pedir agora.</li>
+    <li>Vá na aba <b>💰 Cobrança</b>.</li>
+    <li>Leia a mensagem. Ajuste se quiser — ela é sua.</li>
+    <li>Clique em <b>📱 Abrir WhatsApp</b>. A conversa abre com o texto pronto.</li>
+    <li><b>Confira o destinatário</b> e envie.</li>
+    <li>Volte e clique em <b>Registrar cobrança enviada</b>.</li>
+  </ol>
+
+  <div class="nota aviso">
+    <b>O passo 7 não é burocracia</b>
+    É ele que faz o cliente sair da fila “a cobrar”. Sem isso, você vai cobrar o mesmo cliente
+    duas vezes na semana que vem.
+  </div>
+
+  <h3>A mensagem que o cliente recebe</h3>
+  <pre class="msg">Olá! Segue o fechamento das gravações.
+
+<em>📅 *Novembro de 2026*</em>
+  🎬 05/11 · 2h · STUDIO A — R$ 2.200,00
+  🎬 12/11 · 3h · STUDIO B — R$ 3.300,00
+  <em>_Subtotal: R$ 5.500,00_</em>
+
+━━━━━━━━━━━━━━━━━━
+💰 Total: *R$ 5.500,00*
+✅ Já recebido: R$ 1.000,00
+🔴 Saldo a pagar: *R$ 4.500,00*
+📆 Vencimento: *30/11/2026*
+
+🏦 *PIX:* wenprodutora@gmail.com
+_WEN Produtora Ltda · CNPJ 21.577.617/0001-44_</pre>
+
+  <p>Os asteriscos viram <b>negrito</b> no WhatsApp. Se o cliente já pagou tudo, a mensagem muda
+     sozinha para um agradecimento e não manda o PIX.</p>
+
+  <h3>Quando o cliente diz que pagou</h3>
+  <ol class="passos">
+    <li>Abra a cobrança, aba <b>📄 Fechamento</b>.</li>
+    <li>Em <b>Situação da cobrança</b>, escolha <b>“Pagamento comunicado — aguardando Will”</b>.</li>
+    <li>Clique em <b>Salvar alterações</b>.</li>
+  </ol>
+  <p>O Will confere no banco e marca como pago. Aí o cliente some da sua fila.</p>
+
+  <div class="nota perigo">
+    <b>Não marque “pago” por conta própria</b>
+    Essa opção nem aparece para você. É proposital: só quem vê o extrato pode dizer que o
+    dinheiro entrou.
+  </div>
+</section>
+
+<section id="nota">
+  <h2>Emitir a nota fiscal</h2>
+  <p class="sub">O sistema não emite nota — isso é no portal da prefeitura. Aqui você prepara o
+     texto e registra o que foi emitido.</p>
+
+  <h3>Antes: veja se já é hora</h3>
+  <p>Na aba <b>🧾 Nota fiscal</b>, a primeira linha avisa:</p>
+  <table>
+    <tr><td><span class="chip ok2">✅ já pode</span></td><td>Pode emitir agora.</td></tr>
+    <tr><td><span class="chip pend">⏳ ainda não</span></td><td>Falta a gravação acontecer ou o cliente pagar. Diz o quê e quando.</td></tr>
+  </table>
+  <p>Isso evita emitir cedo e ter que cancelar depois.</p>
+
+  <h3>Escolher o que entra nesta nota</h3>
+  <p>O cliente pode ter 4 gravações e você querer faturar só 2. O sistema deixa.</p>
+  <ol class="passos">
+    <li>Na aba <b>🧾 Nota fiscal</b>, veja a lista <b>Diárias desta nota</b>.</li>
+    <li>Desmarque o que <b>não</b> entra agora.</li>
+    <li>O valor muda na hora, e aparece no próprio botão: <b>“Registrar nota de R$ 4.400,00”</b>.</li>
+    <li>A <b>descrição fiscal</b> também se ajusta sozinha — só com as gravações marcadas.</li>
+  </ol>
+
+  <div class="nota ok">
+    <b>O que sobrar não se perde</b>
+    As gravações desmarcadas continuam disponíveis para a próxima nota. E uma gravação nunca
+    entra em duas notas — o sistema recusa.
+  </div>
+
+  <h3>Emitir e registrar</h3>
+  <ol class="passos">
+    <li>Copie a <b>descrição fiscal</b> (botão <b>Copiar descrição fiscal</b>).</li>
+    <li>Emita a nota no <b>portal da prefeitura</b>, colando a descrição.</li>
+    <li>Volte aqui. Digite o <b>número da nota</b> e a <b>data de emissão</b>.</li>
+    <li>Clique em <b>🧾 Registrar nota de R$ …</b>.</li>
+  </ol>
+
+  <p>A nota registrada aparece em <b>Notas já emitidas</b>, com valor e quantas gravações cobriu.</p>
+
+  <div class="nota aviso">
+    <b>Número repetido é recusado</b>
+    Se você digitar um número que já existe naquele cliente, o sistema avisa. É proteção contra
+    registrar a mesma nota duas vezes.
+  </div>
+</section>
+
+<section id="5050">
+  <h2>Clientes que pagam 50% + 50%</h2>
+  <p class="sub">Alguns pagam metade na reserva e metade depois. O sistema cuida da conta.</p>
+
+  <h3>O quadro “Como cobrar”</h3>
+  <div class="tela">
+    <p style="margin:0 0 9px"><b>💳 Como cobrar</b> &nbsp;<span class="chip pend">50% de sinal + 50%</span></p>
+    <table style="margin:0">
+      <tr><td>Sinal (50%)</td><td style="text-align:right"><b>R$ 3.300,00</b></td><td style="text-align:right;color:#15803d">✔️ pago</td></tr>
+      <tr><td>Saldo (50%)</td><td style="text-align:right"><b>R$ 3.300,00</b></td><td style="text-align:right;color:#b45309">em aberto</td></tr>
+    </table>
+    <p style="margin:11px 0 0;border-top:1px dashed #cbd5e1;padding-top:10px">
+      Cobrar agora: <b style="color:#5b21b6;font-size:1.05rem">R$ 3.300,00</b>
+      <span style="color:var(--suave)">(Saldo 50%)</span></p>
+  </div>
+
+  <p>Você <b>não precisa calcular nada</b>. O número em “Cobrar agora” é o que você pede. Mesmo
+     que o cliente ainda não tenha pago nada, ele já mostra a primeira parcela.</p>
+
+  <div class="nota info">
+    <b>Pagar em duas ≠ faturar em duas</b>
+    Pagar 50% + 50% <b>não</b> divide a nota. Na maioria das vezes sai <b>uma nota só</b>, pelo
+    valor total do serviço. Quem decide é o Will, na ficha do cliente.
+  </div>
+
+  <h3>Quando o cliente quer duas notas</h3>
+  <p>Aí o Will marca <b>“2 notas: sinal e saldo”</b>. A aba 🧾 Nota fiscal passa a mostrar
+     <b>dois blocos</b> — <b>Nota do sinal</b> e <b>Nota do saldo</b> — cada um com seu valor,
+     seu número, sua data e seu próprio texto para o portal.</p>
+</section>
+
+<section id="promessa">
+  <h2>Promessas de pagamento</h2>
+  <p class="sub">“Vou pagar dia 25.” Anote — senão você esquece e cobra na hora errada.</p>
+
+  <ol class="passos">
+    <li>Abra a cobrança, aba <b>💰 Cobrança</b>.</li>
+    <li>No quadro <b>📅 Promessa de pagamento</b>, ponha a data que o cliente falou.</li>
+    <li>Em <b>Anotação</b>, escreva o contexto: <i>“falei com a Ana, paga junto com a nota”</i>.</li>
+    <li><b>Salvar alterações</b>.</li>
+  </ol>
+
+  <div class="nota aviso">
+    <b>Promessa não é pagamento</b>
+    Anotar <b>não</b> muda o vencimento e <b>não</b> marca como pago. É um lembrete, para você
+    saber quando voltar a falar com o cliente.
+  </div>
+</section>
+
+<section id="ficha">
+  <h2>A ficha do cliente</h2>
+  <p class="sub">CNPJ, razão social e contato. Esta parte é sua — é você quem fala com o
+     financeiro dos clientes.</p>
+
+  <ol class="passos">
+    <li>Abra qualquer cobrança daquele cliente.</li>
+    <li>Aba <b>🧾 Nota fiscal</b>, quadro <b>📇 Ficha do cliente</b>.</li>
+    <li>Preencha o que souber.</li>
+    <li><b>💾 Salvar ficha do cliente</b>.</li>
+  </ol>
+
+  <table>
+    <tr><th>Campo</th><th>Para quê</th></tr>
+    <tr><td><b>Nome na nota</b></td><td>A razão social que vai na nota fiscal.</td></tr>
+    <tr><td><b>CPF / CNPJ</b></td><td>Obrigatório para emitir. O sistema confere se o número é válido.</td></tr>
+    <tr><td><b>Pessoa do financeiro</b></td><td>Com quem você fala para cobrar.</td></tr>
+    <tr><td><b>WhatsApp</b></td><td>Liga o botão <b>📱 Abrir WhatsApp</b> na cobrança.</td></tr>
+    <tr><td><b>E-mail do financeiro</b></td><td>Liga o botão <b>✉️ Abrir e-mail</b>.</td></tr>
+    <tr><td><b>E-mail para a nota</b></td><td>Só se for diferente do de cobrança.</td></tr>
+  </table>
+
+  <p>Preencheu uma vez, vale para <b>todas</b> as gravações daquele cliente, sempre.</p>
+
+  <div class="nota ok">
+    <b>Vale preencher mesmo sem pressa</b>
+    Enquanto falta algo, aparece <b>“falta CPF/CNPJ, contato”</b> no alto do quadro. Quando
+    completa, vira <b>“completa”</b> — e emitir a nota fica mais rápido toda vez.
+  </div>
+</section>
+
+<section id="avisos">
+  <h2>O sino de avisos 🔔</h2>
+  <p class="sub">Fica no alto da tela, à direita. O número vermelho é quanto tem de novo.</p>
+
+  <table>
+    <tr><th>Aviso</th><th>O que aconteceu</th></tr>
+    <tr><td>🧾 <b>pronto para nota e cobrança</b></td><td>Entrou gravação nova de um cliente.</td></tr>
+    <tr><td>💰 <b>entrou um pagamento</b></td><td>O cliente pagou parte. Diz quanto falta.</td></tr>
+    <tr><td>✅ <b>pagamento confirmado</b></td><td>O Will confirmou. Nada mais a cobrar.</td></tr>
+    <tr><td>⚠️ <b>divergência</b></td><td>O valor mudou depois da nota emitida. <b>Fale com o Will antes de emitir outra.</b></td></tr>
+  </table>
+
+  <p>Clique no aviso: ele <b>abre a cobrança</b> correspondente e se marca como lido.</p>
+</section>
+
+<section id="limites">
+  <h2>O que o sistema não deixa fazer</h2>
+  <p class="sub">Não são erros nem falta de permissão. São travas pensadas para proteger você e
+     o dinheiro da empresa.</p>
+
+  <table>
+    <tr><th>Trava</th><th>Por quê</th></tr>
+    <tr><td>Você não vê faturamento, contas a pagar nem o caixa da WEN</td>
+        <td>Você só precisa do valor de cada cliente para cobrar. O resto é da empresa.</td></tr>
+    <tr><td>Você não marca pagamento como recebido</td>
+        <td>Só quem vê o extrato do banco pode dizer que entrou.</td></tr>
+    <tr><td>Você não muda valor nem data de gravação</td>
+        <td>Isso vem do financeiro. Se estiver errado, avise o Will — corrigindo lá, corrige aqui sozinho.</td></tr>
+    <tr><td>Você não decide quem precisa de nota</td>
+        <td>É combinado comercial, que o Will define na hora de lançar.</td></tr>
+    <tr><td>A mesma gravação não entra em duas notas</td>
+        <td>Evita nota em dobro — erro caro e chato de desfazer.</td></tr>
+  </table>
+
+  <div class="nota info">
+    <b>Achou algo errado?</b>
+    Valor, data, cliente ou gravação faltando: <b>fale com o Will</b>. Ele corrige no financeiro
+    e a sua tela se atualiza sozinha, sem você refazer nada.
+  </div>
+</section>
+
+<section id="duvidas">
+  <h2>Perguntas que aparecem</h2>
+
+  <details>
+    <summary>Um cliente sumiu da lista. Perdi a cobrança?</summary>
+    <p>Não. Três motivos possíveis: o pagamento foi confirmado; o Will marcou que aquele cliente
+       não é cobrado por você; ou é só o filtro. Deixe <b>Cliente</b> em “— Todos —”, o período
+       largo e <b>Exibir</b> em “Todos”.</p>
+  </details>
+
+  <details>
+    <summary>Emiti a nota com número errado. E agora?</summary>
+    <p>Não dá para apagar uma nota registrada — de propósito, porque ela existe na prefeitura.
+       Cancele no portal fiscal, registre a nota correta aqui e avise o Will sobre a cancelada.</p>
+  </details>
+
+  <details>
+    <summary>O cliente quer juntar dois meses numa nota só.</summary>
+    <p>Fale com o Will. O agrupamento (mensal ou por gravação) é definido por cliente, no
+       financeiro.</p>
+  </details>
+
+  <details>
+    <summary>O botão do WhatsApp não aparece.</summary>
+    <p>Falta o número na ficha. Vá na aba <b>🧾 Nota fiscal</b>, preencha <b>WhatsApp</b> e
+       salve. O botão aparece na hora.</p>
+  </details>
+
+  <details>
+    <summary>Apareceu “⚠️ divergência”. O que faço?</summary>
+    <p>O valor da gravação mudou depois que a nota saiu. <b>Não emita outra nota.</b> Fale com o
+       Will — ele decide se cancela, se emite complementar ou se ignora.</p>
+  </details>
+
+  <details>
+    <summary>Posso mexer no texto da cobrança?</summary>
+    <p>Pode, à vontade. É você quem fala com o cliente. O sistema só reescreve enquanto você não
+       tiver editado — depois que você digita, ele não encosta mais.</p>
+  </details>
+
+  <details>
+    <summary>Dá para cobrar antes da gravação acontecer?</summary>
+    <p>Dá, e é comum: quando o cliente paga sinal, a gravação já aparece aqui mesmo marcada para
+       o mês que vem. Para a <b>nota</b>, veja o aviso no alto da aba fiscal — ele diz se já pode
+       ou se falta a gravação.</p>
+  </details>
+
+  <details>
+    <summary>Errei e salvei. Dá para voltar?</summary>
+    <p>Descrições e datas: é só corrigir e salvar de novo. Nota registrada não volta — nesse
+       caso, fale com o Will.</p>
+  </details>
+</section>
+
+</main>
+
+<footer>
+  WEN Produtora · Manual do Fiscal e Cobranças · 20/11/2026<br>
+  Dúvida que não está aqui? Fale com o Will.
+</footer>
+
+</body>
+</html>

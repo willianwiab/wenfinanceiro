@@ -177,15 +177,21 @@ assert.deepEqual(st,['R1'],'a diária vive em um fechamento só');
 const apagou=await page.evaluate(()=>window.__patches.filter(p=>p.del).length>0);
 assert(apagou,'o fechamento do nome antigo foi apagado na nuvem');
 
-// ── 9) órfão COM nota emitida não é apagado: fica marcado ──────────────────
+// ── 9) renomear com NOTA EMITIDA não cria órfão nem perde a nota ──────────
+// Antes (minha versão): nascia um fechamento novo e o antigo ficava marcado com
+// divergência. Em 20/11 o Codex passou a casar o fechamento pelas DIÁRIAS, não só
+// pelo nome do grupo — então renomear atualiza o mesmo documento. É melhor: a nota
+// continua onde estava e não há dois fechamentos para a mesma gravação.
 await page.evaluate(()=>{FC_dados={};R_todosOsDados.length=0;});
 await espelhar({...diaria('R2'),cliente:'COM NOTA LTDA'});
 await page.evaluate(()=>{const id=Object.keys(FC_dados)[0];
   Object.assign(FC_dados[id],{fiscalStatus:'emitida',nfNumero:'777',nfData:'2026-12-01',fiscalValor:2200});});
 await espelhar({...diaria('R2'),cliente:'COM NOTA LTDA RENOMEADA'});
-const comNota=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,nf:f.nfNumero,div:!!f.divergencia})));
-assert.equal(comNota.length,2,'o que tem nota emitida NÃO some');
-assert(comNota.some(f=>f.nf==='777'&&f.div),'ele fica marcado com divergência, para o Will resolver');
+const comNota=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,nf:f.nfNumero,st:f.fiscalStatus})));
+assert.equal(comNota.length,1,'um fechamento só — a diária não se divide em dois');
+assert.equal(comNota[0].c,'COM NOTA LTDA RENOMEADA','passou a valer o nome novo');
+assert.equal(comNota[0].nf,'777','🔒 e a nota emitida continua lá');
+assert.equal(comNota[0].st,'emitida');
 
 assert.deepEqual(erros,[]);
 console.log('✅ espelho-vivo: nasce no lançamento, acompanha a baixa, avisa — e o que é dela sobrevive');

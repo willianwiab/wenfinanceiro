@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-d21700be';
+window.APP_VERSION='20261120-eca85d43';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1957,7 +1957,6 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="fg"><label>Mês final</label><select id="nfFMesFim" onchange="NF_montar()"></select></div>
     <div class="fg"><label>Exibir</label>
       <div class="nf-abas">
-        <button id="nfAbaFech" onclick="NF_setAba('fechamentos')">Fechamentos e cobranças</button>
         <button id="nfAbaAvisos" onclick="NF_setAba('avisos')">🔔 Avisos</button>
         <button id="nfAbaFila" class="on" onclick="NF_setAba('fila')">📋 A faturar</button>
         <button id="nfAbaEmit" onclick="NF_setAba('emitidas')">✅ Emitidas</button>
@@ -2761,7 +2760,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=f8837676"></script>
-<script src="js/fechamentos-admin.js?v=e30784ee"></script>
+<script src="js/fechamentos-admin.js?v=156f6b9d"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3788,11 +3787,13 @@ function NF_montar(){
   // para uma lista que pode estar cheia, e faria o Will faturar de novo o que já faturou.
   if(aviso)aviso.innerHTML=NF_ok?'':'<div class="nf-alerta erro"><b>Não consegui ler as notas já registradas.</b> '
     +'Sem isso eu não sei o que já foi faturado, então a fila abaixo pode estar errada. Recarregue a página antes de registrar qualquer nota.</div>';
-  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli','nfAbaFech','nfAbaAvisos'].forEach((id,i)=>{const b=document.getElementById(id);
-    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes','fechamentos','avisos'][i]);});
+  // subaba "Fechamentos e cobranças" aposentada em 20/11: quem tiver o estado salvo
+  // (ou um link antigo) cai em Clientes, não numa tela em branco.
+  if(NF_aba==='fechamentos')NF_aba='clientes';
+  ['nfAbaFila','nfAbaEmit','nfAbaDiv','nfAbaCli','nfAbaAvisos'].forEach((id,i)=>{const b=document.getElementById(id);
+    if(b)b.classList.toggle('on',NF_aba===['fila','emitidas','diverg','clientes','avisos'][i]);});
   // O cadastro fiscal tem cards e lista próprios: sai antes de montar fila/notas.
   if(NF_aba==='clientes'){CFI_render();return;}
-  if(NF_aba==='fechamentos'){FC_render();return;}
   if(NF_aba==='avisos'){FC_renderAvisos();return;}
 
   const fila=NF_fila(), notas=NF_notasDoPeriodo(), divs=NF_divergencias();
@@ -3953,12 +3954,19 @@ function CFI_render(){
       +CFI_chips(CFI_slug(p.nome),CFI_FICHAS[CFI_slug(p.nome)],p.nome)
       +'<a class="btn btn-blue" style="padding:6px 13px;font-size:.82rem;text-decoration:none" href="administrativo.html" target="_blank" rel="noopener">Cadastrar →</a></div>').join('');
   }
+  h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px 15px;margin-bottom:14px">'
+    +'<button type="button" class="btn" id="cfiSync" style="width:auto;padding:8px 15px;font-size:.84rem;background:#1e40af;color:#fff;border:none">🔄 Sincronizar o administrativo</button>'
+    +'<span style="font-size:.78rem;color:#64748b;flex:1;min-width:220px">As diárias chegam sozinhas na tela do administrativo. Use este botão depois de mexer em vários clientes aqui — ele aplica as fichas no que já está lá e tira quem você desmarcou.</span></div>';
   h+='<div class="cfi-sec">📇 Cadastrados ('+lista.length+')'
     +'<a class="btn btn-blue" style="float:right;padding:5px 12px;font-size:.8rem;text-transform:none;letter-spacing:0;text-decoration:none" href="administrativo.html" target="_blank" rel="noopener">Cadastro no administrativo →</a></div>';
   h+=lista.length?lista.map(f=>{
       const c=CFI_completude(f);
-      const selo=c.pronto?'<span class="cfi-selo ok">✅ pronto</span>'
-        :'<span class="cfi-selo falta">⚠️ falta '+NF_esc(c.faltam.slice(0,2).join(', '))+(c.faltam.length>2?' +'+(c.faltam.length-2):'')+'</span>';
+      const semNota=CFI_notaRegra(f)==='nenhuma';
+      const faltam=semNota?c.faltam.filter(x=>!/cpf|cnpj/i.test(x)):c.faltam;
+      const selo=(semNota&&!faltam.length)?'<span class="cfi-selo ok">✅ sem nota</span>'
+        :c.pronto?'<span class="cfi-selo ok">✅ pronto</span>'
+        :!faltam.length?'<span class="cfi-selo ok">✅ pronto</span>'
+        :'<span class="cfi-selo falta">⚠️ falta '+NF_esc(faltam.slice(0,2).join(', '))+(faltam.length>2?' +'+(faltam.length-2):'')+'</span>';
       const doc=f.doc?CFI_formatarDoc(f.doc):'sem CPF/CNPJ';
       return '<div class="cfi-lin"><div class="cfi-info"><div class="cfi-nome">'+NF_esc(f.nome||f.id)+'</div>'
         +'<div class="cfi-sub">'+NF_esc(doc)+(f.municipio?' · '+NF_esc(f.municipio)+'/'+NF_esc(f.uf||''):'')+'</div></div>'
@@ -3967,6 +3975,8 @@ function CFI_render(){
     }).join('')
     :'<p class="nf-vazio">Nenhum cliente cadastrado ainda. Comece pelos que mais faturam, na lista acima.</p>';
   raiz.innerHTML=h;
+  const bSync=document.getElementById('cfiSync');
+  if(bSync)bSync.onclick=FC_sincronizar;
 }
 
 

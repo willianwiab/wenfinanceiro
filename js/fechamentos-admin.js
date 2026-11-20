@@ -355,6 +355,72 @@ async function FC_espelhar(regs,motivo){
   return feitos;
 }
 
+// ── Sincronizar o administrativo: UMA ação, três trabalhos ─────────────────
+// O Will decide tudo na aba 👥 Clientes. Daqui para a frente o espelho é
+// automático; este botão existe para alcançar o que ficou para trás.
+function FC_diagnostico(){
+  const fichas=(typeof CFI_lista==='function'?CFI_lista():[]);
+  const ocupados=FC_ocupados();
+  const faltam={}, sobram={}, comNota=[];
+  (R_todosOsDados||[]).forEach(r=>{
+    if(!r.cliente||!(Number(r.valorTotal)>0)||r.naoFaturavel||!WENFechamentos.noPeriodo(r))return;
+    if(ocupados.has(String(r.id)))return;
+    if(!CFI_liberavel(CFI_casar(r.cliente,fichas)))return;
+    faltam[r.cliente]=(faltam[r.cliente]||0)+1;
+  });
+  Object.values(FC_dados).forEach(f=>{
+    if(!f||!f.cliente)return;
+    if(CFI_liberavel(CFI_casar(f.cliente,fichas)))return;
+    const emitiu=f.fiscalStatus==='emitida'||f.nfSinalStatus==='emitida'||f.nfSaldoStatus==='emitida';
+    if(emitiu){comNota.push(f.cliente);return;}
+    sobram[f.cliente]=(sobram[f.cliente]||0)+1;
+  });
+  return {
+    faltam:Object.entries(faltam).map(([c,q])=>({cliente:c,qtd:q})).sort((a,b)=>b.qtd-a.qtd),
+    sobram:Object.entries(sobram).map(([c,q])=>({cliente:c,qtd:q})).sort((a,b)=>b.qtd-a.qtd),
+    comNota:[...new Set(comNota)],
+    total:Object.keys(FC_dados).length
+  };
+}
+async function FC_sincronizar(){
+  if(FC_salvando)return;FC_salvando=true;
+  const btn=document.getElementById('cfiSync'); if(btn){btn.disabled=true;btn.textContent='Sincronizando…';}
+  try{
+    if(!await CFI_carregar())throw Error('Não consegui ler o cadastro de clientes.');
+    if(!await FC_carregar())throw Error('Não consegui ler os fechamentos.');
+    const d=FC_diagnostico();
+    const nFaltam=d.faltam.reduce((a,g)=>a+g.qtd,0), nSobram=d.sobram.reduce((a,g)=>a+g.qtd,0);
+    const partes=[];
+    if(nFaltam)partes.push('• ENTRAM: '+nFaltam+' diária(s) de '+d.faltam.length+' cliente(s)\n  '
+      +d.faltam.slice(0,6).map(g=>g.cliente).join(', ')+(d.faltam.length>6?'…':''));
+    if(nSobram)partes.push('• SAEM: '+nSobram+' fechamento(s) de '+d.sobram.length+' cliente(s)\n  '
+      +d.sobram.slice(0,6).map(g=>g.cliente).join(', ')+(d.sobram.length>6?'…':''));
+    if(d.comNota.length)partes.push('• FICAM (têm nota emitida): '+d.comNota.join(', '));
+    partes.push('• Os demais são atualizados com a ficha de agora.');
+    if(!confirm('Sincronizar o administrativo com as fichas:\n\n'+partes.join('\n\n')+'\n\nConfirma?')){return;}
+
+    let entraram=0, saíram=0, atualizados=0;
+    // 1) o que falta entrar
+    for(const g of d.faltam){
+      const regs=(R_todosOsDados||[]).filter(r=>r.cliente===g.cliente&&Number(r.valorTotal)>0
+        &&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
+      if(regs.length){const f=await FC_espelhar(regs,'sincronizar');entraram+=f.length;await AV_criar(f);}
+    }
+    // 2) o que precisa sair, e 3) o resto atualiza
+    for(const c of [...new Set(Object.values(FC_dados).map(f=>f&&f.cliente).filter(Boolean))]){
+      if(!CFI_liberavel(CFI_casar(c,CFI_lista()))){const r=await FC_removerCliente(c);saíram+=r.removidos;continue;}
+      const regs=(R_todosOsDados||[]).filter(r=>r.cliente===c&&Number(r.valorTotal)>0
+        &&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
+      if(regs.length){await FC_espelhar(regs,'sincronizar');atualizados++;}
+    }
+    if(typeof CFI_render==='function')CFI_render();
+    toast('🔄 '+atualizados+' cliente(s) atualizados'+(entraram?' · '+entraram+' entraram':'')
+      +(saíram?' · '+saíram+' saíram':'')+'.',undefined,6000);
+  }catch(e){toast(e.message,'#ef4444');}
+  finally{FC_salvando=false;const b=document.getElementById('cfiSync');
+    if(b){b.disabled=false;b.textContent='🔄 Sincronizar o administrativo';}}
+}
+
 // Reaplica as fichas em TODOS os fechamentos de uma vez.
 // Existe porque a ficha só era reaplicada no instante do clique no chip: quem foi
 // marcado antes, ou numa aba que já estava aberta, ficava com o valor velho —

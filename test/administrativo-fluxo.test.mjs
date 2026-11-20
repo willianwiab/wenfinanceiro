@@ -10,15 +10,31 @@ await page.evaluate(async()=>{
  {id:'fc-a',mes:'OUT/2026',data:'10/10/2026'},
  {id:'fc-b',mes:'NOV/2026',data:'18/11/2026'}].map(r=>({...r,cliente:'Cliente Cobrança',horas:2,studio:'Estúdio A',valorTotal:1000,valorReserva:100,saldo:900,desc:'Produção audiovisual',obs:'SIGILO FOLHA'})));
  CFI_FICHAS.teste={id:'teste',nome:'Cliente Cobrança',exigeNota:false,emailFinanceiro:'cliente@example.com'};
- showMain('notas');NF_setAba('fechamentos');document.getElementById('nfFCliente').value='Cliente Cobrança';document.getElementById('nfFMesIni').value='OUT/2026';document.getElementById('nfFMesFim').value='NOV/2026';NF_montar();
+ showMain('notas');NF_setAba('clientes');NF_montar();
 });
-assert.equal(await page.locator('#fcDiarias input').count(),2);assert.equal(await page.locator('#nfFMesIni option[value="SET/2026"]').count(),0);
-assert.equal(await page.evaluate(()=>NF_fila().some(g=>g.cliente==='Cliente Cobrança')),false);
-await page.check('#fcTodas');await page.click('#fcPreparar');assert((await page.inputValue('#fcCobranca')).includes('1.800,00'));await page.fill('#fcVenc','2026-11-30');await page.click('#fcLiberar');await page.waitForFunction(()=>Object.keys(FC_dados).length===1);
-const f=await page.evaluate(async()=>{await FC_carregar();return Object.values(FC_dados)[0]});
-assert(f.id);assert.equal(f.itens.length,2);assert(!JSON.stringify(f).includes('SIGILO'));assert.equal(await page.locator('#fcDiarias input:disabled').count(),2);
+// O fechamento nasce do ESPELHO, não mais de uma tela de liberação: a subaba
+// "Fechamentos e cobranças" foi aposentada em 20/11.
+assert.equal(await page.locator('#nfAbaFech').count(),0,'a tela de liberação manual não existe mais');
+assert.equal(await page.locator('#nfFMesIni option[value="SET/2026"]').count(),0,'setembro fica fora do recorte');
+
+await page.evaluate(async()=>{
+ await FC_espelhar(R_todosOsDados.filter(r=>r.cliente==='Cliente Cobrança'),'teste');
+});
+await page.waitForFunction(()=>Object.keys(FC_dados).length===2,null,{timeout:15000});
+const todos=await page.evaluate(()=>Object.values(FC_dados));
+assert.equal(todos.length,2,'cliente mensal: um fechamento por mês (out e nov)');
+assert(todos.every(x=>x.itens.length===1));
+assert(!JSON.stringify(todos).includes('SIGILO'),'🔒 observação interna não vaza para o administrativo');
+assert(todos.every(x=>x.exigeNota===false),'a ficha dizia que não emite nota');
+assert(!JSON.stringify(todos).includes('SET/2026'),'setembro é anterior ao corte e fica fora');
+const f=todos.find(x=>x.itens[0].mes==='NOV/2026');
+assert(f&&f.id,'achei o fechamento de novembro');
+assert(f.descricaoCobranca.includes('900,00'),'a cobrança traz o saldo da diária');
+assert.equal(await page.evaluate(()=>NF_fila().some(g=>g.cliente==='Cliente Cobrança')),false,
+ 'e sai da fila de notas do Will');
+
 // Real portal path with HTTP boundary mocked: only administrative collection requested.
-const requests=[];let saved=null;const to=v=>typeof v==='string'?{stringValue:v}:typeof v==='number'?{doubleValue:v}:typeof v==='boolean'?{booleanValue:v}:Array.isArray(v)?{arrayValue:{values:v.map(to)}}:{mapValue:{fields:Object.fromEntries(Object.entries(v).map(([k,v])=>[k,to(v)]))}};
+const requests=[];let saved=null;const to=v=>v===null||v===undefined?{nullValue:null}:typeof v==='string'?{stringValue:v}:typeof v==='number'?{doubleValue:v}:typeof v==='boolean'?{booleanValue:v}:Array.isArray(v)?{arrayValue:{values:v.map(to)}}:{mapValue:{fields:Object.fromEntries(Object.entries(v).map(([k,v])=>[k,to(v)]))}};
 const doc={name:'projects/wencontasapagar/databases/(default)/documents/administrativo_fechamentos/'+f.id,fields:Object.fromEntries(Object.entries(f).map(([k,v])=>[k,to(v)])),updateTime:'2026-11-18T12:00:00.000000Z'};
 await page.route('https://securetoken.googleapis.com/**',r=>r.fulfill({json:{id_token:'test-token',refresh_token:'test-refresh',expires_in:3600}}));
 await page.route('https://identitytoolkit.googleapis.com/**',r=>r.fulfill({json:{users:[{email:'financeiro@wenprodutora.com.br',emailVerified:true}]}}));
@@ -49,7 +65,7 @@ for(const c of ['Data','Horário','Studio','Horas','Total','Recebido','Saldo','S
 await page.click('#fNF');await page.waitForSelector('#modalNFBg.open');
 assert((await page.inputValue('#nfTextoArea')).includes('21.577.617/0001-44'));
 await page.click('#nfFechar');
-assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('toast').textContent==='Envio registrado.');
+assert((await page.textContent('#editor')).includes('900,00'),'o documento mostra o saldo');await page.fill('#descricaoCobranca','Cobrança revisada para o cliente');await page.click('#enviada');await page.waitForFunction(()=>document.getElementById('toast').textContent==='Envio registrado.');
 assert(await page.locator('#toast.show').count()===1,'a confirmação aparece como toast no rodapé');
 assert.equal((await page.textContent('#aviso')).trim(),'','e a tarja não fica suja com mensagem de sucesso');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');// O portal dela toca SÓ nas duas coleções administrativas. Nenhum lançamento,
 // banco, despesa ou folha — a invariante do portal restrito.
