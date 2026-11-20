@@ -288,8 +288,9 @@ async function FC_espelhar(regs,motivo){
   regs.forEach(r=>{
     if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
     const ficha=CFI_casar(r.cliente,fichas);
-    // Todo cliente com diária entra automaticamente no administrativo.
-    //                 // a ficha diz que ela não atende
+    // O Codex desligou este filtro em 19/11 ("todo cliente entra"). O Will decidiu em
+    // 20/11 que quem está desmarcado em nota E cobrança deve SUMIR da tela dela.
+    if(!CFI_liberavel(ficha))return;
     const chave=FC_chaveGrupo(r.cliente,r,ficha);
     if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
   });
@@ -321,6 +322,43 @@ async function FC_espelhar(regs,motivo){
     }catch(e){console.warn('FC_espelhar',chave,e.message);}
   }
   return feitos;
+}
+
+// O Will desmarcou nota E cobrança de um cliente: tira o que já estava na tela dela.
+// Fechamento COM NOTA EMITIDA nao e apagado - fica, como no caso do orfao: sumir
+// calado com algo que ja virou nota fiscal seria pior que o problema.
+async function FC_removerCliente(nome){
+  if(!nome)return {removidos:0,mantidos:[]};
+  const alvo=CFI_slug(nome);
+  const meus=Object.values(FC_dados).filter(f=>f&&CFI_slug(f.cliente||'')===alvo);
+  let removidos=0; const mantidos=[];
+  for(const f of meus){
+    const emitiu=f.fiscalStatus==='emitida'||f.nfSinalStatus==='emitida'||f.nfSaldoStatus==='emitida';
+    if(emitiu){mantidos.push(f.cliente);continue;}
+    try{
+      const res=await fetch(FS_URL+'/administrativo_fechamentos/'+encodeURIComponent(f.id)+'?key='+FB_API_KEY,{method:'DELETE'});
+      if(res.ok||res.status===404){delete FC_dados[f.id];removidos++;}
+    }catch(e){console.warn('FC_removerCliente',f.id,e.message);}
+  }
+  return {removidos,mantidos};
+}
+
+// Chamado quando a ficha muda: tira da tela dela se deixou de ser atendido, e
+// traz de volta se voltou a ser.
+async function FC_aoMudarFicha(nome){
+  try{
+    if(typeof CFI_lista!=='function'||!nome)return;
+    if(!FC_ok&&!await FC_carregar())return;
+    const ficha=CFI_casar(nome,CFI_lista());
+    if(!CFI_liberavel(ficha)){
+      const r=await FC_removerCliente(nome);
+      if(r.removidos)toast('🚫 '+nome+' saiu do administrativo ('+r.removidos+' fechamento(s)).');
+      if(r.mantidos.length)toast('⚠️ '+nome+' tem nota emitida — esse fechamento ficou na tela dela.','#f59e0b',7000);
+      return;
+    }
+    const regs=(R_todosOsDados||[]).filter(r=>r.cliente===nome&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r));
+    if(regs.length){const feitos=await FC_espelhar(regs,'ficha');if(feitos.length)await AV_criar(feitos);}
+  }catch(e){console.warn('FC_aoMudarFicha',e.message);}
 }
 
 // Uma diária só pode viver em UM fechamento. Se ela aparece em outro — porque o cliente

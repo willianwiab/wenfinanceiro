@@ -107,19 +107,47 @@ assert.equal(f[0].saldo,0);
 tipos=await page.evaluate(()=>window.__avisos.map(a=>a.fields.tipo.stringValue));
 assert(tipos.includes('pago'),'aviso de pagamento confirmado');
 
-// ── 6) ⚠️ DIVERGÊNCIA ABERTA — a ficha não filtra mais quem entra ──────────
-// Até 19/11 o cliente desmarcado nos DOIS chips (🧾 Nota e 💰 Cobrança) ficava de fora.
-// Em 19/11 o Codex desligou essa checagem em FC_espelhar ("Todo cliente com diária entra
-// automaticamente no administrativo"), e os chips deixaram de decidir quem é espelhado.
-// Este teste registra o comportamento REAL de hoje. Quando o Will decidir, ou o filtro
-// volta (e este bloco vira a asserção inversa) ou os chips mudam de significado.
+// ── 6) a ficha decide quem entra — e quem SAI ─────────────────────────────
+// Decisão do Will em 20/11: "que suma da tela dela". Quem está desmarcado em nota
+// E cobrança não é espelhado; e quem já estava lá é removido quando o Will desmarca.
 await page.evaluate(()=>{CFI_FICHAS.outro={id:'outro',nome:'OUTRO',exigeNota:false,cobrancaAdministrativo:false};});
 const antes=await page.evaluate(()=>Object.keys(FC_dados).length);
 await espelhar({...diaria('X1'),cliente:'OUTRO'});
-const depois=await page.evaluate(()=>Object.keys(FC_dados).length);
-const filtra=await page.evaluate(()=>/if\(!CFI_liberavel\(ficha\)\)return;/.test(FC_espelhar.toString()));
-if(filtra)assert.equal(depois,antes,'a ficha filtra: desmarcado nos dois não espelha');
-else assert.equal(depois,antes+1,'⚠️ hoje a ficha NÃO filtra — todo cliente entra (mudança do Codex em 19/11)');
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),antes,
+  'desmarcado nos dois: não espelha');
+
+// cliente que JÁ estava na tela dela some quando o Will desmarca
+await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
+await espelhar({...diaria('S1'),cliente:'SAI FORA'});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,'entrou primeiro');
+await page.evaluate(async()=>{
+  CFI_FICHAS.saifora={id:'saifora',nome:'SAI FORA',exigeNota:false,cobrancaAdministrativo:false};
+  await FC_aoMudarFicha('SAI FORA');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'e saiu quando desmarcou os dois');
+assert(await page.evaluate(()=>window.__patches.some(p=>p.del)),'foi apagado na nuvem, não só da memória');
+
+// ...mas se já tem NOTA EMITIDA, fica: sumir calado com uma nota fiscal seria pior
+await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
+await espelhar({...diaria('S2'),cliente:'TEM NOTA'});
+await page.evaluate(async()=>{
+  const id=Object.keys(FC_dados)[0];
+  Object.assign(FC_dados[id],{fiscalStatus:'emitida',nfNumero:'555',nfData:'2026-12-01'});
+  CFI_FICHAS.temnota={id:'temnota',nome:'TEM NOTA',exigeNota:false,cobrancaAdministrativo:false};
+  await FC_aoMudarFicha('TEM NOTA');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,
+  '🔒 fechamento com nota emitida NÃO é apagado');
+
+// e religar traz de volta
+await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
+await espelhar({...diaria('S3'),cliente:'VOLTA'});
+await page.evaluate(async()=>{
+  CFI_FICHAS.volta={id:'volta',nome:'VOLTA',exigeNota:false,cobrancaAdministrativo:false};
+  await FC_aoMudarFicha('VOLTA');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'saiu');
+await page.evaluate(async()=>{
+  CFI_FICHAS.volta.exigeNota=true;
+  await FC_aoMudarFicha('VOLTA');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,'e voltou ao remarcar');
 
 // ── 7) cliente "por diária" ganha um fechamento por gravação ───────────────
 await page.evaluate(()=>{CFI_FICHAS.avulso={id:'avulso',nome:'AVULSO',exigeNota:true,fechamentoPadrao:'diaria'};});

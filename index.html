@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-6d3144d1';
+window.APP_VERSION='20261120-f1f30535';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2755,7 +2755,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=797115b3"></script>
-<script src="js/fechamentos-admin.js?v=6d0e5ef9"></script>
+<script src="js/fechamentos-admin.js?v=70784fbb"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3971,6 +3971,7 @@ async function CFI_gravarCampo(chave,nomeSugerido,mudar,rotulo){
     await BC_fbUpsert(CFI_COL,f.id,f);
     toast('✅ '+f.nome+' — '+rotulo);
     try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,rotulo,null,null);}catch(e){}
+    try{await FC_aoMudarFicha(f.nome);}catch(e){}
   }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
 }
 
@@ -4017,6 +4018,7 @@ window.CFI_alternar=async function(chave,campo,nomeSugerido){
     const rot=campo==='exigeNota'?'nota fiscal':'cobrança pelo administrativo';
     toast((f[campo]?'✅ ':'🚫 ')+f.nome+' — '+rot+(f[campo]?' ligada':' desligada'));
     try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,'Padrão: '+rot+' = '+(f[campo]?'sim':'não'),null,null);}catch(e){}
+    try{await FC_aoMudarFicha(f.nome);}catch(e){}
   }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
 };
 
