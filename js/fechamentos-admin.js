@@ -43,12 +43,20 @@ function FC_lote(){
 let FC_loteFora=new Set();   // clientes que o Will desmarcou nesta tela
 function FC_loteHTML(){
   const grupos=FC_lote();
+  // Aviso de quem está na tela dela sem dever estar. Vem ANTES do atalho de "nada
+  // solto": é justamente quando não há nada a espelhar que a limpeza costuma faltar.
+  const na=FC_naoAtendidos();
+  const avisoLimpar=na.length
+    ? `<div style="background:#fff7ed;border:1px solid #fed7aa;color:#92400e;border-radius:9px;padding:11px 14px;margin:10px 0">
+        ⚠️ <b>${na.reduce((a,g)=>a+g.qtd,0)} fechamento(s)</b> de ${na.length} cliente(s) estão na tela do administrativo mas foram desmarcados em nota <b>e</b> cobrança.
+        <button type="button" class="btn" id="fcLimpar" style="width:auto;padding:6px 13px;font-size:.8rem;margin-left:8px">🧹 Tirar de lá</button></div>`
+    : '';
   const chaveTudo=`<label class="nf-item" style="margin:10px 0"><input type="checkbox" id="fcLoteTudo" ${FC_loteTudo?'checked':''}>
      <span><b>Carregar tudo desde outubro/2026</b> — ignora o recorte de meses acima. Use uma vez, para trazer o que já existia.</span></label>`;
-  if(!grupos.length)return chaveTudo+'<p class="nf-vazio">✅ Nada solto'+(FC_loteTudo?'':' neste recorte')+' — toda diária dos clientes atendidos pelo administrativo já está espelhada.</p>';
+  if(!grupos.length)return avisoLimpar+chaveTudo+'<p class="nf-vazio">✅ Nada solto'+(FC_loteTudo?'':' neste recorte')+' — toda diária dos clientes atendidos pelo administrativo já está espelhada.</p>';
   const marcados=grupos.filter(g=>!FC_loteFora.has(g.cliente));
   const total=marcados.reduce((a,g)=>a+g.valor,0), diarias=marcados.reduce((a,g)=>a+g.regs.length,0);
-  return `<div class="nf-resumo"><b>Diárias que ainda não chegaram no administrativo</b><br>
+  return avisoLimpar+`<div class="nf-resumo"><b>Diárias que ainda não chegaram no administrativo</b><br>
     Daqui para a frente isso acontece sozinho, no momento do lançamento. Esta lista é para o que já existia antes. Desmarque quem não entra —
     quem a ficha tirou do caminho (não exige nota <b>e</b> não é cobrado pelo administrativo) já não aparece aqui.</div>
    <div id="fcLoteLista">${grupos.map(g=>{
@@ -80,6 +88,7 @@ function FC_render(){
     el.checked?FC_loteFora.delete(el.dataset.cli):FC_loteFora.add(el.dataset.cli);FC_render();});
   const bl=document.getElementById('fcLiberarLote');if(bl)bl.onclick=FC_liberarLote;
   const bt=document.getElementById('fcLoteTudo');if(bt)bt.onchange=()=>{FC_loteTudo=bt.checked;FC_render();};
+  const bLimpa=document.getElementById('fcLimpar');if(bLimpa)bLimpa.onclick=FC_limparNaoAtendidos;
   root.querySelectorAll('#fcDiarias input').forEach(el=>el.onchange=()=>el.checked?FC_selecionados.add(el.dataset.id):FC_selecionados.delete(el.dataset.id));
   const all=document.getElementById('fcTodas');if(all)all.onchange=()=>root.querySelectorAll('#fcDiarias input:not(:disabled)').forEach(el=>{el.checked=all.checked;el.onchange();});
   const btn=document.getElementById('fcPreparar');if(btn)btn.onclick=()=>{
@@ -322,6 +331,33 @@ async function FC_espelhar(regs,motivo){
     }catch(e){console.warn('FC_espelhar',chave,e.message);}
   }
   return feitos;
+}
+
+// Quem está na tela dela hoje e NÃO deveria estar: desmarcados nos dois chips.
+// A remoção automática só vale dali para a frente; isto limpa o que ficou para trás.
+function FC_naoAtendidos(){
+  const fichas=(typeof CFI_lista==='function'?CFI_lista():[]), por={};
+  Object.values(FC_dados).forEach(f=>{
+    if(!f||!f.cliente)return;
+    if(CFI_liberavel(CFI_casar(f.cliente,fichas)))return;
+    const emitiu=f.fiscalStatus==='emitida'||f.nfSinalStatus==='emitida'||f.nfSaldoStatus==='emitida';
+    const g=por[f.cliente]=por[f.cliente]||{cliente:f.cliente,qtd:0,valor:0,comNota:0};
+    g.qtd++; g.valor+=Number(f.valor)||0; if(emitiu)g.comNota++;
+  });
+  return Object.values(por).sort((a,b)=>b.valor-a.valor);
+}
+async function FC_limparNaoAtendidos(){
+  const lista=FC_naoAtendidos();
+  if(!lista.length){toast('Nada a limpar — todo mundo na tela dela está marcado.');return;}
+  const total=lista.reduce((a,g)=>a+g.qtd,0), comNota=lista.reduce((a,g)=>a+g.comNota,0);
+  const texto='Tirar da tela do administrativo:\n\n'
+    +lista.map(g=>'• '+g.cliente+' — '+g.qtd+' fechamento(s) · '+fmt(g.valor)+(g.comNota?' ('+g.comNota+' com nota emitida, FICA)':'')).join('\n')
+    +'\n\n'+(total-comNota)+' de '+total+' serão apagados.'+(comNota?' Os com nota emitida permanecem.':'')+'\n\nConfirma?';
+  if(!confirm(texto))return;
+  let n=0;
+  for(const g of lista){const r=await FC_removerCliente(g.cliente);n+=r.removidos;}
+  FC_render();
+  toast('🧹 '+n+' fechamento(s) saíram do administrativo.');
 }
 
 // O Will desmarcou nota E cobrança de um cliente: tira o que já estava na tela dela.
