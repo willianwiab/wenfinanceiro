@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-30ebedb3';
+window.APP_VERSION='20261120-ca9d401a';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1950,7 +1950,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <h2 style="margin:0">Fiscal e Cobranças</h2>
       <p class="nf-sub">A partir de outubro de 2026. Controle notas, prepare cobranças com ou sem NF e selecione diárias para fechar com o cliente. O registro de nota não realiza sua emissão no portal fiscal.</p>
     </div>
-    <button class="btn no-print" style="width:auto" onclick="NFIMP_abrir()">📥 Importar da Prefeitura</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn no-print" style="width:auto" onclick="NFIMP_abrir()">📥 Importar da Prefeitura</button><button class="btn no-print" style="width:auto" onclick="NFR_abrir()">🧾 Números reais e CNPJ</button></div>
   </div>
   <div class="nf-filtros no-print">
     <div class="fg"><label>Cliente</label><select id="nfFCliente" onchange="NF_montar()"><option value="">— Todos —</option></select></div>
@@ -9808,6 +9808,7 @@ AUTH_bootstrap();
 <script src="js/clientes-fiscais.js?v=0e930ae0"></script>
 <script src="js/notas-prefeitura.js?v=b63156f8"></script>
 <script src="js/notas-importar.js?v=9177dfad"></script>
+<script src="js/notas-reais.js?v=34ec9222"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>
