@@ -8,6 +8,10 @@
     return i>=0&&/^\d{4}$/.test(a[1])?a[1]+'-'+String(i+1).padStart(2,'0'):'';
   }
   const noPeriodo=r=>mesChave(r.mes)>='2026-10';
+  const MESES_EXT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const mesExtenso=c=>/^\d{4}-\d{2}$/.test(String(c||''))?MESES_EXT[Number(c.slice(5,7))-1]+' de '+c.slice(0,4):'';
+  const dataCurta=v=>String(v||'').slice(0,5);
+  const dataBR=iso=>/^\d{4}-\d{2}-\d{2}$/.test(String(iso||''))?iso.split('-').reverse().join('/'):'';
   // O vencimento NÃO é digitado de novo aqui: ele vem do lançamento do Receber, que é
   // onde o Will define a data. '-' e vazio contam como sem data.
   function vencIso(v){
@@ -80,7 +84,39 @@
     const saldo=(cents(valor)-cents(recebido))/100;
     const linhas=itens.map(r=>[campos.includes('data')?[r.data,r.mes].filter(Boolean).join(' / '):'',campos.includes('horas')?r.horas+'h':'',campos.includes('studio')?r.studio:'',campos.includes('descricao')?r.descricao:''].filter(Boolean).join(' · ')||'Serviço audiovisual');
     const descricaoFiscal='Prestação de serviços de produção audiovisual.\n'+textoResumo(itens)+'.\n'+linhas.join('\n');
-    const descricaoCobranca=linhas.map((s,i)=>s+' — '+money(itens[i].valor)).join('\n')+'\n\nTotal: '+money(valor)+'\nRecebido: '+money(recebido)+'\nSaldo a pagar: '+money(saldo);
+    const grupos={};
+    itens.forEach((r,i)=>{const c=mesChave(r.mes)||'';(grupos[c]=grupos[c]||[]).push({r,i});});
+    const corpo=Object.keys(grupos).sort().map(c=>{
+      const linha=grupos[c].map(({r})=>{
+        const p=[];
+        if(campos.includes('data')&&dataCurta(r.data))p.push(dataCurta(r.data));
+        if(campos.includes('horas')&&r.horas)p.push(r.horas+'h');
+        if(campos.includes('studio')&&r.studio)p.push(r.studio);
+        if(r.edicoes)p.push(r.edicoes+(r.edicoes===1?' edição':' edições'));
+        return '  🎬 '+(p.join(' · ')||'Serviço audiovisual')+' — '+money(r.valor);
+      }).join('\n');
+      const sub=grupos[c].reduce((a,{r})=>a+cents(r.valor),0)/100;
+      const titulo=mesExtenso(c);
+      return (titulo?'📅 *'+titulo+'*\n':'')+linha
+        +(grupos[c].length>1?'\n  _Subtotal: '+money(sub)+'_':'');
+    }).join('\n\n');
+
+    const venc=itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'';
+    const quitado=saldo<=0;
+    const descricaoCobranca=
+      'Olá! Segue o fechamento das gravações.\n\n'+corpo+
+      '\n\n━━━━━━━━━━━━━━━━━━\n'+
+      '💰 Total: *'+money(valor)+'*\n'+
+      (recebido>0?'✅ Já recebido: '+money(recebido)+'\n':'')+
+      (quitado?'✅ *Tudo quitado — obrigado!*':'🔴 Saldo a pagar: *'+money(saldo)+'*')+
+      (venc&&!quitado?'\n📆 Vencimento: *'+dataBR(venc)+'*':'')+
+      (()=>{ if(quitado)return '';
+        const cond=CONDICOES[ficha.condicaoPagamento]?ficha.condicaoPagamento:'avista';
+        if(cond==='avista')return '';
+        const c=cobranca({valor,recebido},cond);
+        return '\n\n💳 '+c.rotulo+'\n➡️ *Agora: '+money(c.cobrarAgora)+'* ('+c.proxima+')';
+      })()+
+      (quitado?'':'\n\n🏦 *PIX:* wenprodutora@gmail.com\n_WEN Produtora Ltda · CNPJ 21.577.617/0001-44_');
     // Não copiar a ficha ou lançamento inteiro: eles podem conter informação interna.
     const clienteFiscal={};
     for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro','envioPreferido'])clienteFiscal[k]=String(ficha[k]||'');

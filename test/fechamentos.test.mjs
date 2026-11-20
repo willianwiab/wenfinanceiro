@@ -158,3 +158,60 @@ console.log('Resumo para a nota (diárias, horas, edições) OK');
   assert.equal(criar([base], {condicaoPagamento:'xpto'}).condicao, 'avista', 'valor inválido vira à vista');
 }
 console.log('Condição de pagamento (o que cobrar agora) OK');
+
+// ── A mensagem que vai para o CLIENTE ──────────────────────────────────────
+// Will (20/11): "pode ser algo mais personalizado, uns ícones, bem organizado".
+// Antes saía "22/10 / OUT/2026 · 2h · STUDIO A · 1 GRAVAÇÃO DE 2H" — data e hora
+// repetidas na mesma linha, sem agrupamento e sem como pagar.
+{
+  const { money } = require('../js/fechamentos.js');
+  const d = (id, data, mes, horas, studio, valor, reserva = 0, edicoes = 0) =>
+    ({id, cliente:'CARTPANDA', data, mes, horas, studio, valorTotal:valor,
+      valorReserva:reserva, qtdEdicao:edicoes, vencimento:'15/11/2026', desc:''});
+
+  const m = criar([d('a','22/10','OUT/2026',2,'STUDIO A',5400,5100),
+                   d('b','15/10','OUT/2026',2,'STUDIO B',2400,0,2),
+                   d('c','05/11','NOV/2026',3,'STUDIO A',2200)], {}).descricaoCobranca;
+
+  assert(!m.includes('22/10 / OUT/2026'), 'a data não repete o mês ao lado');
+  assert(m.includes('📅 *Outubro de 2026*') && m.includes('📅 *Novembro de 2026*'),
+    'agrupa por mês, com o nome por extenso');
+  assert(m.includes('🎬 22/10 · 2h · STUDIO A — '+money(5400)), 'a linha da diária');
+  assert(m.includes('2 edições'), 'edição aparece quando existe');
+  assert(m.includes('_Subtotal: '+money(7800)+'_'), 'mês com mais de uma diária ganha subtotal');
+  assert(!/Novembro[\s\S]*Subtotal/.test(m), 'mês com uma diária só não ganha subtotal');
+  assert(m.includes('💰 Total: *'+money(10000)+'*'));
+  assert(m.includes('✅ Já recebido: '+money(5100)));
+  assert(m.includes('🔴 Saldo a pagar: *'+money(4900)+'*'));
+  assert(m.includes('📆 Vencimento: *15/11/2026*'), 'vencimento em dd/mm/aaaa, não ISO');
+  assert(m.includes('PIX'), 'como pagar vai junto');
+
+  // nada recebido: não mostra a linha de "já recebido"
+  const zero = criar([d('a','22/10','OUT/2026',2,'STUDIO A',5400)], {}).descricaoCobranca;
+  assert(!zero.includes('Já recebido'), 'sem pagamento, não existe linha de recebido');
+
+  // quitado: muda o tom e some a cobrança
+  const pago = criar([d('a','22/10','OUT/2026',2,'STUDIO A',5400,5400)], {}).descricaoCobranca;
+  assert(pago.includes('✅ *Tudo quitado — obrigado!*'));
+  assert(!pago.includes('Saldo a pagar'), 'quitado não pede dinheiro');
+  assert(!pago.includes('PIX'), 'nem manda o PIX');
+  assert(!pago.includes('Vencimento'), 'nem cobra data');
+
+  // 50/50: diz o que pagar AGORA, não o saldo inteiro
+  const meio = criar([d('a','22/10','OUT/2026',2,'STUDIO A',10000)], {condicaoPagamento:'sinal50'}).descricaoCobranca;
+  assert(meio.includes('💳 50% de sinal + 50%'));
+  assert(meio.includes('➡️ *Agora: '+money(5000)+'* (Sinal (50%))'), 'pede a parcela, não o total');
+  assert(meio.includes('🔴 Saldo a pagar: *'+money(10000)+'*'), 'e o saldo total continua visível');
+  assert(!criar([d('a','22/10','OUT/2026',2,'STUDIO A',10000)], {}).descricaoCobranca.includes('💳'),
+    'à vista não polui a mensagem com condição');
+
+  // sem vencimento no Receber: não inventa data
+  const semVenc = criar([{...d('a','22/10','OUT/2026',2,'STUDIO A',5400), vencimento:''}], {}).descricaoCobranca;
+  assert(!semVenc.includes('Vencimento'), 'sem data no Receber, nenhuma data na cobrança');
+
+  // os campos escolhidos pelo Will continuam mandando
+  const soData = criar([d('a','22/10','OUT/2026',2,'STUDIO A',5400)], {}, ['data']).descricaoCobranca;
+  assert(soData.includes('🎬 22/10 — '+money(5400)), 'só data quando só data foi pedida');
+  assert(!soData.includes('STUDIO A'));
+}
+console.log('Mensagem de cobrança (ícones, meses, como pagar) OK');
