@@ -130,6 +130,7 @@
     // Não copiar a ficha ou lançamento inteiro: eles podem conter informação interna.
     const clienteFiscal={};
     for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro','envioPreferido'])clienteFiscal[k]=String(ficha[k]||'');
+    clienteFiscal.cobrancaAdministrativo=ficha.cobrancaAdministrativo!==false;
     return {cliente:regs[0].cliente,clienteFiscal,itens,lancamentoIds:itens.map(r=>r.id),valor,recebido,saldo,
       exigeNota:regraNota.emite,notaRegra:chaveRegra,notaQuando:regraNota.quando,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
       fiscalStatus:regraNota.emite?'pendente':'nao_solicitada',cobrancaStatus:saldo===0?'pago':'pendente',

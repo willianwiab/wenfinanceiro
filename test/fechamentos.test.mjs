@@ -229,3 +229,15 @@ console.log('Mensagem de cobrança (ícones, meses, como pagar) OK');
   assert.equal(cobranca({valor:11250, recebido:4000}, 'mensal').cobrarAgora, 7250);
 }
 console.log('Condição "fechamento mensal" OK');
+
+// Quem cobra viaja para a tela dela (20/11). Sem isto, um cliente com a cobrança
+// desligada aparecia igualzinho aos outros e a Natália podia cobrar sem dever.
+{
+  const f = criar([base], {cobrancaAdministrativo: false});
+  assert.equal(f.clienteFiscal.cobrancaAdministrativo, false, 'a tela dela precisa saber');
+  assert.equal(criar([base], {}).clienteFiscal.cobrancaAdministrativo, true, 'sem ficha, ela cobra');
+  assert.equal(criar([base], {cobrancaAdministrativo: true}).clienteFiscal.cobrancaAdministrativo, true);
+  // e continua sem vazar nada interno
+  assert(!JSON.stringify(f).includes('interno'));
+}
+console.log('Quem cobra chega no fechamento OK');

@@ -239,6 +239,8 @@ function linha(f){
    :f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
    :f.cobrancaStatus==='enviada'?'<span class="nf-pill env">cobrança enviada</span>'
    :'<span class="nf-pill pend">a cobrar</span>';
+ const semCobranca=(f.clienteFiscal||{}).cobrancaAdministrativo===false;
+ const selocob=semCobranca?'<span class="nf-pill erro">não cobrar — é o Will quem cobra</span>':'';
  const selonf=!f.exigeNota?'<span class="nf-pill">NF não solicitada</span>'
    :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
    :'<span class="nf-pill pend">nota pendente</span>';
@@ -252,7 +254,7 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${selo}${selonf}</div></div>`
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${semCobranca?'':selo}${selocob}${selonf}</div></div>`
   +`<div class="nf-val">${cash(f.valor)}${Number(f.saldo)>0&&Number(f.saldo)!==Number(f.valor)
       ?`<div class="nf-de">saldo ${cash(f.saldo)}</div>`:''}</div>`
   +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
@@ -550,6 +552,7 @@ function abrir(id){
   </div>
 
   <div class="ed-painel" data-painel="cobranca" hidden>
+   ${(f.clienteFiscal||{}).cobrancaAdministrativo===false?'<div class="emitir espera">🚫 <b>Este cliente não é cobrado pelo administrativo.</b> Quem cobra é o Will — esta aba é só para consulta.</div>':''}
    <label>Mensagem de cobrança<textarea id="descricaoCobranca" rows="9">${esc(cobrancaSemSaudacao(f.descricaoCobranca,f.cliente))}</textarea></label>
    <div class="actions">${acoesEnvio(f)}<button type="button" id="copiarCobranca">📋 Copiar</button><button type="button" id="pdf">🖨 PDF</button></div>
    <hr>
