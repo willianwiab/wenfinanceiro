@@ -1,119 +1,83 @@
-// Cadastro fiscal — a TELA (Fase A2, 18/11/2026). Roda 100% em ?mock=1.
+// Aba 👥 Clientes do WEN Financeiro, depois que o CADASTRO saiu dela (20/11, pedido
+// do Will: "pode desfazer o cadastro pelo sistema financeiro").
 //
-// A promessa que mais importa aqui: a aba inteira NÃO ESCREVE em `lancamentos`. O cadastro é
-// coleção nova; o Receber é só leitura. O teste intercepta a rede e prova isso.
-import { chromium } from 'playwright';
-const URL = process.argv[2];
-if (!URL) { console.error('uso: node test/clientes-fiscais-tela.test.mjs <url-com-?mock=1>'); process.exit(2); }
-const browser = await chromium.launch();
-const page = await browser.newPage();
-const erros = [];
-page.on('pageerror', e => erros.push('pageerror: ' + (e?.message || e)));
-await page.goto(URL, { waitUntil: 'networkidle', timeout: 45000 });
-await page.waitForTimeout(3200);
+// O que SOBROU aqui: ver quem tem ficha, quem não tem, e decidir por cliente —
+// 🧾 regra da nota, 💰 quem cobra, 💳 condição de pagamento.
+// O que SAIU: o formulário. Quem preenche CNPJ/contato é a Natália, no administrativo
+// (coberto por ficha-no-fiscal.test.mjs).
+//
+// Rodar:  node test/clientes-fiscais-tela.test.mjs "http://localhost:8877/index.html?mock=1"
+import {chromium} from 'playwright';import assert from 'node:assert/strict';
+const URL=process.argv[2];
+if(!URL){console.error('uso: node test/clientes-fiscais-tela.test.mjs <url-com-?mock=1>');process.exit(2);}
+const browser=await chromium.launch(),page=await browser.newPage();
+const erros=[];page.on('pageerror',e=>erros.push(e.message));page.on('dialog',d=>d.accept());
+try{
+await page.goto(URL);await page.waitForTimeout(1500);
 
-const r = await page.evaluate(async () => {
-  const out = {};
-  // vigia da rede: qualquer escrita em lancamentos é falha
-  out.escritasNoReceber = [];
-  const fetchReal = window.fetch;
-  window.fetch = function (u, o) {
-    const url = String(u || ''), m = ((o && o.method) || 'GET').toUpperCase();
-    if (/\/lancamentos/.test(url) && m !== 'GET') out.escritasNoReceber.push(m + ' ' + url.slice(0, 80));
-    return fetchReal.apply(this, arguments);
-  };
-
-  const b = [...document.querySelectorAll('.nav-main button')].find(x => /Notas Fiscais/.test(x.textContent));
-  showMain('notas', b);
-  await new Promise(r => setTimeout(r, 1200));
-
-  out.temAba = !!document.getElementById('nfAbaCli');
-
-  // dados: dois clientes com faturamento no ano corrente
-  const ano = String(new Date().getFullYear());
-  const mes = R_mesAtual && R_mesAtual.endsWith('/' + ano) ? R_mesAtual : ('JAN/' + ano);
-  // isola: o mock traz CLIENTE TESTE A/B/C, que entrariam nas pendências e embaralhariam a prova
-  R_todosOsDados.length = 0;
-  R_todosOsDados.push(
-    { id: 'cfi1', cliente: 'CLIENTE GRANDE', mes, data: '05/01', horas: 4, valorTotal: 9000, valorReserva: 0, saldo: 9000, studio: 'STUDIO A' },
-    { id: 'cfi2', cliente: 'CLIENTE PEQUENO', mes, data: '06/01', horas: 2, valorTotal: 1500, valorReserva: 0, saldo: 1500, studio: 'STUDIO A' });
-  CFI_FICHAS = {}; CFI_ok = true;
-
-  NF_setAba('clientes');
-  await new Promise(r => setTimeout(r, 500));
-  const txt = () => document.getElementById('nfConteudo').innerText;
-  out.listaPendencias = [...document.querySelectorAll('#nfConteudo .cfi-lin.pend .cfi-nome')].map(e => e.textContent);
-  out.maiorPrimeiro = out.listaPendencias[0];
-  out.cardSemCadastro = [...document.querySelectorAll('#nfCards .card-p')]
-    .find(c => /Sem cadastro/.test(c.querySelector('label').textContent))?.querySelector('.val')?.textContent;
-
-  // abre pelo botão "Cadastrar" da pendência → nome vem preenchido
-  // (a linha também tem os chips 🧾/💰; o Cadastrar é o azul)
-  document.querySelector('#nfConteudo .cfi-lin.pend .btn-blue').click();
-  await new Promise(r => setTimeout(r, 300));
-  out.modalAbriu = document.getElementById('cfiModalBg').classList.contains('open');
-  out.nomeVeioPreenchido = document.getElementById('cfiF_nome').value;
-  out.statusInicial = document.getElementById('cfiStatus').innerText;
-
-  // CNPJ inválido marca em vermelho e barra o salvar
-  const setar = (k, v) => { const el = document.getElementById('cfiF_' + k); el.value = v; el.dispatchEvent(new Event('input')); };
-  setar('doc', '21577617000145');
-  await new Promise(r => setTimeout(r, 150));
-  out.docRuimMarcado = document.getElementById('cfiF_doc').classList.contains('ruim');
-  CFI_salvar();
-  await new Promise(r => setTimeout(r, 300));
-  out.barrouDocRuim = Object.keys(CFI_FICHAS).length === 0;
-
-  // preenche de verdade
-  [['doc','21577617000144'],['razaoSocial','CLIENTE GRANDE LTDA'],['logradouro','Rua Haddock Lobo'],
-   ['numero','1307'],['bairro','Jardins'],['municipio','São Paulo'],['uf','SP'],['cep','01414-000'],
-   ['emailFinanceiro','financeiro@clientegrande.com.br']].forEach(([k,v]) => setar(k, v));
-  await new Promise(r => setTimeout(r, 200));
-  out.statusPronto = document.getElementById('cfiStatus').innerText;
-
-  await CFI_salvar();
-  await new Promise(r => setTimeout(r, 600));
-  out.salvou = Object.keys(CFI_FICHAS).length;
-  const f = Object.values(CFI_FICHAS)[0];
-  out.ficha = { id: f.id, nome: f.nome, doc: f.doc, uf: f.uf, cep: f.cep, pronto: CFI_completude(f).pronto };
-  out.guardouNoCache = !!localStorage.getItem('wen_clientes_fiscais');
-
-  NF_setAba('clientes');
-  await new Promise(r => setTimeout(r, 400));
-  out.pendenciasDepois = [...document.querySelectorAll('#nfConteudo .cfi-lin.pend .cfi-nome')].map(e => e.textContent);
-  out.cadastradosNaTela = [...document.querySelectorAll('#nfConteudo .cfi-lin:not(.pend) .cfi-nome')].map(e => e.textContent);
-  out.seloPronto = /pronto/.test(txt());
-
-  // as outras abas continuam funcionando
-  NF_setAba('fila'); await new Promise(r => setTimeout(r, 400));
-  out.filaAindaMonta = !!document.getElementById('nfConteudo').innerHTML;
-  window.fetch = fetchReal;
-  return out;
+const antesDoReceber=await page.evaluate(async()=>{
+  await MOD_umaVez('notas-fiscais',NF_carregar);await MOD_umaVez('clientes-fiscais',CFI_carregar);
+  window.__salvos=[];window.BC_fbUpsert=async(col,id,doc)=>{window.__salvos.push({col,id,doc});};
+  CFI_FICHAS={};
+  ['CLIENTE GRANDE','CLIENTE PEQUENO'].forEach((c,i)=>R_todosOsDados.push({id:'cf'+i,cliente:c,
+    mes:'NOV/2026',data:'1'+i+'/11/2026',horas:2,studio:'STUDIO A',
+    valorTotal:(i?1000:9000),valorReserva:0,saldo:(i?1000:9000),desc:'Videocast'}));
+  showMain('notas');NF_setAba('clientes');
+  await new Promise(r=>setTimeout(r,400));
+  return JSON.stringify(R_todosOsDados.length);
 });
-await browser.close();
+assert(antesDoReceber);
 
-const f = [];
-const eq = (o, e, q) => { if (JSON.stringify(o) !== JSON.stringify(e)) f.push(`${q}: esperado ${JSON.stringify(e)}, veio ${JSON.stringify(o)}`); };
+// ── o formulário de cadastro NÃO existe mais aqui ──────────────────────────
+assert.equal(await page.locator('#cfiModalBg').count(),0,'o modal de cadastro saiu');
+for(const id of ['cfiF_doc','cfiF_razaoSocial','cfiF_contatoFinanceiro'])
+  assert.equal(await page.locator('#'+id).count(),0,'o campo '+id+' saiu do financeiro');
+assert.equal(await page.evaluate(()=>typeof window.CFI_abrir),'undefined','CFI_abrir não existe mais');
+assert.equal(await page.evaluate(()=>typeof window.CFI_salvar),'undefined','CFI_salvar também não');
 
-if (!r.temAba) f.push('o botão 👥 Clientes não está na aba Notas Fiscais');
-eq(r.listaPendencias, ['CLIENTE GRANDE', 'CLIENTE PEQUENO'], 'pendências do maior para o menor');
-eq(r.maiorPrimeiro, 'CLIENTE GRANDE', 'quem mais fatura vem primeiro');
-eq(r.cardSemCadastro, '2', 'o card conta os sem cadastro');
-if (!r.modalAbriu) f.push('o modal não abriu');
-eq(r.nomeVeioPreenchido, 'CLIENTE GRANDE', 'o nome vem preenchido da pendência');
-if (!/falta/.test(r.statusInicial)) f.push('ficha nova tem que dizer o que falta');
-if (!r.docRuimMarcado) f.push('CNPJ inválido tem que marcar o campo em vermelho');
-if (!r.barrouDocRuim)  f.push('🔴 salvou com CNPJ inválido — tinha que barrar');
-if (!/com CPF\/CNPJ/.test(r.statusPronto)) f.push('com o documento válido o selo tem que dizer "com CPF/CNPJ"');
-eq(r.salvou, 1, 'salvou a ficha');
-eq(r.ficha, { id: 'clientegrande', nome: 'CLIENTE GRANDE', doc: '21577617000144', uf: 'SP', cep: '01414000', pronto: true }, 'a ficha gravada');
-if (!r.guardouNoCache) f.push('tem que guardar no cache local (padrão do BC_)');
-eq(r.pendenciasDepois, ['CLIENTE PEQUENO'], 'cadastrar tira da lista de pendências');
-eq(r.cadastradosNaTela, ['CLIENTE GRANDE'], 'e aparece na lista de cadastrados');
-if (!r.seloPronto) f.push('o selo "pronto" não apareceu na lista');
-if (!r.filaAindaMonta) f.push('a aba A faturar parou de montar');
-eq(r.escritasNoReceber, [], '🔴 NÃO pode escrever em lancamentos — o Receber é só leitura');
-if (erros.length) f.push('erros de página: ' + erros.join(' | '));
+// ── mas a lista continua mostrando quem ainda não tem ficha ────────────────
+const pend=()=>page.$$eval('#nfConteudo .cfi-lin.pend .cfi-nome',e=>e.map(x=>x.textContent));
+assert.deepEqual(await pend(),['CLIENTE GRANDE','CLIENTE PEQUENO'],
+  'quem faturou e não tem ficha aparece, do maior para o menor');
 
-if (f.length) { console.error('❌ clientes-fiscais-tela\n   - ' + f.join('\n   - ')); process.exit(1); }
-console.log('✅ clientes-fiscais-tela: cadastra, valida, tira das pendências — e não toca no Receber');
+// e manda para onde o cadastro agora vive
+const link=page.locator('#nfConteudo .cfi-lin.pend a').first();
+assert.equal(await link.getAttribute('href'),'administrativo.html','o botão leva ao administrativo');
+assert.equal(await link.getAttribute('target'),'_blank');
+
+// ── as DECISÕES do Will continuam aqui, e funcionam ────────────────────────
+const linha='#nfConteudo .cfi-lin:has(.cfi-nome:text-is("CLIENTE GRANDE"))';
+assert.equal(await page.locator(linha+' .cfi-cond.nota').count(),1,'🧾 regra da nota');
+assert.equal(await page.locator(linha+' .cfi-chip').count(),1,'💰 quem cobra');
+assert.equal(await page.locator(linha+' .cfi-cond:not(.nota)').count(),1,'💳 condição');
+
+await page.selectOption(linha+' .cfi-cond.nota','duas');
+await page.waitForFunction(()=>window.__salvos.length===1);
+let f=await page.evaluate(()=>window.__salvos.at(-1).doc);
+assert.equal(f.notaRegra,'duas');
+assert.equal(f.notaSinal,'separado','mantém o campo antigo coerente');
+assert.equal(f.exigeNota,true);
+assert.equal(f.nome,'CLIENTE GRANDE','a ficha nasce com o nome do Receber');
+
+await page.selectOption(linha+' .cfi-cond:not(.nota)','mensal');
+await page.waitForFunction(()=>window.__salvos.length===2);
+assert.equal(await page.evaluate(()=>window.__salvos.at(-1).doc.condicaoPagamento),'mensal');
+
+await page.click(linha+' .cfi-chip');
+await page.waitForFunction(()=>window.__salvos.length===3);
+assert.equal(await page.evaluate(()=>window.__salvos.at(-1).doc.cobrancaAdministrativo),false);
+
+// ── nada disso tocou no Receber ────────────────────────────────────────────
+assert(await page.evaluate(()=>window.__salvos.every(s=>s.col==='clientes_fiscais')),
+  '🔒 só o cadastro fiscal foi gravado');
+assert.equal(await page.evaluate(()=>R_todosOsDados.filter(r=>r.cliente==='CLIENTE GRANDE').length),1);
+
+// ── as outras abas continuam de pé ─────────────────────────────────────────
+for(const aba of ['fila','emitidas','fechamentos','avisos']){
+  await page.evaluate(a=>NF_setAba(a),aba);await page.waitForTimeout(250);
+  assert(await page.evaluate(()=>!!document.getElementById('nfConteudo').innerHTML),'aba '+aba+' monta');
+}
+
+assert.deepEqual(erros,[]);
+console.log('✅ clientes-fiscais-tela: cadastro saiu do financeiro; lista e decisões do Will ficaram');
+}finally{await browser.close();}
