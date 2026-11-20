@@ -467,7 +467,35 @@ function quandoEmitir(f){
 function blocoFiscal(f){
  const q=quandoEmitir(f);
  const aviso=q?`<div class="emitir ${q.ok?'ok':'espera'}">${q.ok?'✅':'⏳'} ${q.txt}</div>`:'';
- return aviso+blocoFiscalCampos(f);
+ return aviso+blocoNotas(f)+blocoFiscalCampos(f);
+}
+// Seleção das diárias que entram NESTA nota. Pedido do Will (20/11): "quero a opção
+// de selecionar as quais quero fazer a mesma nota". O que sobra fica para a próxima.
+let notaSel=new Set();
+function blocoNotas(f){
+ const livres=WENFechamentos.diariasLivres(f);
+ const jaFeitas=(f.notasEmitidas||[]);
+ const linha=r=>{
+  const marcada=notaSel.has(String(r.id));
+  return `<label class="nf-item${marcada?'':' off'}"><input type="checkbox" data-nota="${esc(r.id)}" ${marcada?'checked':''}>
+    <span>${esc(r.data||'')} · ${r.horas}h · ${esc((r.studio||'').toUpperCase())} — ${cash(r.valor)}</span></label>`;
+ };
+ const total=livres.filter(r=>notaSel.has(String(r.id))).reduce((a,r)=>a+Math.round((Number(r.valor)||0)*100),0)/100;
+ return `<div class="notas-bloco">
+  ${jaFeitas.length?`<div class="notas-feitas"><b>Notas já emitidas</b>${jaFeitas.map(n=>
+    `<div class="nota-feita"><span>nº ${esc(n.numero)} · ${esc(String(n.data||'').split('-').reverse().join('/'))}</span>
+     <span class="muted">${(n.ids||[]).length} diária(s)</span><b>${cash(n.valor)}</b></div>`).join('')}</div>`:''}
+  ${livres.length?`
+   <div class="notas-top"><b>🧾 Diárias desta nota</b>
+     <button type="button" id="notaTodas" class="mini">${livres.every(r=>notaSel.has(String(r.id)))?'Desmarcar todas':'Marcar todas'}</button></div>
+   <div class="notas-itens">${livres.map(linha).join('')}</div>
+   <div class="notas-rod">Valor desta nota: <b>${cash(total)}</b>
+     <span class="muted">· o que ficar desmarcado fica para a próxima</span></div>
+   <div class="row"><label>Número da nota<input id="notaNumero" maxlength="40" placeholder="Ex: 1042"></label>
+   <label>Data de emissão<input id="notaData" type="date" value="${esc(today())}"></label></div>
+   <div class="actions"><button type="button" id="notaRegistrar" class="primary"${total>0?'':' disabled'}>🧾 Registrar nota de ${cash(total)}</button></div>`
+  :'<div class="emitir ok">✅ Todas as diárias deste fechamento já têm nota.</div>'}
+ </div>`;
 }
 function blocoFiscalCampos(f){
  const campoUm=`<div class="row"><label>Situação fiscal<select id="fiscalStatus"><option value="pendente">Nota pendente</option><option value="emitida">Nota emitida</option><option value="nao_solicitada">NF não solicitada pelo cliente</option></select></label><label>Número da nota<input id="nfNumero" value="${esc(f.nfNumero)}"></label><label>Emissão<input id="nfData" type="date" value="${esc(f.nfData)}"></label></div>`;
@@ -540,6 +568,9 @@ function abrir(id){
    $('editor').querySelectorAll('.ed-aba').forEach(x=>x.classList.toggle('on',x===b));
    $('editor').querySelectorAll('.ed-painel').forEach(p=>p.hidden=p.dataset.painel!==b.dataset.aba);});
  $('cobrancaStatus').value=f.cobrancaStatus;$('cobrancaStatus').disabled=f.cobrancaStatus==='pago';$('fiscalStatus').value=f.fiscalStatus;
+ if((f.notasEmitidas||[]).length){
+   ['nfNumero','nfData'].forEach(id=>{const el=$(id);if(el){el.readOnly=true;el.title='Vem das notas registradas acima.';}});
+ }
  if(f.notaModo==='separado'){
   $('nfSinalStatus').value=f.nfSinalStatus||'pendente';$('nfSaldoStatus').value=f.nfSaldoStatus||'pendente';
   $('editor').querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
@@ -562,6 +593,23 @@ function abrir(id){
    avisar('E-mail aberto no seu programa de e-mail. Confira antes de enviar.');};
  $('copiarCobranca').onclick=()=>copiar('descricaoCobranca');$('copiarFiscal').onclick=()=>copiar('descricaoFiscal');
  if($('fiSalvar'))$('fiSalvar').onclick=()=>fichaSalvar(f.cliente);
+ const redesenhaNotas=()=>{const alvo=$('editor').querySelector('.notas-bloco');
+   if(alvo){const num=$('notaNumero')?$('notaNumero').value:'',dt=$('notaData')?$('notaData').value:'';
+     alvo.outerHTML=blocoNotas(f);ligaNotas(f);
+     if($('notaNumero'))$('notaNumero').value=num;if($('notaData')&&dt)$('notaData').value=dt;}};
+ function ligaNotas(g){
+   $('editor').querySelectorAll('[data-nota]').forEach(c=>c.onchange=()=>{
+     c.checked?notaSel.add(c.dataset.nota):notaSel.delete(c.dataset.nota);redesenhaNotas();});
+   const todas=$('notaTodas');
+   if(todas)todas.onclick=()=>{
+     const livres=WENFechamentos.diariasLivres(g).map(r=>String(r.id));
+     const todasMarcadas=livres.every(i=>notaSel.has(i));
+     livres.forEach(i=>todasMarcadas?notaSel.delete(i):notaSel.add(i));redesenhaNotas();};
+   const reg=$('notaRegistrar');
+   if(reg)reg.onclick=()=>registrarNota(g);
+ }
+ notaSel=new Set(WENFechamentos.diariasLivres(f).map(r=>String(r.id)));
+ redesenhaNotas();
  $('fZap').onclick=()=>copiarTexto(textoWhats(f),'📱 Texto do WhatsApp copiado. Revise o destinatário antes de enviar.');
  $('fXls').onclick=()=>excelFechamento(f);
  $('fNF').onclick=()=>{$('nfTextoArea').value=textoNF(f);$('modalNFBg').classList.add('open');};
@@ -569,6 +617,33 @@ function abrir(id){
  $('fPdf').onclick=imprimir;$('pdf').onclick=imprimir;
 }
 async function copiar(id){try{await navigator.clipboard.writeText($(id).value);$('resultado').textContent='Texto copiado. Revise o destinatário antes de enviar.';}catch(e){$(id).focus();$(id).select();$('resultado').textContent='Selecione e copie o texto com Ctrl/Cmd+C.';}}
+// Registra uma nota cobrindo as diárias marcadas. A lista inteira vai no updateMask,
+// então duas abas abertas não se sobrescrevem sem perceber: o servidor rejeita a
+// segunda se a primeira já mudou o documento.
+async function registrarNota(f){
+ if(busy)return;
+ try{
+  const nota=WENFechamentos.validarNota(f,{numero:($('notaNumero')||{}).value,
+    data:($('notaData')||{}).value,ids:[...notaSel]});
+  const lista=[...(f.notasEmitidas||[]),nota];
+  const livresDepois=WENFechamentos.diariasLivres({...f,notasEmitidas:lista});
+  const update={notasEmitidas:lista,atualizadoEm:new Date().toISOString(),
+    nfNumero:lista.map(n=>n.numero).join(', '),nfData:nota.data,
+    fiscalStatus:livresDepois.length?'pendente':'emitida'};
+  busy=true;$('notaRegistrar').disabled=true;
+  let time=f.updateTime;
+  if(!mock){
+    const masks=Object.keys(update).map(k=>'updateMask.fieldPaths='+k).join('&');
+    const j=await req('/administrativo_fechamentos/'+encodeURIComponent(f.id)+'?'+masks+'&currentDocument.updateTime='+encodeURIComponent(f.updateTime),
+      {method:'PATCH',body:JSON.stringify({fields:Object.fromEntries(Object.entries(update).map(([k,v])=>[k,to(v)]))})});
+    time=j.updateTime;
+  }
+  Object.assign(f,update,{updateTime:time});
+  avisar('Nota '+nota.numero+' registrada — '+cash(nota.valor)+'.');
+  abrir(f.id);
+ }catch(e){avisar(e.message,true);if($('notaRegistrar'))$('notaRegistrar').disabled=false;}
+ finally{busy=false;}
+}
 async function salvar(enviar){
  if(busy)return;
  const f=docs.find(f=>f.id===selecionado), update={};

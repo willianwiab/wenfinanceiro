@@ -133,16 +133,44 @@
     return {cliente:regs[0].cliente,clienteFiscal,itens,lancamentoIds:itens.map(r=>r.id),valor,recebido,saldo,
       exigeNota:regraNota.emite,notaRegra:chaveRegra,notaQuando:regraNota.quando,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
       fiscalStatus:regraNota.emite?'pendente':'nao_solicitada',cobrancaStatus:saldo===0?'pago':'pendente',
-      nfNumero:'',nfData:'',enviadoEm:'',promessaData:'',promessaObs:'',
+      nfNumero:'',nfData:'',enviadoEm:'',promessaData:'',promessaObs:'',notasEmitidas:[],
       notaModo:(regraNota.separa&&recebido>0&&saldo>0)?'separado':'junto',
       condicao:CONDICOES[ficha.condicaoPagamento]?ficha.condicaoPagamento:'avista',
       condicaoTexto:String(ficha.condicaoTexto||''),
       nfSinalNumero:'',nfSinalData:'',nfSinalStatus:'pendente',
       nfSaldoNumero:'',nfSaldoData:'',nfSaldoStatus:'pendente',criadoEm:new Date().toISOString(),atualizadoEm:new Date().toISOString()};
   }
+  // Quais diárias ainda não foram cobertas por nenhuma nota.
+  function diariasLivres(f){
+    const usadas=new Set();
+    (f&&f.notasEmitidas||[]).forEach(n=>(n.ids||[]).forEach(i=>usadas.add(String(i))));
+    return (f&&f.itens||[]).filter(r=>!usadas.has(String(r.id)));
+  }
+  // Valida uma nota nova antes de registrar: precisa de número, data e pelo menos uma
+  // diária ainda livre. Diária já coberta é recusada — é assim que não sai nota em dobro.
+  function validarNota(f,nota){
+    const num=String(nota&&nota.numero||'').trim();
+    if(!num)throw Error('Informe o número da nota.');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(nota&&nota.data||'')))throw Error('Informe a data de emissão.');
+    const ids=[...new Set((nota&&nota.ids||[]).map(String))];
+    if(!ids.length)throw Error('Selecione pelo menos uma diária para esta nota.');
+    const doFechamento=new Set((f.itens||[]).map(r=>String(r.id)));
+    if(ids.some(i=>!doFechamento.has(i)))throw Error('Diária que não pertence a este fechamento.');
+    const livres=new Set(diariasLivres(f).map(r=>String(r.id)));
+    const repetida=ids.find(i=>!livres.has(i));
+    if(repetida)throw Error('Uma das diárias já está em outra nota. Atualize a tela.');
+    if((f.notasEmitidas||[]).some(n=>String(n.numero||'').trim()===num))
+      throw Error('Já existe uma nota com este número neste fechamento.');
+    const valor=(f.itens||[]).filter(r=>ids.includes(String(r.id)))
+      .reduce((a,r)=>a+cents(r.valor),0)/100;
+    return {numero:num,data:nota.data,ids,valor,em:new Date().toISOString()};
+  }
   function validarEdicao(f){
     if(!f.descricaoCobranca.trim())throw Error('Preencha a descrição da cobrança.');
     if(f.exigeNota&&!f.descricaoFiscal.trim())throw Error('Preencha a descrição fiscal.');
+    const emitidas=(f.notasEmitidas||[]).length;
+    if(emitidas&&diariasLivres(f).length===0&&f.fiscalStatus!=='emitida')
+      throw Error('Todas as diárias já têm nota: marque a situação fiscal como emitida.');
     if(f.notaModo==='separado'){
       for(const [rot,n,d,st] of [['do sinal','nfSinalNumero','nfSinalData','nfSinalStatus'],['do saldo','nfSaldoNumero','nfSaldoData','nfSaldoStatus']]){
         if(!['pendente','emitida'].includes(String(f[st]||'pendente')))throw Error('Situação inválida na nota '+rot+'.');
@@ -160,6 +188,6 @@
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');
     return f;
   }
-  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo,cobranca,CONDICOES};
+  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo,cobranca,CONDICOES,diariasLivres,validarNota};
   if(typeof module!=='undefined')module.exports=root.WENFechamentos;
 })(globalThis);

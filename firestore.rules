@@ -60,8 +60,14 @@ service cloud.firestore {
           'nfSaldoNumero','nfSaldoData','nfSaldoStatus',
           // promessa de pagamento: o que o CLIENTE disse. Não é confirmação de
           // recebimento nem muda o vencimento — só faz a cobrança voltar na data.
-          'promessaData','promessaObs'
+          'promessaData','promessaObs',
+          // notasEmitidas: cada nota guarda quais diárias cobriu, para uma gravação
+          // nunca entrar em duas notas. A lista só cresce, nunca encolhe.
+          'notasEmitidas'
         ])
+        && request.resource.data.get('notasEmitidas', []).size() <= 60
+        && request.resource.data.get('notasEmitidas', []).size()
+           >= resource.data.get('notasEmitidas', []).size()
         && request.resource.data.get('promessaObs', '').size() <= 300
         && (request.resource.data.get('promessaData', '') == ''
           || request.resource.data.get('promessaData', '').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
