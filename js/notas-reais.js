@@ -22,11 +22,12 @@
     {fech:'m_zest_2026-10',falso:'54545',notas:[{n:'423',dia:'27/10'},{n:'426',dia:'29/10'}],marca:true},
     {fech:'m_iaondeissovaidar_2026-11',falso:'887878787',notas:[{n:'9'}],marca:false,aviso:'diária lançada em 5.400 e a nota é de 5.600 — corrija o Receber antes'},
     {fech:'m_oswaldocruz_2026-11',falso:'312321',notas:[{n:'5'}],marca:false,aviso:'nota 3.213 × diária 3.600 (diferença de 387) — decida antes'},
-    {fech:'m_leadersbrief_2026-11',falso:'7676767',notas:[{n:'10'}],marca:false,aviso:'só se Leaders Brief for o cliente Connectis/Getronics (valor 1.900 bate)'}
+    {fech:'m_leadersbrief_2026-11',falso:'7676767',notas:[{n:'10'}],marca:true,obs:'Leaders Brief = Getronics (confirmado pelo Will, 20/11)'},
+    {fech:'m_leadersbrief_2026-10',falso:'323213',notas:[{n:'419'}],marca:false,aviso:'nota 2.650 × diária 3.000 (diferença de 350) — decida antes'}
   ];
   // número falso sem nota real no governo → voltar a "pendente"
   const LIMPAR=[
-    {fech:'m_leadersbrief_2026-10',falso:'323213'},{fech:'m_biolab_2026-10',falso:'2323232'},
+    {fech:'m_biolab_2026-10',falso:'2323232'},
     {fech:'m_nube_2026-11',falso:'2323'},{fech:'m_podcastpositivo_2026-10',falso:'2321312'}
   ];
   // nome no sistema → CNPJ e razão social do governo
@@ -45,7 +46,7 @@
     ['DANNY UEDA','31.955.304/0001-36','DANNYELLE THAYS MITIE UEDA'],
     ['BIOLAB','49.475.833/0003-60','BIOLAB SANUS FARMACEUTICA LTDA'],
     ['PROA','08.172.505/0001-45','ASSOCIACAO INSTITUTO PROA'],
-    ['GETRONICS','10.714.349/0001-49','CONNECTIS TECNOLOGIA DA INFORMACAO E COMUNICACAO DO BRASIL LTDA']
+    ['LEADERS BRIEF','10.714.349/0001-49','CONNECTIS TECNOLOGIA DA INFORMACAO E COMUNICACAO DO BRASIL LTDA']
   ];
 
   const dig=s=>String(s||'').replace(/\D/g,'');

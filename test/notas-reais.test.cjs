@@ -4,10 +4,10 @@ const dir=process.argv[2]||'../../backups/fiscal-20261120';
 const fech=JSON.parse(fs.readFileSync(dir+'/wen_fechamentos_administrativo_20261120.json'));
 const fich=JSON.parse(fs.readFileSync(dir+'/wen_fichas_fiscais_20261120.json'));
 const A=NFR.analisarFechamentos(fech), by=Object.fromEntries(A.map(a=>[a.fech,a]));
-// 7 marcados e prontos; 3 com aviso e desmarcados; 4 para limpar
-assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&a.marca).length,7);
+// 8 marcados e prontos (Leaders 11 confirmado); 3 com aviso e desmarcados (IA 11, Oswaldo, Leaders 10); 3 para limpar
+assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&a.marca).length,8);
 assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&!a.marca).length,3);
-assert.strictEqual(A.filter(a=>a.tipo==='limpar'&&a.ok).length,4);
+assert.strictEqual(A.filter(a=>a.tipo==='limpar'&&a.ok).length,3);
 assert.ok(A.every(a=>a.ok),'todo item do plano deveria existir no backup: '+JSON.stringify(A.filter(a=>!a.ok)));
 // Quintessa: 3 notas na mesma diária, soma = valor do fechamento
 const q=by['m_quintessa_2026-10']; assert.strictEqual(q.novo,'420, 425, 6'); assert.strictEqual(q.soma,4800); assert.strictEqual(q.valorFech,4800);
@@ -31,5 +31,5 @@ assert.strictEqual(NFR.camposDe(by['m_nube_2026-11'],'x').fiscalStatus,'pendente
 // fichas: 15 clientes, nenhum conflito, DANNY UEDA existe e só preenche
 const F=NFR.analisarFichas(fich), fb=Object.fromEntries(F.map(x=>[x.nome,x]));
 assert.strictEqual(F.length,15); assert.strictEqual(F.filter(x=>x.acao==='conflito').length,0);
-assert.strictEqual(fb['DANNY UEDA'].acao,'preencher'); assert.strictEqual(fb['GETRONICS'].acao,'criar'); assert.strictEqual(fb['PROA'].acao,'criar');
+assert.strictEqual(fb['DANNY UEDA'].acao,'preencher'); assert.strictEqual(fb['LEADERS BRIEF'].acao,'preencher'); assert.ok(!fb['GETRONICS']); assert.strictEqual(fb['PROA'].acao,'criar');
 console.log('ok · fichas:',F.map(x=>x.nome+':'+x.acao).join(' '));
