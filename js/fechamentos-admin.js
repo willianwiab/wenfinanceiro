@@ -1,7 +1,7 @@
 /* Integração do proprietário. O portal recebe somente fechamentos liberados. */
 let FC_dados={}, FC_ok=false, FC_selecionados=new Set(), FC_rascunho=null, FC_salvando=false;
 async function FC_carregar(){
-  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_dados=Object.fromEntries(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>[id,{...f,id}]));FC_ok=true;}
+  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_dados=Object.fromEntries(WENFechamentos.consolidarFechamentos(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>({...f,id}))).map(f=>[f.id,f]));FC_ok=true;}
   catch(e){FC_ok=false;}return FC_ok;
 }
 function FC_notas(){return Object.values(FC_dados).filter(f=>f.fiscalStatus==='emitida'&&(f.fiscalIds||f.lancamentoIds||[]).length).map(f=>({
@@ -252,7 +252,16 @@ function FC_chaveGrupo(cliente,reg,ficha){
     : 'm_'+base+'_'+WENFechamentos.mesChave(reg.mes);
 }
 // Achou um fechamento com esta chave? (grupo é guardado no próprio documento)
-function FC_porGrupo(chave){return Object.values(FC_dados).find(f=>f.grupo===chave)||null;}
+function FC_porGrupo(chave,regs=[]){
+ const todos=Object.values(FC_dados),key=WENFechamentos.chaveDiarias({lancamentoIds:regs.map(r=>r.id)});
+ const porIds=regs.length?todos.find(f=>WENFechamentos.chaveDiarias(f)===key):null;
+ const porGrupo=todos.find(f=>f.grupo===chave);
+ const candidato=porIds||porGrupo||null;
+ const ids=new Set(regs.map(r=>String(r.id)));
+ if(todos.some(f=>f!==candidato&&(f.lancamentoIds||[]).some(id=>ids.has(String(id)))))
+   throw Error('Diárias já vinculadas a outro fechamento. Revise a composição antes de reagrupar.');
+ return candidato;
+}
 
 // A descrição só é regerada enquanto ela não tiver mexido: guardamos o texto que o
 // sistema gerou da última vez (descricaoAuto) e comparamos.
@@ -284,9 +293,18 @@ async function FC_gravarCampos(id,doc,campos){
   if(!res.ok)throw Error('Espelho recusado ('+res.status+')');
 }
 
+// Criação e reserva das diárias na mesma operação: duas abas não criam cobranças concorrentes.
+async function FC_criarEspelho(id,doc,campos){
+ const fields={};campos.forEach(k=>{if(doc[k]!==undefined)fields[k]=toFV(doc[k]);});
+ const base=FS_URL.replace('https://firestore.googleapis.com/v1/','');
+ const writes=[{update:{name:base+'/administrativo_fechamentos/'+id,fields},currentDocument:{exists:false}},
+ ...doc.lancamentoIds.map(lid=>({update:{name:base+'/administrativo_vinculos/'+encodeURIComponent(lid),fields:{fechamentoId:toFV(id)}},currentDocument:{exists:false}}))];
+ const res=await fetch(FS_URL+':commit?key='+FB_API_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({writes})});
+ if(!res.ok)throw Error('Não foi possível reservar as diárias. Recarregue o financeiro antes de tentar novamente ('+res.status+').');
+}
 // As diárias que compõem um grupo, lidas do Receber AGORA (o espelho é sempre do estado atual).
 function FC_regsDoGrupo(chave,cliente,ficha){
-  const todas=(R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0&&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
+  const todas=(R_todosOsDados||[]).filter(r=>!r.excluido&&r.cliente===cliente&&Number(r.valorTotal)>0&&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
   return todas.filter(r=>FC_chaveGrupo(cliente,r,ficha)===chave);
 }
 
@@ -311,7 +329,7 @@ async function FC_espelhar(regs,motivo){
   for(const [chave,{cliente,ficha}] of grupos){
     try{
       const doGrupo=FC_regsDoGrupo(chave,cliente,ficha);
-      const antigo=FC_porGrupo(chave);
+      const antigo=FC_porGrupo(chave,doGrupo);
       const id=antigo?antigo.id:chave;
       if(!doGrupo.length){await FC_removerGrupo(chave,antigo);continue;}
       const novo=WENFechamentos.criar(doGrupo,ficha||{});
@@ -324,7 +342,7 @@ async function FC_espelhar(regs,motivo){
       // Só a baixa do proprietário no Receber confirma ou reabre o pagamento.
       const mudouPagamento=antigo&&(Number(antigo.saldo)!==Number(doc.saldo)||Number(antigo.recebido)!==Number(doc.recebido));
       if(mudouPagamento)doc.cobrancaStatus=doc.saldo===0?'pago':antigo.cobrancaStatus==='pago'?'pendente':antigo.cobrancaStatus;
-      await FC_gravarCampos(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
+      await (antigo?FC_gravarCampos:FC_criarEspelho)(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
         :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
       FC_dados[id]=doc;
       await FC_limparOrfaos(id,doc.lancamentoIds||[]);
@@ -332,7 +350,7 @@ async function FC_espelhar(regs,motivo){
         divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
         pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
         parcial:!!(antigo&&doc.recebido>antigo.recebido&&doc.saldo>0)});
-    }catch(e){console.warn('FC_espelhar',chave,e.message);}
+    }catch(e){console.warn('FC_espelhar',chave,e.message);throw e;}
   }
   return feitos;
 }

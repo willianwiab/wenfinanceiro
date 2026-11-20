@@ -133,7 +133,7 @@ async function carregar(){
    {...WENFechamentos.criar([
      {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
-  docs=novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
+  docs=WENFechamentos.consolidarFechamentos(novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
   await avisosCarregar();await fichasCarregar();
  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
@@ -552,9 +552,10 @@ function cobrancaSemSaudacao(texto,cliente){
  return t.startsWith(inicio)?t.slice(inicio.length).trimStart():t;
 }
 function abrir(id){
- const f=docs.find(x=>x.id===id);if(!f)return;selecionado=id;dirty=false;lista();location.hash=id;
+ const f=docs.find(x=>x.id===id||(x.historicoDuplicados||[]).some(h=>h.id===id));if(!f)return;id=f.id;selecionado=id;dirty=false;lista();location.hash=id;
  const nf=(f.notasExistentes||[]).map(n=>n.numero).join(', ');
  $('editor').innerHTML=docFechamento(f)
+ +((f.historicoDuplicados||[]).length?'<details class="status"><summary>Registro anterior da mesma diária preservado no histórico ('+f.historicoDuplicados.length+')</summary>'+f.historicoDuplicados.map(h=>'<p>Registro: '+esc(h.id)+' · número informado: '+esc(h.nfNumero||'—')+' · cobrança: '+esc(h.cobrancaStatus||'—')+'</p>').join('')+'</details>':'')
  +`<section class="cartao-edicao">
  <div class="ed-abas" role="tablist">
    <button type="button" class="ed-aba on" data-aba="fechamento" role="tab">📄 Fechamento</button>

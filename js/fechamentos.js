@@ -189,6 +189,20 @@
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');
     return f;
   }
-  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo,cobranca,CONDICOES,diariasLivres,validarNota};
+  // Identidade da cobrança: conjunto exato de IDs, nunca nome/data/valor.
+  function chaveDiarias(f){
+    const ids=[...new Set((f.lancamentoIds||[]).map(String))].sort();
+    return ids.length?JSON.stringify(ids):'sem-id:'+f.id;
+  }
+  function consolidarFechamentos(lista){
+    const grupos=new Map();
+    for(const f of lista){const k=chaveDiarias(f);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(f);}
+    return [...grupos.values()].map(grupo=>{
+      grupo.sort((a,b)=>Number(!!b.grupo)-Number(!!a.grupo)||String(b.criadoEm||'').localeCompare(String(a.criadoEm||''))||String(a.id).localeCompare(String(b.id)));
+      const [ativo,...anteriores]=grupo;
+      return {...ativo,historicoDuplicados:anteriores};
+    });
+  }
+  root.WENFechamentos={chaveDiarias,consolidarFechamentos,criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo,cobranca,CONDICOES,diariasLivres,validarNota};
   if(typeof module!=='undefined')module.exports=root.WENFechamentos;
 })(globalThis);
