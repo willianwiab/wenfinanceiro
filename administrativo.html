@@ -89,7 +89,8 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-lin .nf-info{flex:1;min-width:190px}
 .nf-lin .nf-nome{font-weight:700;color:#0f172a;font-size:.95rem}
 .nf-lin .nf-meta{font-size:.76rem;color:#64748b;margin-top:3px;line-height:1.45;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-.nf-lin .nf-val{font-weight:800;font-size:1.02rem;white-space:nowrap;color:#0f172a}
+.nf-lin .nf-val{font-weight:800;font-size:1.02rem;white-space:nowrap;color:#0f172a;text-align:right}
+.nf-de{font-size:.7rem;font-weight:700;color:#b45309;margin-top:2px}
 .nf-lin .nf-acao{display:flex;gap:6px;flex-wrap:wrap}
 .nf-lin .abrir{display:inline-block;text-decoration:none;background:#16a34a;border:1px solid #16a34a;color:#fff;border-radius:8px;padding:8px 15px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .nf-lin .abrir:hover{background:#15803d;border-color:#15803d}
@@ -185,6 +186,33 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .toast{position:fixed;bottom:22px;right:22px;background:#16a34a;color:#fff;padding:11px 18px;border-radius:9px;font-size:.86rem;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px;box-shadow:0 6px 20px rgba(15,23,42,.2)}
 .toast.show{opacity:1}
 @media(max-width:620px){.toast{left:14px;right:14px;bottom:14px;max-width:none;text-align:center}}
+.cob-bloco{background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:20px}
+.cob-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;flex-wrap:wrap}
+.cob-top b{font-size:.92rem;color:#0f172a}
+.cob-p{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eef2f7;font-size:.85rem;flex-wrap:wrap}
+.cob-p:last-of-type{border-bottom:0}
+.cob-p .cob-nome{flex:1;min-width:120px;color:#334155;font-weight:600}
+.cob-p .cob-val{font-weight:800;color:#0f172a;white-space:nowrap}
+.cob-p .cob-st{font-size:.74rem;color:#b45309;font-weight:700;white-space:nowrap;min-width:92px;text-align:right}
+.cob-p.ok .cob-st{color:#15803d}
+.cob-p.ok .cob-nome,.cob-p.ok .cob-val{color:#94a3b8}
+.cob-agora{margin-top:11px;padding-top:11px;border-top:1px dashed #cbd5e1;font-size:.95rem;color:#0f172a}
+.cob-agora b{font-size:1.08rem;color:#5b21b6}
+.cob-obs{margin-top:8px;font-size:.78rem;color:#64748b}
+.ed-abas{display:flex;gap:4px;border-bottom:2px solid #e5e7eb;margin:-4px -4px 16px;padding:0 0 0 2px;flex-wrap:wrap}
+.ed-aba{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:10px 15px;font-size:.86rem;font-weight:700;color:#94a3b8;cursor:pointer;width:auto;border-radius:0}
+.ed-aba:hover{color:#334155}
+.ed-aba.on{color:#1e40af;border-bottom-color:#1e40af}
+.ed-aba:focus-visible{outline:2px solid #6d28d9;outline-offset:-2px}
+.ed-painel>label,.ed-painel .row{margin-bottom:12px}
+.ed-rodape{margin-top:18px;padding-top:16px;border-top:1px solid #eef0f4}
+.contato-bloco{background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:12px 15px;margin-bottom:14px}
+.contato-bloco b{font-size:.84rem;color:#075985}
+.contato-linhas{margin-top:6px;font-size:.87rem;color:#0f172a;line-height:1.6}
+.contato-linhas .sep{color:#94a3b8;margin:0 8px}
+.contato-pref{font-size:.76rem;color:#0369a1;margin-top:5px}
+.promessa{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px}
+.promessa b{color:#92400e}
 /* modal do Texto NF */
 .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
 .modal-bg.open{display:flex}
@@ -270,4 +298,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=f92205b9"></script><script src="js/administrativo.js?v=f27a434b"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=70c82b13"></script><script src="js/administrativo.js?v=625df7c9"></script></body></html>

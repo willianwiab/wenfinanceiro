@@ -229,7 +229,7 @@ function FC_renderAvisos(){
 // ══════════════════════════════════════════════════════════════════════════════
 const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','vencimento',
   'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca'];
-const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm',
+const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm','promessaData','promessaObs',
   'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus'];
 
 // A chave do agrupamento sai da ficha: mensal junta o mês do cliente, "diaria" é uma por uma.
@@ -313,6 +313,7 @@ async function FC_espelhar(regs,motivo){
       await FC_gravarCampos(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
         :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
       FC_dados[id]=doc;
+      await FC_limparOrfaos(id,doc.lancamentoIds||[]);
       feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
         divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
         pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
@@ -320,6 +321,30 @@ async function FC_espelhar(regs,motivo){
     }catch(e){console.warn('FC_espelhar',chave,e.message);}
   }
   return feitos;
+}
+
+// Uma diária só pode viver em UM fechamento. Se ela aparece em outro — porque o cliente
+// foi renomeado, o agrupamento da ficha mudou de mensal para diária, ou a diária trocou de
+// mês — aquele outro é refeito sem ela, e some se ficar vazio.
+async function FC_limparOrfaos(idAtual,ids){
+  if(!ids.length)return;
+  const meus=new Set(ids.map(String));
+  for(const outro of Object.values(FC_dados)){
+    if(!outro||outro.id===idAtual)continue;
+    const restantes=(outro.lancamentoIds||[]).filter(x=>!meus.has(String(x)));
+    if(restantes.length===(outro.lancamentoIds||[]).length)continue;   // não tinha nada meu
+    try{
+      if(!restantes.length){await FC_removerGrupo(outro.grupo,outro);continue;}
+      const regs=(R_todosOsDados||[]).filter(r=>restantes.includes(String(r.id)));
+      if(!regs.length){await FC_removerGrupo(outro.grupo,outro);continue;}
+      const ficha=CFI_casar(outro.cliente,(typeof CFI_lista==='function'?CFI_lista():[]));
+      const novo=WENFechamentos.criar(regs,ficha||{});
+      const doc={...outro,...novo,id:outro.id,grupo:outro.grupo,atualizadoEm:new Date().toISOString()};
+      FC_CAMPOS_DELA.forEach(k=>{if(outro[k]!==undefined)doc[k]=outro[k];});
+      await FC_gravarCampos(outro.id,doc,FC_CAMPOS_DADOS);
+      FC_dados[outro.id]=doc;
+    }catch(e){console.warn('FC_limparOrfaos',outro.id,e.message);}
+  }
 }
 
 // Grupo ficou sem diária: some, a menos que já tenha nota — aí fica com a divergência.

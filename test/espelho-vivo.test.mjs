@@ -128,6 +128,37 @@ const g=await espelhar({...diaria('A2',{data:'06/12'}),cliente:'AVULSO'});
 const avulsos=g.filter(x=>String(x.grupo).startsWith('d_avulso'));
 assert.equal(avulsos.length,2,'ficha "por diária" separa uma por gravação');
 
+// ── 8) renomear o cliente não deixa fechamento órfão ───────────────────────
+// Bug real encontrado em 20/11: a diária de 12/11 do Danny Ueda aparecia em DOIS
+// fechamentos — "PRÉ RESERVA ... DANNY UEDA" (nome antigo) e "DANNY UEDA" — uma como
+// paga e outra não. A chave do grupo mudava e o fechamento velho nunca era revisitado.
+await page.evaluate(()=>{FC_dados={};R_todosOsDados.length=0;CFI_FICHAS={};});
+await espelhar({...diaria('R1'),cliente:'PRÉ RESERVA WEN PRODUTORA - FULANO'});
+let st=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,ids:f.lancamentoIds})));
+assert.equal(st.length,1,'nasceu com o nome errado');
+
+// o Will corrige o nome no Receber e salva
+await espelhar({...diaria('R1'),cliente:'FULANO'});
+const depoisRename=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,ids:f.lancamentoIds})));
+assert.equal(depoisRename.length,1,'sobra UM fechamento, não dois');
+assert.equal(depoisRename[0].c,'FULANO','e é o do nome corrigido');
+st=await page.evaluate(()=>Object.values(FC_dados).flatMap(f=>f.lancamentoIds));
+assert.deepEqual(st,['R1'],'a diária vive em um fechamento só');
+
+// e o fechamento órfão foi apagado de verdade, não só da memória
+const apagou=await page.evaluate(()=>window.__patches.filter(p=>p.del).length>0);
+assert(apagou,'o fechamento do nome antigo foi apagado na nuvem');
+
+// ── 9) órfão COM nota emitida não é apagado: fica marcado ──────────────────
+await page.evaluate(()=>{FC_dados={};R_todosOsDados.length=0;});
+await espelhar({...diaria('R2'),cliente:'COM NOTA LTDA'});
+await page.evaluate(()=>{const id=Object.keys(FC_dados)[0];
+  Object.assign(FC_dados[id],{fiscalStatus:'emitida',nfNumero:'777',nfData:'2026-12-01',fiscalValor:2200});});
+await espelhar({...diaria('R2'),cliente:'COM NOTA LTDA RENOMEADA'});
+const comNota=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,nf:f.nfNumero,div:!!f.divergencia})));
+assert.equal(comNota.length,2,'o que tem nota emitida NÃO some');
+assert(comNota.some(f=>f.nf==='777'&&f.div),'ele fica marcado com divergência, para o Will resolver');
+
 assert.deepEqual(erros,[]);
 console.log('✅ espelho-vivo: nasce no lançamento, acompanha a baixa, avisa — e o que é dela sobrevive');
 }finally{await browser.close();}

@@ -24,7 +24,16 @@ await page.route('https://securetoken.googleapis.com/**',r=>r.fulfill({json:{id_
 await page.route('https://identitytoolkit.googleapis.com/**',r=>r.fulfill({json:{users:[{email:'financeiro@wenprodutora.com.br',emailVerified:true}]}}));
 await page.route('https://firestore.googleapis.com/**',r=>{requests.push(r.request().url());if(r.request().method()==='PATCH'){saved=JSON.parse(r.request().postData());return r.fulfill({json:{...doc,updateTime:'2026-11-18T13:00:00.000000Z'}});}return r.fulfill({json:{documents:[doc]}});});
 await page.evaluate(()=>sessionStorage.setItem('wen_admin_rt','test-refresh'));
-await page.goto(BASE+'/administrativo.html#'+f.id);await page.waitForSelector('#descricaoCobranca');
+await page.goto(BASE+'/administrativo.html#'+f.id);await page.waitForSelector('.ed-aba');
+// A ficha tem três abas (Fechamento | Nota fiscal | Cobrança): nasce no Fechamento.
+assert.equal(await page.locator('.ed-aba').count(),3,'as três abas da ficha');
+assert.equal(await page.locator('.ed-painel[data-painel="fechamento"]:visible').count(),1,'abre no Fechamento');
+assert.equal(await page.locator('#descricaoCobranca:visible').count(),0,'a cobrança começa escondida');
+await page.click('.ed-aba[data-aba="fiscal"]');
+assert.equal(await page.locator('#descricaoFiscal:visible').count(),1,'a aba Nota fiscal mostra a descrição fiscal');
+await page.click('.ed-aba[data-aba="cobranca"]');
+await page.waitForSelector('#descricaoCobranca');
+assert.equal(await page.locator('#promessaData:visible').count(),1,'a promessa de pagamento vive na aba Cobrança');
 // Topo no formato da aba Notas Fiscais: 3 cartões de CONTAGEM. Nenhum valor somado da
 // empresa pode aparecer fora do fechamento aberto — o administrativo vê o unitário, não o total.
 assert.equal(await page.locator('#cards .card-p').count(),3);

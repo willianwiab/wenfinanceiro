@@ -35,6 +35,33 @@
     if(r.edicoes)p.push(r.edicoes+(r.edicoes===1?' edição':' edições'));
     return p.join(' · ');
   }
+  // ── Condição de pagamento ───────────────────────────────────────────────
+  // O problema que isto resolve: se o cliente ainda NÃO pagou nada, o administrativo
+  // via "saldo = total" e não tinha como saber que o combinado era metade agora e
+  // metade depois. A condição é do CLIENTE e viaja junto, independente do que entrou.
+  const CONDICOES = {
+    avista:    {rotulo:'À vista', parcelas:[['Pagamento', 1]]},
+    sinal50:   {rotulo:'50% de sinal + 50%', parcelas:[['Sinal (50%)', .5], ['Saldo (50%)', .5]]},
+    sinal30:   {rotulo:'30% de sinal + 70%', parcelas:[['Sinal (30%)', .3], ['Saldo (70%)', .7]]}
+  };
+  // Devolve o que cobrar AGORA e o que fica para depois, já descontando o que entrou.
+  // Em centavos o tempo todo: meio de R$ 3.750,01 não pode virar dízima.
+  function cobranca(f, condicao){
+    const c = CONDICOES[condicao] || CONDICOES.avista;
+    const total = cents(f && f.valor), pago = cents(f && f.recebido);
+    let restante = pago, acumulado = 0;
+    const parcelas = c.parcelas.map(([nome, fracao], i, todas) => {
+      // a última leva a sobra do arredondamento, para a soma fechar com o total
+      const bruto = (i === todas.length - 1) ? total - acumulado : Math.round(total * fracao);
+      acumulado += bruto;
+      const quitado = Math.min(restante, bruto); restante -= quitado;
+      return {nome, valor: bruto/100, pago: quitado/100, aberto: (bruto - quitado)/100};
+    });
+    const aberta = parcelas.find(p => p.aberto > 0) || null;
+    return {condicao: CONDICOES[condicao] ? condicao : 'avista', rotulo: c.rotulo, parcelas,
+      cobrarAgora: aberta ? aberta.aberto : 0, proxima: aberta ? aberta.nome : '',
+      quitado: parcelas.every(p => p.aberto === 0)};
+  }
   function criar(regs, ficha={}, campos=['data','horas','studio','descricao']){
     if(!regs.length)throw Error('Selecione pelo menos uma diária.');
     if(regs.some(r=>!noPeriodo(r)))throw Error('O administrativo começa em outubro de 2026.');
@@ -56,12 +83,14 @@
     const descricaoCobranca=linhas.map((s,i)=>s+' — '+money(itens[i].valor)).join('\n')+'\n\nTotal: '+money(valor)+'\nRecebido: '+money(recebido)+'\nSaldo a pagar: '+money(saldo);
     // Não copiar a ficha ou lançamento inteiro: eles podem conter informação interna.
     const clienteFiscal={};
-    for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro'])clienteFiscal[k]=String(ficha[k]||'');
+    for(const k of ['razaoSocial','doc','logradouro','numero','complemento','bairro','municipio','uf','cep','emailNota','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro','envioPreferido'])clienteFiscal[k]=String(ficha[k]||'');
     return {cliente:regs[0].cliente,clienteFiscal,itens,lancamentoIds:itens.map(r=>r.id),valor,recebido,saldo,
       exigeNota:ficha.exigeNota!==false,descricaoFiscal,descricaoCobranca,vencimento:itens.map(r=>r.vencimento).filter(Boolean).sort().at(-1)||'',
       fiscalStatus:ficha.exigeNota===false?'nao_solicitada':'pendente',cobrancaStatus:saldo===0?'pago':'pendente',
-      nfNumero:'',nfData:'',enviadoEm:'',
+      nfNumero:'',nfData:'',enviadoEm:'',promessaData:'',promessaObs:'',
       notaModo:(ficha.exigeNota!==false&&ficha.notaSinal==='separado'&&recebido>0&&saldo>0)?'separado':'junto',
+      condicao:CONDICOES[ficha.condicaoPagamento]?ficha.condicaoPagamento:'avista',
+      condicaoTexto:String(ficha.condicaoTexto||''),
       nfSinalNumero:'',nfSinalData:'',nfSinalStatus:'pendente',
       nfSaldoNumero:'',nfSaldoData:'',nfSaldoStatus:'pendente',criadoEm:new Date().toISOString(),atualizadoEm:new Date().toISOString()};
   }
@@ -77,10 +106,14 @@
     }
     else if(f.fiscalStatus==='emitida'&&(!f.nfNumero.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(f.nfData)))throw Error('Informe número e data da nota emitida.');
     if(f.vencimento&&!/^\d{4}-\d{2}-\d{2}$/.test(f.vencimento))throw Error('Vencimento inválido.');
+    // A promessa é um COMPROMISSO DO CLIENTE registrado pelo administrativo: não muda o
+    // vencimento e não confirma recebimento. Só serve para a cobrança voltar na data.
+    if(f.promessaData&&!/^\d{4}-\d{2}-\d{2}$/.test(f.promessaData))throw Error('Data da promessa inválida.');
+    if(String(f.promessaObs||'').length>300)throw Error('Anotação da promessa muito longa.');
     if(!['pendente','enviada','informado','pago'].includes(f.cobrancaStatus))throw Error('Situação inválida.');
     if(!['pendente','emitida','nao_solicitada'].includes(f.fiscalStatus))throw Error('Situação fiscal inválida.');
     return f;
   }
-  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo};
+  root.WENFechamentos={criar,validarEdicao,money,mesChave,noPeriodo,resumir,textoResumo,cobranca,CONDICOES};
   if(typeof module!=='undefined')module.exports=root.WENFechamentos;
 })(globalThis);

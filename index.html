@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261119-f9adc46e';
+window.APP_VERSION='20261120-ae254e48';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2016,6 +2016,14 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="fg"><label>Observações</label><input id="cfiF_observacoes"/></div>
       <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_exigeNota" checked/> Exige nota fiscal</label></div>
       <div class="fg"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:.86rem;cursor:pointer"><input type="checkbox" id="cfiF_cobrancaAdm" checked/> Cobrança pelo administrativo</label></div>
+      <div class="fg"><label>📨 Como enviar a cobrança</label><select id="cfiF_envioPreferido">
+        <option value="whatsapp">WhatsApp</option><option value="email">E-mail</option><option value="ambos">WhatsApp e e-mail</option>
+      </select></div>
+      <div class="fg"><label>💳 Condição de pagamento</label><select id="cfiF_condicaoPagamento">
+        <option value="avista">À vista — tudo no vencimento</option>
+        <option value="sinal50">50% de sinal + 50%</option>
+        <option value="sinal30">30% de sinal + 70%</option>
+      </select></div>
       <div class="fg"><label>Nota do sinal (50/50)</label><select id="cfiF_notaSinal"><option value="junto">Uma nota só, pelo total</option><option value="separado">Separado: nota do sinal + nota do saldo</option></select></div>
     </div>
     <div id="cfiStatusRodape" role="status" style="margin-top:12px"></div>
@@ -2805,8 +2813,8 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="js/fechamentos.js?v=f92205b9"></script>
-<script src="js/fechamentos-admin.js?v=0d87deef"></script>
+<script src="js/fechamentos.js?v=70c82b13"></script>
+<script src="js/fechamentos-admin.js?v=6d0e5ef9"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3986,6 +3994,8 @@ window.CFI_abrir=function(id,nomeSugerido){
   const ex=document.getElementById('cfiF_exigeNota'); if(ex)ex.checked=f.exigeNota!==false;
   const ca=document.getElementById('cfiF_cobrancaAdm'); if(ca)ca.checked=f.cobrancaAdministrativo!==false;
   v('cfiF_notaSinal',f.notaSinal==='separado'?'separado':'junto');
+  v('cfiF_condicaoPagamento',f.condicaoPagamento||'avista');
+  v('cfiF_envioPreferido',f.envioPreferido||'whatsapp');
   CFI_conferir();
   document.getElementById('cfiModalBg').classList.add('open');
 };
@@ -4051,6 +4061,8 @@ window.CFI_salvar=async function(){
     exigeNota:!!(document.getElementById('cfiF_exigeNota')||{}).checked,
     cobrancaAdministrativo:!!(document.getElementById('cfiF_cobrancaAdm')||{}).checked,
     notaSinal:g('notaSinal')==='separado'?'separado':'junto',
+    condicaoPagamento:['avista','sinal50','sinal30'].includes(g('condicaoPagamento'))?g('condicaoPagamento'):'avista',
+    envioPreferido:['whatsapp','email','ambos'].includes(g('envioPreferido'))?g('envioPreferido'):'whatsapp',
     fechamentoPadrao:g('fechamentoPadrao')||'mensal',
     prazoPagamento:g('prazoPagamento'), diaVencimento:parseInt(g('diaVencimento'),10)||null,
     instrucoes:g('instrucoes'), observacoes:g('observacoes'),
@@ -9780,7 +9792,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/clientes-fiscais.js?v=1a92028f"></script>
+<script src="js/clientes-fiscais.js?v=02a843fe"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>

@@ -119,7 +119,7 @@ function CFI_novaFicha(nome){
     codigoIbge:'',                       // exigido na DPS; preenchido na Fase F
     emailNota:'',
     contatoFinanceiro:'', whatsappFinanceiro:'', emailFinanceiro:'',
-    exigeNota:true, cobrancaAdministrativo:true, notaSinal:'junto', fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
+    exigeNota:true, cobrancaAdministrativo:true, notaSinal:'junto', condicaoPagamento:'avista', condicaoTexto:'', envioPreferido:'whatsapp', fechamentoPadrao:'mensal', prazoPagamento:'', diaVencimento:null,
     instrucoes:'', observacoes:'',
     criadoEm:'', atualizadoEm:''
   };

@@ -88,3 +88,73 @@ console.log('Vencimento herdado do Receber OK');
   assert.equal(criar([base]).itens[0].edicoes,0,'lançamento sem o campo não quebra');
 }
 console.log('Resumo para a nota (diárias, horas, edições) OK');
+
+// ── Condição de pagamento: o que cobrar AGORA ──────────────────────────────
+// Will (20/11): "se o cliente ainda não pagou os 50% e no card do lançamento não tiver
+// nenhum valor, o fiscal não saberá como cobrar". A condição é do cliente e viaja
+// junto — não depende de já ter entrado dinheiro.
+{
+  const { cobranca } = require('../js/fechamentos.js');
+
+  // nada pago ainda: ela já sabe pedir a metade
+  const a = cobranca({valor:11250, recebido:0}, 'sinal50');
+  assert.equal(a.cobrarAgora, 5625, 'cobra o sinal, não o total');
+  assert.equal(a.proxima, 'Sinal (50%)');
+  assert.equal(a.quitado, false);
+  assert.deepEqual(a.parcelas.map(p=>p.aberto), [5625, 5625]);
+
+  // sinal pago: a vez é do saldo
+  const b = cobranca({valor:11250, recebido:5625}, 'sinal50');
+  assert.equal(b.cobrarAgora, 5625);
+  assert.equal(b.proxima, 'Saldo (50%)');
+  assert.equal(b.parcelas[0].aberto, 0, 'o sinal está quitado');
+  assert.equal(b.parcelas[0].pago, 5625);
+
+  // pagou parte do sinal
+  const c = cobranca({valor:11250, recebido:2000}, 'sinal50');
+  assert.equal(c.cobrarAgora, 3625, 'falta completar o sinal');
+  assert.equal(c.proxima, 'Sinal (50%)');
+
+  // pagou mais que o sinal, mas não tudo
+  const d = cobranca({valor:11250, recebido:8000}, 'sinal50');
+  assert.equal(d.cobrarAgora, 3250);
+  assert.equal(d.proxima, 'Saldo (50%)');
+
+  // quitado
+  const e = cobranca({valor:11250, recebido:11250}, 'sinal50');
+  assert.equal(e.cobrarAgora, 0);assert.equal(e.quitado, true);assert.equal(e.proxima, '');
+
+  // à vista é uma parcela só
+  const v = cobranca({valor:11250, recebido:0}, 'avista');
+  assert.equal(v.parcelas.length, 1);assert.equal(v.cobrarAgora, 11250);
+  assert.equal(cobranca({valor:100, recebido:0}, 'inexistente').parcelas.length, 1,
+    'condição desconhecida cai em à vista');
+  assert.equal(cobranca({valor:100, recebido:0}).condicao, 'avista', 'sem condição também');
+
+  // ⚠️ centavos: a soma das parcelas tem que fechar EXATAMENTE com o total
+  for (const total of [11250, 3750.01, 0.01, 999.99, 1234.56, 2200.05]) {
+    for (const cond of ['sinal50','sinal30','avista']) {
+      const r = cobranca({valor: total, recebido: 0}, cond);
+      const soma = Math.round(r.parcelas.reduce((s,p)=>s+p.valor,0)*100)/100;
+      assert.equal(soma, total, `${cond} de ${total}: as parcelas somam ${soma}`);
+    }
+  }
+  const imp = cobranca({valor:3750.01, recebido:0}, 'sinal50');
+  assert.equal(imp.parcelas[0].valor + imp.parcelas[1].valor, 3750.01,
+    'a última parcela leva a sobra do arredondamento');
+
+  // 30/70
+  const t = cobranca({valor:1000, recebido:0}, 'sinal30');
+  assert.deepEqual(t.parcelas.map(p=>p.valor), [300, 700]);
+
+  // valores ausentes não explodem
+  assert.equal(cobranca({}, 'sinal50').cobrarAgora, 0);
+  assert.equal(cobranca(null, 'sinal50').parcelas.length, 2);
+
+  // a condição da ficha viaja para o fechamento
+  const f = criar([{...base, valorTotal:1000, valorReserva:0}], {condicaoPagamento:'sinal50'});
+  assert.equal(f.condicao, 'sinal50', 'a ficha manda a condição para o fechamento');
+  assert.equal(criar([base], {}).condicao, 'avista', 'sem ficha, à vista');
+  assert.equal(criar([base], {condicaoPagamento:'xpto'}).condicao, 'avista', 'valor inválido vira à vista');
+}
+console.log('Condição de pagamento (o que cobrar agora) OK');

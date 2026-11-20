@@ -31,8 +31,14 @@ service cloud.firestore {
           // O MODO (notaModo) e os valores continuam só do proprietário — aqui ela
           // registra apenas o que foi emitido em cada parte.
           'nfSinalNumero','nfSinalData','nfSinalStatus',
-          'nfSaldoNumero','nfSaldoData','nfSaldoStatus'
+          'nfSaldoNumero','nfSaldoData','nfSaldoStatus',
+          // promessa de pagamento: o que o CLIENTE disse. Não é confirmação de
+          // recebimento nem muda o vencimento — só faz a cobrança voltar na data.
+          'promessaData','promessaObs'
         ])
+        && request.resource.data.get('promessaObs', '').size() <= 300
+        && (request.resource.data.get('promessaData', '') == ''
+          || request.resource.data.get('promessaData', '').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
         // itens, valores, vencimento e divergência são do espelho (proprietário):
         // ela não reescreve o que veio do Receber.
         && !request.resource.data.diff(resource.data).affectedKeys()
