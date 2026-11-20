@@ -27,10 +27,10 @@ function FC_lote(){
   const ocupados=FC_ocupados(), fichas=(typeof CFI_lista==='function'?CFI_lista():[]), grupos={};
   // "tudo" = todo lançamento desde out/2026, independente do recorte de meses da tela.
   const base=FC_loteTudo
-    ? (R_todosOsDados||[]).filter(r=>Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r))
+    ? (R_todosOsDados||[]).filter(r=>Number(r.valorTotal)>0&&!r.naoFaturavel&&WENFechamentos.noPeriodo(r))
     : (NF_lancamentosDoPeriodo()||[]);
   base.forEach(r=>{
-    if(ocupados.has(String(r.id)))return;
+    if(ocupados.has(String(r.id))||r.naoFaturavel)return;
     const c=r.cliente||'';if(!c)return;
     (grupos[c]=grupos[c]||[]).push(r);
   });
@@ -283,7 +283,7 @@ async function FC_gravarCampos(id,doc,campos){
 
 // As diárias que compõem um grupo, lidas do Receber AGORA (o espelho é sempre do estado atual).
 function FC_regsDoGrupo(chave,cliente,ficha){
-  const todas=(R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r));
+  const todas=(R_todosOsDados||[]).filter(r=>r.cliente===cliente&&Number(r.valorTotal)>0&&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
   return todas.filter(r=>FC_chaveGrupo(cliente,r,ficha)===chave);
 }
 
@@ -296,6 +296,7 @@ async function FC_espelhar(regs,motivo){
   const grupos=new Map();
   regs.forEach(r=>{
     if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
+    if(r.naoFaturavel)return;   // pré-reserva, bloqueio de agenda, teste interno
     const ficha=CFI_casar(r.cliente,fichas);
     // O Codex desligou este filtro em 19/11 ("todo cliente entra"). O Will decidiu em
     // 20/11 que quem está desmarcado em nota E cobrança deve SUMIR da tela dela.
@@ -392,7 +393,7 @@ async function FC_aoMudarFicha(nome){
       if(r.mantidos.length)toast('⚠️ '+nome+' tem nota emitida — esse fechamento ficou na tela dela.','#f59e0b',7000);
       return;
     }
-    const regs=(R_todosOsDados||[]).filter(r=>r.cliente===nome&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r));
+    const regs=(R_todosOsDados||[]).filter(r=>r.cliente===nome&&Number(r.valorTotal)>0&&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
     if(regs.length){const feitos=await FC_espelhar(regs,'ficha');if(feitos.length)await AV_criar(feitos);}
   }catch(e){console.warn('FC_aoMudarFicha',e.message);}
 }

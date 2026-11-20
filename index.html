@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-02c4e15d';
+window.APP_VERSION='20261120-17ea58b2';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2227,6 +2227,12 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
       <div class="form-group"><label>Observação</label><textarea id="rFObs" rows="2"></textarea></div>
     <!-- Padrão do CLIENTE, não deste lançamento. Grava em clientes_fiscais; o Receber
          não ganha campo nenhum e R_salvar não encosta nisso. -->
+    <div class="form-group" id="rNomeAviso" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:.86rem;cursor:pointer;text-transform:none;letter-spacing:0">
+        <input type="checkbox" id="rFNaoFaturavel" onchange="R_padraoRender()"/>
+        🚫 Não é faturável <span style="font-weight:400;color:#9ca3af;font-size:.78rem">— pré-reserva, bloqueio de agenda, teste interno. Não vai para o administrativo.</span></label>
+    </div>
     <div class="form-group" id="rPadraoCliente" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:12px 14px">
       <label style="margin-bottom:6px">🎯 Padrão deste cliente <span style="font-size:.72rem;color:#9ca3af;font-weight:400">(vale para todas as gravações dele)</span></label>
       <div id="rPadraoChips"></div>
@@ -2755,7 +2761,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=e274ab1e"></script>
-<script src="js/fechamentos-admin.js?v=fedead25"></script>
+<script src="js/fechamentos-admin.js?v=3995f65c"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -3865,11 +3871,38 @@ function CFI_ano(){return String(new Date().getFullYear());}
 // Dois botõezinhos por cliente: 🧾 nota e 💰 cobrança. Verde = o administrativo cuida.
 // Cinza = não. Quem está desligado nos DOIS some da liberação em lote.
 // O modal do Receber mostra o padrão do cliente que estiver no campo Cliente.
+// Nome parecido com um cliente que já existe: avisa e oferece trocar. Nunca troca
+// sozinho — "CARTPANDA" e "CARTPANDA 2" podem ser dois clientes de verdade.
+function R_nomeParecido(){
+  const el=document.getElementById('rNomeAviso'); if(!el)return;
+  const campo=document.getElementById('rFCliente'), nome=(campo.value||'').trim();
+  const todos=(typeof R_getTodosClientes==='function')?R_getTodosClientes():[];
+  const iguais=todos.some(n=>String(n).toUpperCase()===nome.toUpperCase());
+  const cand=(nome&&!iguais&&typeof CFI_parecidos==='function')?CFI_parecidos(nome,todos).slice(0,3):[];
+  const assinatura=nome.toUpperCase()+'::'+cand.join('|');   // o nome entra: trocar o nome sempre recalcula
+  if(el.dataset.assinatura===assinatura)return;
+  el.dataset.assinatura=assinatura;
+  if(!cand.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='';
+  el.innerHTML='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 13px;font-size:.83rem;color:#92400e">'
+    +'⚠️ Parece o mesmo cliente que já existe: '
+    +cand.map(n=>'<button type="button" class="venc-chip" style="margin:2px 3px" data-nome="'+NF_esc(n)+'">usar <b>'+NF_esc(n)+'</b></button>').join('')
+    +'<div style="font-size:.75rem;margin-top:5px;opacity:.85">Nomes diferentes viram clientes diferentes — e aí a cobrança e a nota se partem em duas.</div></div>';
+  el.querySelectorAll('[data-nome]').forEach(b=>b.addEventListener('click',e=>{
+    e.preventDefault();e.stopPropagation();R_usarNome(b.dataset.nome);}));
+}
+window.R_usarNome=function(n){
+  const c=document.getElementById('rFCliente'); if(!c)return;
+  c.value=n;
+  R_nomeParecido(); R_padraoRender();
+};
 function R_padraoRender(){
+  R_nomeParecido();
   const alvo=document.getElementById('rPadraoChips'); if(!alvo)return;
   const nome=(document.getElementById('rFCliente')||{}).value||'';
+  const naoFat=(document.getElementById('rFNaoFaturavel')||{}).checked;
   const caixa=document.getElementById('rPadraoCliente');
-  if(caixa)caixa.style.display=nome.trim()?'':'none';
+  if(caixa)caixa.style.display=(nome.trim()&&!naoFat)?'':'none';
   alvo.innerHTML=nome.trim()?CFI_chipsDe(nome.trim()):'';
 }
 function CFI_chipsDe(nome){
@@ -4552,6 +4585,7 @@ function R_abrirModal(id=null){
     document.getElementById('rFValorEdicao').value=temSplit?(r.valorEdicao||0):0;
     document.getElementById('rFValorTotal').value=r.valorTotal;
     document.getElementById('rFQtdEdicao').value=r.qtdEdicao||'';
+    document.getElementById('rFNaoFaturavel').checked=!!r.naoFaturavel;
     R_descUltima=R_descTexto();   // se a descrição salva for igual à automática, segue automática
     const partesMes=(r.mes||R_mesAtual).split('/'),miAbrev=partesMes[0],anoR=partesMes[1],miNum=String(MESES_ABREV.indexOf(miAbrev)+1).padStart(2,'0'),data=r.data||'-';
     if(data&&data!=='-'){const pts=data.split('/');document.getElementById('rFDia').value=pts[0]||'';}else document.getElementById('rFDia').value='';
@@ -4562,6 +4596,7 @@ function R_abrirModal(id=null){
     atualizarMesDoFormularioR();
   }else{
     ['rFCliente','rFHorario','rFHoras','rFValorLocacao','rFValorEdicao','rFQtdEdicao','rFValorTotal','rFValorReserva','rFDesc','rFObs'].forEach(x=>document.getElementById(x).value='');
+    document.getElementById('rFNaoFaturavel').checked=false;
     document.getElementById('rFDia').value='';document.getElementById('rFStudio').value='STUDIO A';
     R_descUltima='';
     const partesMes=R_mesAtual.split('/'),miNum=String(MESES_ABREV.indexOf(partesMes[0])+1).padStart(2,'0');
@@ -4603,6 +4638,22 @@ function R_descAuto(){
   el.value=novo; R_descUltima=novo;
 }
 
+function R_duplicatas(cliente,dia,mes,horario,ignorarId){
+  const nucleo=(typeof CFI_nucleoNome==='function')?CFI_nucleoNome(cliente):String(cliente||'').toLowerCase();
+  const h=String(horario||'').replace(/\s+/g,'').toUpperCase();
+  return (R_todosOsDados||[]).filter(r=>{
+    if(String(r.id)===String(ignorarId))return false;
+    if(r.mes!==mes)return false;
+    if(String(r.data||'').slice(0,5)!==String(dia||'').slice(0,5))return false;
+    const mesmoCliente=(typeof CFI_nucleoNome==='function')
+      ? CFI_nucleoNome(r.cliente)===nucleo
+      : String(r.cliente||'').toUpperCase()===String(cliente||'').toUpperCase();
+    if(!mesmoCliente)return false;
+    const rh=String(r.horario||'').replace(/\s+/g,'').toUpperCase();
+    return !h||!rh||rh===h;      // sem horário em um dos dois, a data já basta para desconfiar
+  });
+}
+
 async function R_salvarLancamento(){
   const cliente=document.getElementById('rFCliente').value.trim().toUpperCase();if(!cliente){toast('Informe o cliente.','#ef4444');return;}
   const vl=parseFloat(document.getElementById('rFValorLocacao').value)||0,ve=parseFloat(document.getElementById('rFValorEdicao').value)||0;
@@ -4612,7 +4663,13 @@ async function R_salvarLancamento(){
   let mesLanc=R_mesAtual;if(mi&&ano)mesLanc=MESES_ABREV[parseInt(mi)-1]+'/'+ano;
   // Vencimento: se preenchido usa esse, senão usa data de gravação
   const vencFmt=R_vencValor()||dataFmt;
-  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,valorLocacao:vl,valorEdicao:ve,qtdEdicao:parseInt(document.getElementById('rFQtdEdicao').value,10)||0,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
+  const dups=R_duplicatas(cliente,dataFmt,mesLanc,document.getElementById('rFHorario').value,R_editandoId);
+  if(dups.length&&!confirm('⚠️ Já existe lançamento para este cliente neste dia:\n\n'
+      +dups.slice(0,4).map(r=>'• '+r.cliente+' — '+(r.data||'')+' '+(r.horario||'')+' · '+(r.horas||0)+'h · '+fmtReal(r.valorTotal||0)).join('\n')
+      +(dups.length>4?'\n• (+'+(dups.length-4)+')':'')
+      +'\n\nFoi assim que a diária de 12/11 do Danny Ueda acabou lançada duas vezes.\n\nSalvar mesmo assim?'))
+    {loading(false);return;}
+  const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,naoFaturavel:!!document.getElementById('rFNaoFaturavel').checked,valorLocacao:vl,valorEdicao:ve,qtdEdicao:parseInt(document.getElementById('rFQtdEdicao').value,10)||0,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
   if(R_pendingGoogleEventId)base.googleEventId=R_pendingGoogleEventId;
   loading(true,R_editandoId?'Atualizando...':'Salvando...');setSyncStatus('saving');
   try{
@@ -9737,7 +9794,7 @@ AUTH_bootstrap();
 <script src="js/concil.js?v=89fcecda"></script>
 <script src="js/evolucao.js?v=81abf0ce"></script>
 <!-- ═══ Simulação de caixa (SIM_) — projeção 60/90/180 dias sobre R_todosOsDados + P_meses ═══ -->
-<script src="js/clientes-fiscais.js?v=c5049a75"></script>
+<script src="js/clientes-fiscais.js?v=0e930ae0"></script>
 <script src="js/simulacao.js?v=102fff45"></script>
 <script src="js/openfinance.js?v=f611ddeb"></script>
 <style>

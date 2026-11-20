@@ -133,6 +133,43 @@ function CFI_novaFicha(nome){
 // desmarcado nas DUAS coisas — não exige nota E não é a Natália quem cobra.
 // Uma ficha só, quatro respostas. Lê fichas ANTIGAS (exigeNota + notaSinal) sem
 // precisar migrar nada: quem não tem notaRegra cai no que os campos velhos diziam.
+// ── Nome do cliente: achar o mesmo cliente escrito de outro jeito ──────────
+// "PRÉ RESERVA WEN PRODUTORA ESTUDIO B - DANNY UEDA" e "DANNY UEDA" eram dois
+// clientes para o sistema. Isso gerou diária em dobro, fechamento órfão e cobrança
+// errada. O núcleo tira o ruído que vem do título da agenda.
+const CFI_RUIDO = [
+  'pre reserva','pre-reserva','prereserva','reserva',
+  'wen produtora','wenprodutora','wen',
+  'estudio a','estudio b','studio a','studio b','estudio','studio',
+  'gravacao','gravacoes','podcast','videocast','live','ao vivo','mesacast'
+];
+function CFI_nucleoNome(nome){
+  let t = String(nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  t = t.replace(/[^a-z0-9]+/g,' ');
+  for (const r of CFI_RUIDO) t = t.replace(new RegExp('(^| )'+r+'( |$)','g'),' ');
+  t = t.replace(/\b\d+\s*h(oras?)?\b/g,' ').replace(/\s+/g,' ').trim();
+  return t;
+}
+// Nomes diferentes que provavelmente são o mesmo cliente. Nunca decide sozinho:
+// devolve os candidatos para a pessoa confirmar.
+function CFI_parecidos(nome, nomesExistentes){
+  const alvo = CFI_nucleoNome(nome);
+  if (!alvo || alvo.length < 3) return [];
+  const vistos = new Set();
+  return (nomesExistentes||[]).filter(n => {
+    if (!n || n === nome) return false;
+    const k = String(n).toUpperCase();
+    if (vistos.has(k)) return false;
+    const nucleo = CFI_nucleoNome(n);
+    if (!nucleo || nucleo === alvo) { vistos.add(k); return !!nucleo; }
+    // um contém o outro, com pelo menos 4 letras — evita casar "ia" com "dia"
+    const curto = alvo.length < nucleo.length ? alvo : nucleo;
+    const longo = alvo.length < nucleo.length ? nucleo : alvo;
+    if (curto.length >= 4 && longo.includes(curto)) { vistos.add(k); return true; }
+    return false;
+  });
+}
+
 const CFI_NOTA_REGRAS = {
   gravacao:  {rotulo:'1 nota após a gravação', emite:true,  separa:false, quando:'gravacao'},
   pagamento: {rotulo:'1 nota no pagamento',    emite:true,  separa:false, quando:'pagamento'},
@@ -204,5 +241,6 @@ function CFI_resumo(lancamentos, fichas, ano){
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_DESEJAVEIS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
     CFI_validarDoc, CFI_tipoDoc, CFI_formatarDoc, CFI_validarCEP, CFI_validarUF, CFI_validarEmail,
-    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_NOTA_REGRAS, CFI_notaRegra, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
+    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_NOTA_REGRAS, CFI_notaRegra,
+    CFI_nucleoNome, CFI_parecidos, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
 }

@@ -474,6 +474,34 @@ function blocoFiscal(f){
 // Seleção das diárias que entram NESTA nota. Pedido do Will (20/11): "quero a opção
 // de selecionar as quais quero fazer a mesma nota". O que sobra fica para a próxima.
 let notaSel=new Set();
+// A descrição fiscal acompanha a seleção: se a nota é de uma diária só, o texto da
+// nota não pode listar as três. Só reescreve enquanto ela não tiver editado à mão.
+let descAuto='';
+function descricaoDasSelecionadas(f){
+ const itens=(f.itens||[]).filter(r=>notaSel.has(String(r.id)));
+ if(!itens.length)return '';
+ const linhas=itens.map(r=>{
+   const p=[];
+   if(r.data)p.push(r.data);
+   if(r.horas)p.push(r.horas+'h');
+   if(r.studio)p.push(String(r.studio).toUpperCase());
+   if(r.edicoes)p.push(r.edicoes+(r.edicoes===1?' edição':' edições'));
+   if(r.descricao)p.push(r.descricao);
+   return p.join(' · ');
+ });
+ return descricaoFiscalComBanco(
+   'Prestação de serviços de produção audiovisual.\n'
+   +WENFechamentos.textoResumo(itens)+'.\n'+linhas.join('\n'));
+}
+function sincronizarDescricao(f){
+ const el=$('descricaoFiscal'); if(!el)return;
+ const atual=el.value.trim();
+ if(atual&&descAuto&&atual!==descAuto.trim())return;   // editada à mão: não encosta
+ if(atual&&!descAuto)return;                           // veio do banco e ninguém gerou ainda
+ const novo=descricaoDasSelecionadas(f);
+ if(!novo)return;
+ el.value=novo; descAuto=novo;
+}
 function blocoNotas(f){
  const livres=WENFechamentos.diariasLivres(f);
  const jaFeitas=(f.notasEmitidas||[]);
@@ -602,17 +630,22 @@ function abrir(id){
      if($('notaNumero'))$('notaNumero').value=num;if($('notaData')&&dt)$('notaData').value=dt;}};
  function ligaNotas(g){
    $('editor').querySelectorAll('[data-nota]').forEach(c=>c.onchange=()=>{
-     c.checked?notaSel.add(c.dataset.nota):notaSel.delete(c.dataset.nota);redesenhaNotas();});
+     c.checked?notaSel.add(c.dataset.nota):notaSel.delete(c.dataset.nota);
+     redesenhaNotas();sincronizarDescricao(g);});
    const todas=$('notaTodas');
    if(todas)todas.onclick=()=>{
      const livres=WENFechamentos.diariasLivres(g).map(r=>String(r.id));
      const todasMarcadas=livres.every(i=>notaSel.has(i));
-     livres.forEach(i=>todasMarcadas?notaSel.delete(i):notaSel.add(i));redesenhaNotas();};
+     livres.forEach(i=>todasMarcadas?notaSel.delete(i):notaSel.add(i));
+     redesenhaNotas();sincronizarDescricao(g);};
    const reg=$('notaRegistrar');
    if(reg)reg.onclick=()=>registrarNota(g);
  }
  notaSel=new Set(WENFechamentos.diariasLivres(f).map(r=>String(r.id)));
+ descAuto='';
  redesenhaNotas();
+ // o texto do banco vira a referência: a partir daqui, mexer na seleção reescreve
+ descAuto=$('descricaoFiscal')?$('descricaoFiscal').value:'';
  $('fZap').onclick=()=>copiarTexto(textoWhats(f),'📱 Texto do WhatsApp copiado. Revise o destinatário antes de enviar.');
  $('fXls').onclick=()=>excelFechamento(f);
  $('fNF').onclick=()=>{$('nfTextoArea').value=textoNF(f);$('modalNFBg').classList.add('open');};
