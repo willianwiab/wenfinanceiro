@@ -124,6 +124,42 @@ await page.waitForTimeout(1200);
 assert.equal(await page.evaluate(()=>Object.values(FC_dados).filter(f=>f.cliente==='Omega').length),1,
   '🔒 fechamento com nota emitida sobrevive à limpeza');
 
+// ── 🔄 reaplicar as fichas em tudo ────────────────────────────────────────
+// A ficha só era reaplicada no clique do chip. Quem foi marcado antes ficava com o
+// valor velho — foi o caso da Silvia Vinhas, que seguia "a cobrar" depois de o Will
+// ter desmarcado a cobrança. Este botão alcança o que já estava espelhado.
+await page.evaluate(async()=>{
+  FC_dados={};R_todosOsDados.length=0;CFI_FICHAS={};
+  const regs=[
+    {id:'RA1',cliente:'Mantém',mes:'NOV/2026',data:'10/11/2026',horario:'-',horas:2,
+     studio:'STUDIO A',valorTotal:700,valorReserva:0,saldo:700,desc:'x'},
+    {id:'RA2',cliente:'Perde',mes:'NOV/2026',data:'11/11/2026',horario:'-',horas:2,
+     studio:'STUDIO A',valorTotal:800,valorReserva:0,saldo:800,desc:'x'}];
+  R_todosOsDados.push(...regs);
+  await FC_espelhar(regs,'teste');                 // espelhados SEM ficha
+});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),2,'os dois entraram');
+assert.equal(await page.evaluate(()=>Object.values(FC_dados).every(f=>f.exigeNota)),true,
+  'e ambos nasceram exigindo nota');
+
+// o Will marca as fichas DEPOIS — sem clicar nos chips desta aba
+await page.evaluate(()=>{
+  CFI_FICHAS.mantem={id:'mantem',nome:'Mantém',nomes:['Mantém'],exigeNota:false,cobrancaAdministrativo:true};
+  CFI_FICHAS.perde={id:'perde',nome:'Perde',nomes:['Perde'],exigeNota:false,cobrancaAdministrativo:false};
+  window.CFI_carregar=async()=>{CFI_ok=true;return true;};
+  NF_montar();
+});
+assert.equal(await page.evaluate(()=>Object.values(FC_dados).find(f=>f.cliente==='Mantém').exigeNota),true,
+  'sem reaplicar, o fechamento segue com o valor velho — era exatamente o sintoma');
+
+await page.click('#fcReaplicar');
+await page.waitForFunction(()=>!Object.values(FC_dados).some(f=>f.cliente==='Perde'),null,{timeout:20000});
+const depois=await page.evaluate(()=>Object.values(FC_dados)
+  .filter(f=>['Mantém','Perde'].includes(f.cliente))
+  .map(f=>({c:f.cliente,nf:f.exigeNota,cob:(f.clienteFiscal||{}).cobrancaAdministrativo})));
+assert.deepEqual(depois,[{c:'Mantém',nf:false,cob:true}],
+  'quem só perdeu a nota FICA, agora com exigeNota correto; quem perdeu as duas SAI');
+
 assert.deepEqual(errors,[]);
 console.log('✅ liberacao-lote: a ficha decide quem entra, um fechamento por cliente, sem diária em dobro, 50/50 preservado');
 }finally{await browser.close();}

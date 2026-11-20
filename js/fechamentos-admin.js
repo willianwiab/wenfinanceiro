@@ -51,12 +51,14 @@ function FC_loteHTML(){
         ⚠️ <b>${na.reduce((a,g)=>a+g.qtd,0)} fechamento(s)</b> de ${na.length} cliente(s) estão na tela do administrativo mas foram desmarcados em nota <b>e</b> cobrança.
         <button type="button" class="btn" id="fcLimpar" style="width:auto;padding:6px 13px;font-size:.8rem;margin-left:8px">🧹 Tirar de lá</button></div>`
     : '';
+  const btnReaplicar='<button type="button" class="btn" id="fcReaplicar" style="width:auto;padding:7px 14px;font-size:.8rem;background:#1e40af;color:#fff;border:none;margin:4px 0 10px">🔄 Reaplicar as fichas em tudo</button>'
+    +'<div style="font-size:.76rem;color:#94a3b8;margin:-6px 0 10px">Use depois de marcar 🧾 e 💰 de vários clientes: atualiza os fechamentos que já estavam na tela dela.</div>';
   const chaveTudo=`<label class="nf-item" style="margin:10px 0"><input type="checkbox" id="fcLoteTudo" ${FC_loteTudo?'checked':''}>
      <span><b>Carregar tudo desde outubro/2026</b> — ignora o recorte de meses acima. Use uma vez, para trazer o que já existia.</span></label>`;
-  if(!grupos.length)return avisoLimpar+chaveTudo+'<p class="nf-vazio">✅ Nada solto'+(FC_loteTudo?'':' neste recorte')+' — toda diária dos clientes atendidos pelo administrativo já está espelhada.</p>';
+  if(!grupos.length)return avisoLimpar+btnReaplicar+chaveTudo+'<p class="nf-vazio">✅ Nada solto'+(FC_loteTudo?'':' neste recorte')+' — toda diária dos clientes atendidos pelo administrativo já está espelhada.</p>';
   const marcados=grupos.filter(g=>!FC_loteFora.has(g.cliente));
   const total=marcados.reduce((a,g)=>a+g.valor,0), diarias=marcados.reduce((a,g)=>a+g.regs.length,0);
-  return avisoLimpar+`<div class="nf-resumo"><b>Diárias que ainda não chegaram no administrativo</b><br>
+  return avisoLimpar+btnReaplicar+`<div class="nf-resumo"><b>Diárias que ainda não chegaram no administrativo</b><br>
     Daqui para a frente isso acontece sozinho, no momento do lançamento. Esta lista é para o que já existia antes. Desmarque quem não entra —
     quem a ficha tirou do caminho (não exige nota <b>e</b> não é cobrado pelo administrativo) já não aparece aqui.</div>
    <div id="fcLoteLista">${grupos.map(g=>{
@@ -89,6 +91,7 @@ function FC_render(){
   const bl=document.getElementById('fcLiberarLote');if(bl)bl.onclick=FC_liberarLote;
   const bt=document.getElementById('fcLoteTudo');if(bt)bt.onchange=()=>{FC_loteTudo=bt.checked;FC_render();};
   const bLimpa=document.getElementById('fcLimpar');if(bLimpa)bLimpa.onclick=FC_limparNaoAtendidos;
+  const bRe=document.getElementById('fcReaplicar');if(bRe)bRe.onclick=FC_reaplicarFichas;
   root.querySelectorAll('#fcDiarias input').forEach(el=>el.onchange=()=>el.checked?FC_selecionados.add(el.dataset.id):FC_selecionados.delete(el.dataset.id));
   const all=document.getElementById('fcTodas');if(all)all.onchange=()=>root.querySelectorAll('#fcDiarias input:not(:disabled)').forEach(el=>{el.checked=all.checked;el.onchange();});
   const btn=document.getElementById('fcPreparar');if(btn)btn.onclick=()=>{
@@ -332,6 +335,34 @@ async function FC_espelhar(regs,motivo){
     }catch(e){console.warn('FC_espelhar',chave,e.message);}
   }
   return feitos;
+}
+
+// Reaplica as fichas em TODOS os fechamentos de uma vez.
+// Existe porque a ficha só era reaplicada no instante do clique no chip: quem foi
+// marcado antes, ou numa aba que já estava aberta, ficava com o valor velho —
+// "nota pendente" num cliente que o Will já tinha desmarcado.
+async function FC_reaplicarFichas(){
+  if(FC_salvando)return;FC_salvando=true;
+  const btn=document.getElementById('fcReaplicar'); if(btn)btn.disabled=true;
+  try{
+    if(!await CFI_carregar())throw Error('Não consegui ler o cadastro de clientes.');
+    if(!await FC_carregar())throw Error('Não consegui ler os fechamentos.');
+    const clientes=[...new Set(Object.values(FC_dados).map(f=>f&&f.cliente).filter(Boolean))];
+    let tocados=0, saíram=0, comNota=0;
+    for(const c of clientes){
+      const ficha=CFI_casar(c,CFI_lista());
+      if(!CFI_liberavel(ficha)){
+        const r=await FC_removerCliente(c);saíram+=r.removidos;comNota+=r.mantidos.length;continue;
+      }
+      const regs=(R_todosOsDados||[]).filter(r=>r.cliente===c&&Number(r.valorTotal)>0
+        &&!r.naoFaturavel&&WENFechamentos.noPeriodo(r));
+      if(regs.length){await FC_espelhar(regs,'reaplicar');tocados++;}
+    }
+    FC_render();
+    toast('🔄 '+tocados+' cliente(s) atualizados'+(saíram?' · '+saíram+' fechamento(s) saíram':'')
+      +(comNota?' · '+comNota+' ficaram por ter nota emitida':'')+'.');
+  }catch(e){toast(e.message,'#ef4444');}
+  finally{FC_salvando=false;const b=document.getElementById('fcReaplicar');if(b)b.disabled=false;}
 }
 
 // Quem está na tela dela hoje e NÃO deveria estar: desmarcados nos dois chips.
