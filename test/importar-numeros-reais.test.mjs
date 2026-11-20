@@ -14,6 +14,7 @@ const r = await page.evaluate(async ({ fech, fich }) => {
   window.FC_gravarCampos = async (id, doc, campos) => { gravF.push({ id, campos: [...campos], nfNumero: doc.nfNumero, status: doc.fiscalStatus }); };
   window.BC_fbUpsert = async (col, id, f) => { gravC.push({ col, id, nome: f.nome, doc: f.doc, razao: f.razaoSocial }); };
   window.CFI_salvarCache = () => {};
+  const removidos = []; window.FC_removerGrupo = async (g, doc) => { removidos.push(doc.id); delete FC_dados[doc.id]; };
   out.botao = [...document.querySelectorAll('button')].some(b => /Números reais e CNPJ/.test(b.textContent));
   NFR_abrir();
   const marcadasF = LF => LF; // placeholder
@@ -22,6 +23,8 @@ const r = await page.evaluate(async ({ fech, fich }) => {
   out.resumo = document.getElementById('nfrResumo').textContent;
   out.nadaGravouAntes = gravF.length === 0 && gravC.length === 0;
   await NFR_aplicar();
+  out.removidos = removidos;
+  out.danny2 = { nf: FC_dados['m_dannyueda_2026-11'].nfNumero, st: FC_dados['m_dannyueda_2026-11'].fiscalStatus };
   out.fechGravados = gravF.map(g => g.id + '=' + g.nfNumero).sort();
   out.camposMask = [...new Set(gravF.flatMap(g => g.campos))].sort();
   out.ficGravadas = gravC.map(g => g.nome).sort();
@@ -37,12 +40,14 @@ const r = await page.evaluate(async ({ fech, fich }) => {
 console.log(JSON.stringify(r, null, 1)); await browser.close();
 const f = []; const ck = (c, m) => { if (!c) f.push(m); };
 ck(r.botao, 'botão ausente'); ck(r.nadaGravouAntes, 'gravou antes de aplicar');
-ck(r.fechGravados.length === 8, 'deveria gravar 8 fechamentos marcados: ' + r.fechGravados);
+ck(r.fechGravados.length === 9, 'deveria gravar 9 fechamentos marcados: ' + r.fechGravados);
 ck(r.fechGravados.includes('m_quintessa_2026-10=420, 425, 6') && r.fechGravados.includes('m_zest_2026-10=423, 426'), 'números reais errados');
 ck(JSON.stringify(r.camposMask) === JSON.stringify(['atualizadoEm', 'fiscalStatus', 'nfData', 'nfNumero', 'notasEmitidas']), 'campos fora da lista: ' + r.camposMask);
 ck(r.ficGravadas.length === 15 && r.ficReceberIntocado, 'fichas: ' + r.ficGravadas.length);
 ck(r.danny?.doc === '31.955.304/0001-36' && r.ficCriada?.razao === 'ASSOCIACAO INSTITUTO PROA', 'ficha com dados errados');
 ck(r.naoMarcadosIntactos.join() === '312321,887878787,323213,2323', 'desmarcados foram alterados: ' + r.naoMarcadosIntactos);
+ck(r.removidos.join() === '3a9a416d-92f3-463a-8570-c4cb7ab7d33c', 'avulso órfão deveria ser removido: ' + r.removidos);
+ck(r.danny2.nf === '1, 8' && r.danny2.st === 'pendente', 'Danny: ' + JSON.stringify(r.danny2));
 ck(r.segundaMarcados === 0, '2ª abertura ainda marca coisas: ' + r.segundaMarcados);
 ck(!erros.length, 'erros de página: ' + erros.join(' | '));
 if (f.length) { console.error('FALHOU:\n- ' + f.join('\n- ')); process.exit(1); } console.log('✅ importar-numeros-reais ok');

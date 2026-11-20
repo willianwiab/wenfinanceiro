@@ -3,12 +3,19 @@ const NFR=require('../js/notas-reais.js'),fs=require('fs'),assert=require('asser
 const dir=process.argv[2]||'../../backups/fiscal-20261120';
 const fech=JSON.parse(fs.readFileSync(dir+'/wen_fechamentos_administrativo_20261120.json'));
 const fich=JSON.parse(fs.readFileSync(dir+'/wen_fichas_fiscais_20261120.json'));
-const A=NFR.analisarFechamentos(fech), by=Object.fromEntries(A.map(a=>[a.fech,a]));
-// 8 marcados e prontos (Leaders 11 confirmado); 3 com aviso e desmarcados (IA 11, Oswaldo, Leaders 10); 3 para limpar
-assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&a.marca).length,8);
+const A=NFR.analisarFechamentos(fech,new Set()), by=Object.fromEntries(A.map(a=>[a.fech,a]));
+// 9 marcados e prontos (Leaders 11 e Danny confirmados); 3 com aviso e desmarcados (IA 11, Oswaldo, Leaders 10); 3 para limpar
+assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&a.marca).length,9);
 assert.strictEqual(A.filter(a=>a.tipo==='trocar'&&a.ok&&!a.marca).length,3);
 assert.strictEqual(A.filter(a=>a.tipo==='limpar'&&a.ok).length,3);
 assert.ok(A.every(a=>a.ok),'todo item do plano deveria existir no backup: '+JSON.stringify(A.filter(a=>!a.ok)));
+// Danny Ueda: nota 1 (sinais) e 8 (saldos) nas diárias 12/11 e 13/11; a de 27/11 segue livre => fiscal 'pendente'
+const d=by['m_dannyueda_2026-11']; assert.strictEqual(d.novo,'1, 8'); assert.strictEqual(d.notas[0].ids.length,2); assert.strictEqual(d.notas[1].ids.length,2); assert.strictEqual(d.statusFinal,'pendente'); assert.strictEqual(d.livres,1); assert.strictEqual(d.soma,7500);
+assert.strictEqual(NFR.camposDe(d,'x').fiscalStatus,'pendente'); assert.strictEqual(NFR.camposDe(by['m_cartpanda_2026-10'],'x').fiscalStatus,'emitida');
+// Avulso órfão: remove só se tudo bater
+const rm=A.find(a=>a.tipo==='remover'); assert.ok(rm.ok&&rm.marca);
+const idAv=fech[rm.fech].itens[0].id; assert.strictEqual(NFR.analisarFechamentos(fech,new Set([String(idAv)])).find(a=>a.tipo==='remover').ok,false,'se a diária ainda existe no Receber, não remove');
+const f9=JSON.parse(JSON.stringify(fech)); f9[rm.fech].notasEmitidas=[{numero:'1'}]; assert.strictEqual(NFR.analisarFechamentos(f9,new Set()).find(a=>a.tipo==='remover').ok,false,'com nota, não remove');
 // Quintessa: 3 notas na mesma diária, soma = valor do fechamento
 const q=by['m_quintessa_2026-10']; assert.strictEqual(q.novo,'420, 425, 6'); assert.strictEqual(q.soma,4800); assert.strictEqual(q.valorFech,4800);
 assert.strictEqual(new Set(q.notas.flatMap(n=>n.ids)).size,1);

@@ -20,6 +20,7 @@
     {fech:'m_quintessa_2026-10',falso:'423412',notas:[{n:'420'},{n:'425'},{n:'6'}],marca:true,obs:'3 notas na mesma diária (1.800 + 1.800 + 1.200 = 4.800)'},
     {fech:'m_vendendovalor_2026-11',falso:'2331',notas:[{n:'4'}],marca:true},
     {fech:'m_zest_2026-10',falso:'54545',notas:[{n:'423',dia:'27/10'},{n:'426',dia:'29/10'}],marca:true},
+    {fech:'m_dannyueda_2026-11',falso:'',notas:[{n:'1',dia:['12/11','13/11']},{n:'8',dia:['12/11','13/11']}],marca:true,obs:'Danny Ueda: nota 1 = sinais (04/11) e nota 8 = saldos (18/11) das diárias 12/11 e 13/11; a de 27/11 segue pendente'},
     {fech:'m_iaondeissovaidar_2026-11',falso:'887878787',notas:[{n:'9'}],marca:false,aviso:'diária lançada em 5.400 e a nota é de 5.600 — corrija o Receber antes'},
     {fech:'m_oswaldocruz_2026-11',falso:'312321',notas:[{n:'5'}],marca:false,aviso:'nota 3.213 × diária 3.600 (diferença de 387) — decida antes'},
     {fech:'m_leadersbrief_2026-11',falso:'7676767',notas:[{n:'10'}],marca:true,obs:'Leaders Brief = Getronics (confirmado pelo Will, 20/11)'},
@@ -30,6 +31,8 @@
     {fech:'m_biolab_2026-10',falso:'2323232'},
     {fech:'m_nube_2026-11',falso:'2323'},{fech:'m_podcastpositivo_2026-10',falso:'2321312'}
   ];
+  // fechamento avulso órfão (a diária não existe mais no Receber): sai, mas só se TUDO bater
+  const REMOVER=[{fech:'3a9a416d-92f3-463a-8570-c4cb7ab7d33c',cliente:'PRÉ RESERVA WEN PRODUTORA ESTUDIO B - DANNY UEDA',valor:3750,motivo:'pré-reserva paga de 12/11 cuja diária não existe mais no Receber (sobra da duplicidade)'}];
   // nome no sistema → CNPJ e razão social do governo
   const FICHAS=[
     ['ZEST','26.480.370/0001-67','ZEST MARKETING DE CONTEUDO E CONSULTORIA LTDA'],
@@ -54,9 +57,9 @@
 
   // ── REGRAS PURAS (testáveis sem tela) ─────────────────────────────────────────
   // Decide o que fazer com cada fechamento do plano, dado o estado atual de `dados` (id → doc).
-  function analisarFechamentos(dados){
+  function analisarFechamentos(dados,idsReceber){
     const out=[];
-    const idsDe=(f,dia)=>(f.itens||[]).filter(i=>!dia||i.data===dia).map(i=>String(i.id));
+    const idsDe=(f,dia)=>(f.itens||[]).filter(i=>!dia||[].concat(dia).includes(i.data)).map(i=>String(i.id));
     for(const p of PLANO){
       const f=dados[p.fech]; const base={tipo:'trocar',fech:p.fech,marca:!!p.marca,aviso:p.aviso||'',obs:p.obs||''};
       if(!f){out.push({...base,marca:false,ok:false,motivo:'fechamento não existe'});continue;}
@@ -64,10 +67,11 @@
       const atual=String(f.nfNumero||'').trim();
       const jaReal=reais.every(n=>(f.notasEmitidas||[]).some(e=>String(e.numero)===n));
       if(jaReal){out.push({...base,cliente:f.cliente,atual,marca:false,ok:false,motivo:'já tem as notas reais'});continue;}
-      if(atual!==p.falso){out.push({...base,cliente:f.cliente,atual,marca:false,ok:false,motivo:'número atual ('+(atual||'vazio')+') não é o falso esperado ('+p.falso+') — não mexo'});continue;}
+      if(atual!==p.falso){out.push({...base,cliente:f.cliente,atual,marca:false,ok:false,motivo:'número atual ('+(atual||'vazio')+') não é o esperado ('+(p.falso||'vazio')+') — não mexo'});continue;}
       const notas=p.notas.map(x=>{const [data,valor]=NOTAS[x.n];const ids=idsDe(f,x.dia);return {numero:x.n,data,ids,valor};});
       if(notas.some(n=>!n.ids.length)){out.push({...base,cliente:f.cliente,atual,marca:false,ok:false,motivo:'diária da nota não encontrada no fechamento'});continue;}
-      out.push({...base,cliente:f.cliente,atual,ok:true,notas,
+      const cobertas=new Set(notas.flatMap(n=>n.ids)); const livres=(f.itens||[]).filter(i=>!cobertas.has(String(i.id))).length;
+      out.push({...base,cliente:f.cliente,atual,ok:true,notas,statusFinal:livres?'pendente':'emitida',livres,
         novo:notas.map(n=>n.numero).join(', '),soma:Math.round(notas.reduce((a,n)=>a+n.valor,0)*100)/100,valorFech:f.valor});
     }
     for(const l of LIMPAR){
@@ -77,6 +81,15 @@
       if(atual!==l.falso){out.push({...base,cliente:f.cliente,atual,ok:false,motivo:atual?'número atual ('+atual+') não é o falso esperado':'já está sem número'});continue;}
       out.push({...base,cliente:f.cliente,atual,ok:true,novo:'(vazio)'});
     }
+    for(const r of REMOVER){
+      const f=dados[r.fech]; const base={tipo:'remover',fech:r.fech,marca:true,aviso:r.motivo};
+      if(!f){out.push({...base,marca:false,ok:false,cliente:r.cliente,motivo:'já não existe'});continue;}
+      const ids=(f.itens||[]).map(i=>String(i.id)); const noReceber=idsReceber?ids.filter(i=>idsReceber.has(i)):[];
+      const outros=Object.values(dados).filter(o=>o&&o.id!==f.id&&(o.lancamentoIds||[]).some(x=>ids.includes(String(x))));
+      const motivoNao=String(f.cliente||'').toUpperCase()!==r.cliente?'outro cliente':Number(f.valor)!==r.valor?'valor mudou':(f.notasEmitidas||[]).length||f.fiscalStatus==='emitida'?'já tem nota':noReceber.length?'a diária ainda existe no Receber':outros.length?'a diária está em outro fechamento':'';
+      if(motivoNao){out.push({...base,marca:false,ok:false,cliente:f.cliente,motivo:'não removo: '+motivoNao});continue;}
+      out.push({...base,cliente:f.cliente,ok:true,novo:'(remover)',itensTxt:(f.itens||[]).map(i=>i.data+' '+i.valor).join(', ')});
+    }
     return out;
   }
   // Campos que vão no PATCH (e só estes entram no updateMask).
@@ -84,7 +97,7 @@
     if(a.tipo==='limpar')return {notasEmitidas:[],nfNumero:'',nfData:'',fiscalStatus:'pendente',atualizadoEm:agora};
     const ult=a.notas.map(n=>n.data).sort().at(-1);
     return {notasEmitidas:a.notas.map(n=>({numero:n.numero,data:n.data,ids:n.ids,valor:n.valor,em:agora})),
-      nfNumero:a.novo,nfData:ult,fiscalStatus:'emitida',atualizadoEm:agora};
+      nfNumero:a.novo,nfData:ult,fiscalStatus:a.statusFinal||'emitida',atualizadoEm:agora};
   }
   // Fichas: preenche só o que está vazio; divergência fica sinalizada e desmarcada.
   function analisarFichas(fichas){
@@ -104,11 +117,12 @@
   }
 
   // ── TELA ─────────────────────────────────────────────────────────────────────
+  const idsReceber=()=>new Set((typeof R_todosOsDados!=='undefined'?R_todosOsDados:[]).map(r=>String(r.id)));
   let LF=[],LC=[];
   function desenhar(){
     const box=document.getElementById('nfrLista'); if(!box)return;
     const linhaF=(a,i)=>{
-      const det=a.ok?(a.tipo==='limpar'?'<b>'+esc(a.atual)+'</b> → (vazio) · volta para pendente':'<b>'+esc(a.atual)+'</b> → <b>'+esc(a.novo)+'</b>'+(a.soma!==a.valorFech?' · notas '+a.soma.toLocaleString('pt-BR')+' × fechamento '+(a.valorFech||0).toLocaleString('pt-BR'):''))
+      const det=a.ok?(a.tipo==='remover'?'<b>remover</b> este fechamento avulso ('+esc(a.itensTxt)+')':a.tipo==='limpar'?'<b>'+esc(a.atual)+'</b> → (vazio) · volta para pendente':'<b>'+esc(a.atual)+'</b> → <b>'+esc(a.novo)+'</b>'+(a.soma!==a.valorFech?' · notas '+a.soma.toLocaleString('pt-BR')+' × fechamento '+(a.valorFech||0).toLocaleString('pt-BR'):''))
         :'<i>'+esc(a.motivo)+'</i>';
       return '<tr style="border-top:1px solid #e5e7eb"><td><input type="checkbox" '+(a.marca?'checked ':'')+(a.ok?'':'disabled ')+'onchange="NFR_marcaF('+i+',this.checked)"></td><td>'+esc(a.cliente||a.fech)+'<div style="font-size:.72rem;color:#6b7280">'+esc(a.fech)+'</div></td><td>'+det+(a.obs?'<div style="font-size:.72rem;color:#6b7280">'+esc(a.obs)+'</div>':'')+(a.aviso?'<div style="font-size:.72rem;color:#b45309">⚠️ '+esc(a.aviso)+'</div>':'')+'</td></tr>';};
     const linhaC=(a,i)=>{
@@ -125,7 +139,7 @@
   root.NFR_fechar=()=>document.getElementById('nfrBg')?.remove();
   root.NFR_abrir=function(){
     NFR_fechar();
-    LF=analisarFechamentos(typeof FC_dados!=='undefined'?FC_dados:{}); LC=analisarFichas(typeof CFI_FICHAS!=='undefined'?CFI_FICHAS:{});
+    LF=analisarFechamentos(typeof FC_dados!=='undefined'?FC_dados:{},idsReceber()); LC=analisarFichas(typeof CFI_FICHAS!=='undefined'?CFI_FICHAS:{});
     const bg=document.createElement('div'); bg.className='modal-bg open'; bg.id='nfrBg';
     bg.innerHTML='<div class="modal" style="max-width:980px"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Números reais das notas e CNPJ dos clientes</h2><button class="btn" onclick="NFR_fechar()">✕</button></div>'
       +'<p class="nf-sub">Substitui os números aleatórios pelos números reais do governo (Prefeitura 408–427 e Emissor Nacional 1–10) e preenche CNPJ e razão social. <b>Só troca número que for exatamente o falso esperado</b>; o que já tem dado não é sobrescrito. O Receber não é tocado.</p>'
@@ -137,11 +151,13 @@
     const btn=document.getElementById('nfrOk'); if(btn)btn.disabled=true;
     const agora=new Date().toISOString(); let nf=0,nc=0; const erros=[];
     // reconfere o estado ANTES de gravar (outra aba pode ter mudado)
-    const fresco=analisarFechamentos(FC_dados);
+    const fresco=analisarFechamentos(FC_dados,idsReceber());
     for(const a of LF.filter(x=>x.marca&&x.ok)){
       const atual=fresco.find(x=>x.fech===a.fech&&x.tipo===a.tipo);
       if(!atual||!atual.ok){erros.push(a.fech+': mudou desde a prévia');continue;}
       try{
+        if(a.tipo==='remover'){const doc=FC_dados[a.fech];await FC_removerGrupo(doc.grupo,doc);nf++;
+          if(typeof AUD_log==='function')try{AUD_log('excluir','administrativo_fechamentos',doc.cliente||a.fech,'Fechamento avulso órfão removido',null,null);}catch(e){}continue;}
         const doc=FC_dados[a.fech]; const campos=camposDe(atual,agora); Object.assign(doc,campos);
         await FC_gravarCampos(a.fech,doc,Object.keys(campos)); nf++;
         if(typeof AUD_log==='function')try{AUD_log('editar','administrativo_fechamentos',doc.cliente||a.fech,(a.tipo==='limpar'?'Número falso removido':'Número real da nota: '+a.novo),null,null);}catch(e){}
@@ -159,6 +175,6 @@
     NFR_fechar(); try{NF_montar();}catch(e){}
     toast((erros.length?'⚠️ ':'✅ ')+nf+' fechamento(s) e '+nc+' ficha(s) atualizados.'+(erros.length?' Falhas: '+erros.join('; '):'')+(nc?' Use "Reaplicar as fichas em tudo" para o CNPJ chegar aos fechamentos.':''),erros.length?'#d97706':undefined,10000);
   };
-  const API={NOTAS,PLANO,LIMPAR,FICHAS,analisarFechamentos,analisarFichas,camposDe};
+  const API={NOTAS,PLANO,LIMPAR,REMOVER,FICHAS,analisarFechamentos,analisarFichas,camposDe};
   if(typeof module!=='undefined')module.exports=API; else root.NFR=API;
 })(typeof window!=='undefined'?window:globalThis);
