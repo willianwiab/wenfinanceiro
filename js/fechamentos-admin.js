@@ -193,6 +193,63 @@ function FC_avisos(lista,hoje,janela){
   g.totalAberto=g.emAberto.reduce((a,f)=>a+Math.round((Number(f.saldo)||0)*100),0)/100;
   return g;
 }
+// ── Conferência: o que foi faturado bate com o que foi emitido? ───────────
+// Will (20/11): "avisar quando a soma das notas do mês não bate com o faturado —
+// pega nota esquecida e nota em dobro". Função pura, para ter teste sem navegador.
+function FC_conferencia(lancamentos,notas,fichas,mesIni,mesFim){
+  const dentro=m=>{const c=WENFechamentos.mesChave(m);
+    return c&&(!mesIni||c>=WENFechamentos.mesChave(mesIni))&&(!mesFim||c<=WENFechamentos.mesChave(mesFim));};
+  const porCliente={};
+  (lancamentos||[]).forEach(r=>{
+    if(!r||r.excluido||r.naoFaturavel||!(Number(r.valorTotal)>0))return;
+    if(!WENFechamentos.noPeriodo(r)||!dentro(r.mes))return;
+    // só quem precisa de nota entra na conferência
+    const regra=(typeof CFI_notaRegra==='function')?CFI_notaRegra(CFI_casar(r.cliente,fichas||[])):'gravacao';
+    if(regra==='nenhuma')return;
+    const g=porCliente[r.cliente]=porCliente[r.cliente]||{cliente:r.cliente,faturado:0,emitido:0,diarias:0,notas:[]};
+    g.faturado+=Math.round(Number(r.valorTotal)*100); g.diarias++;
+  });
+  (notas||[]).forEach(n=>{
+    if(!n||n.status==='cancelada')return;
+    if(!dentro(n.mesIni||n.dataEmissao))return;
+    const g=porCliente[n.cliente]; if(!g)return;
+    g.emitido+=Math.round((Number(n.valor)||0)*100);
+    g.notas.push(n.numero||'(sem número)');
+  });
+  const achados=[];
+  Object.values(porCliente).forEach(g=>{
+    const dif=g.emitido-g.faturado;
+    if(Math.abs(dif)<1)return;                       // bate (tolerância de 1 centavo)
+    achados.push({cliente:g.cliente,faturado:g.faturado/100,emitido:g.emitido/100,
+      diferenca:dif/100,notas:g.notas,diarias:g.diarias,
+      tipo:g.emitido===0?'sem_nota':dif<0?'falta':'sobra'});
+  });
+  const ordem={sobra:0,falta:1,sem_nota:2};
+  return achados.sort((a,b)=>ordem[a.tipo]-ordem[b.tipo]||Math.abs(b.diferenca)-Math.abs(a.diferenca));
+}
+
+function FC_blocoConferencia(){
+  let achados=[];
+  try{
+    const f=NF_filtro();
+    achados=FC_conferencia(R_todosOsDados,NF_ativas(),
+      (typeof CFI_lista==='function'?CFI_lista():[]),f.ini,f.fim);
+  }catch(e){return '';}
+  const rot={sobra:'<span class="nf-pill erro">emitido a MAIS</span>',
+    falta:'<span class="nf-pill pend">falta emitir</span>',
+    sem_nota:'<span class="nf-pill pend">nenhuma nota</span>'};
+  return '<h3 style="margin:18px 0 8px">⚖️ Nota × faturado '+(achados.length?'('+achados.length+')':'')+'</h3>'
+    +'<p class="nf-meta" style="margin:-4px 0 10px">Compara o que foi gravado com o que foi emitido, cliente a cliente, no recorte escolhido. Quem não emite nota fica de fora.</p>'
+    +(achados.length?achados.map(a=>
+      '<div class="nf-lin '+(a.tipo==='sobra'?'div':'fila')+'"><div class="nf-info">'
+      +'<div class="nf-nome">'+NF_esc(a.cliente)+'</div>'
+      +'<div class="nf-meta">'+a.diarias+' diária(s) · faturado '+fmt(a.faturado)
+      +' · emitido '+fmt(a.emitido)+(a.notas.length?' (nota '+NF_esc(a.notas.join(', '))+')':'')
+      +' '+rot[a.tipo]+'</div></div>'
+      +'<div class="nf-val" style="color:'+(a.tipo==='sobra'?'#b91c1c':'#b45309')+'">'
+      +(a.diferenca>0?'+':'')+fmt(a.diferenca)+'</div></div>').join('')
+      :'<div class="nf-vazio">✅ Tudo que foi gravado tem nota no valor certo.</div>');
+}
 function FC_renderAvisos(){
   const root=document.getElementById('nfConteudo'), esc=NF_esc;
   const cliente=NF_filtro().cliente;
@@ -223,7 +280,8 @@ function FC_renderAvisos(){
    +bloco('⏰ Vencem nos próximos 7 dias',g.vencendo,'Nada vencendo esta semana.')
    +bloco('📅 A vencer',g.aVencer,'Nada mais agendado.')
    +bloco('❔ Sem data de vencimento',g.semData,'Todos com data definida.')
-   +bloco('🧾 Esperando nota fiscal',g.notaPendente,'Nenhuma nota pendente.');
+   +bloco('🧾 Esperando nota fiscal',g.notaPendente,'Nenhuma nota pendente.')
+   +FC_blocoConferencia();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

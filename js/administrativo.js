@@ -131,7 +131,10 @@ async function carregar(){
      {id:'d2',cliente:'Cliente demonstração',data:'12/11',mes:'2026-11',horario:'10:00 AS 13:00',horas:3,studio:'STUDIO B',valorTotal:2200,valorReserva:400},
      {id:'d3',cliente:'Cliente demonstração',data:'19/11',mes:'2026-11',horario:'14:00 AS 16:00',horas:2,studio:'STUDIO A',valorTotal:2200,valorReserva:0}],{condicaoPagamento:'sinal50'}),id:'demo',updateTime:'mock'},
    {...WENFechamentos.criar([
-     {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'}];}
+     {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'},
+   {...WENFechamentos.criar([
+     {id:'d5',cliente:'Vence amanhã Ltda',data:'03/11',mes:'2026-11',horario:'10:00 AS 12:00',horas:2,studio:'STUDIO A',valorTotal:1800,valorReserva:0,
+      vencimento:(()=>{const x=new Date();x.setDate(x.getDate()+1);return String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0')+'/'+x.getFullYear();})()}],{}),id:'demo3',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
   docs=WENFechamentos.consolidarFechamentos(novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
   await avisosCarregar();await fichasCarregar();
@@ -156,7 +159,47 @@ async function avisosCarregar(){
     .sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
  }catch(e){avisos=[];}
 }
-const naoLidos=()=>avisos.filter(a=>!a.lidoEm);
+// ── Avisos de VENCIMENTO: calculados na hora, não gravados ─────────────────
+// Will (20/11): "hoje o 🔔 avisa quando algo acontece; falta 'vence em 3 dias e
+// ainda não foi cobrado'". Estes nascem da própria lista a cada carga: não gastam
+// escrita no banco, não dependem do Will abrir nada, e nunca ficam desatualizados.
+// O "lido" mora no aparelho dela (localStorage), por dia — amanhã o aviso volta se
+// a cobrança continuar parada.
+const AV_LIDOS='wen_av_vencimento_lidos';
+const DIAS_AVISO=3;
+function avLidosLocais(){
+  try{const o=JSON.parse(localStorage.getItem(AV_LIDOS)||'{}');
+      return (o&&o.dia===today())?(o.ids||[]):[];}catch(e){return [];}
+}
+function avMarcarLocal(id){
+  try{const ids=[...new Set([...avLidosLocais(),id])];
+      localStorage.setItem(AV_LIDOS,JSON.stringify({dia:today(),ids}));}catch(e){}
+}
+function avisosDeVencimento(){
+  const hoje=today(), lidos=new Set(avLidosLocais()), fora=[];
+  (docs||[]).forEach(f=>{
+    if(f.cobrancaStatus==='pago'||f.cobrancaStatus==='informado')return;
+    if((f.clienteFiscal||{}).cobrancaAdministrativo===false)return;   // não é ela quem cobra
+    if(!f.vencimento)return;
+    const dias=Math.round((Date.parse(f.vencimento+'T00:00:00')-Date.parse(hoje+'T00:00:00'))/86400000);
+    if(dias>DIAS_AVISO)return;
+    // A promessa do cliente silencia o aviso até a data prometida.
+    if(f.promessaData&&f.promessaData>hoje)return;
+    const jaFoi=f.cobrancaStatus==='enviada';
+    const venc=f.vencimento.split('-').reverse().join('/');
+    const texto=dias<0
+      ? `🔴 ${f.cliente} — venceu há ${-dias} dia(s) (${venc})${jaFoi?', cobrança já enviada':' e ainda não foi cobrado'}. Falta ${cash(f.saldo)}.`
+      : dias===0
+        ? `⏰ ${f.cliente} — vence HOJE${jaFoi?', cobrança já enviada':' e ainda não foi cobrado'}. ${cash(f.saldo)}.`
+        : `📆 ${f.cliente} — vence em ${dias} dia(s) (${venc})${jaFoi?', já cobrado':' e ainda não foi cobrado'}. ${cash(f.saldo)}.`;
+    const id='venc-'+f.id+'-'+hoje;
+    fora.push({id,tipo:dias<0?'atraso':'vencendo',texto,fechamentoId:f.id,cliente:f.cliente,
+      saldo:f.saldo,criadoEm:new Date().toISOString(),lidoEm:lidos.has(id)?hoje:'',local:true,dias});
+  });
+  return fora.sort((a,b)=>a.dias-b.dias);
+}
+const todosOsAvisos=()=>[...avisosDeVencimento(),...avisos];
+const naoLidos=()=>todosOsAvisos().filter(a=>!a.lidoEm);
 function sino(){
  const el=$('sino'); if(!el)return;
  const n=naoLidos().length;
@@ -166,7 +209,7 @@ function sino(){
  const cx=$('avisosCx'); if(!cx)return;
  cx.hidden=!avisosAbertos;el.setAttribute('aria-expanded',String(avisosAbertos));
  if(!avisosAbertos)return;
- const vis=apenasNaoLidos?naoLidos():avisos;
+ const vis=apenasNaoLidos?naoLidos():todosOsAvisos();
  cx.innerHTML='<div class="avisos-topo"><strong>Avisos · '+n+' não lidos</strong><button type="button" id="avisosFechar" aria-label="Fechar avisos">✕</button></div>'
  +'<div class="avisos-filtro"><button type="button" id="avisosFiltro">'+(apenasNaoLidos?'Mostrar todos':'Mostrar só não lidos')+'</button></div><div class="avisos-lista">'
  +(vis.length?vis.map(a=>{
@@ -179,6 +222,12 @@ function sino(){
  cx.querySelectorAll('[data-av]').forEach(b=>b.onclick=()=>abrirAviso(b.dataset.av,b.dataset.f));
 }
 async function abrirAviso(id,fechamentoId){
+ const local=avisosDeVencimento().find(x=>x.id===id);
+ if(local){
+   avMarcarLocal(id);
+   if(fechamentoId&&docs.some(f=>f.id===fechamentoId)){avisosAbertos=false;abrir(fechamentoId);}
+   sino();return;
+ }
  const a=avisos.find(x=>x.id===id);
  if(a&&!a.lidoEm){
   a.lidoEm=new Date().toISOString();

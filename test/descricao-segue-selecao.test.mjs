@@ -10,7 +10,10 @@ const browser=await chromium.launch(),page=await browser.newPage();
 const erros=[];page.on('pageerror',e=>erros.push(e.message));page.on('dialog',d=>d.accept());
 try{
 await page.goto(BASE+'/administrativo.html?mock=1');await page.waitForTimeout(2500);
-await page.evaluate(()=>document.querySelector('#lista [data-abrir]').click());
+await page.evaluate(()=>{
+  const alvo=[...document.querySelectorAll('#lista .nf-lin')]
+    .find(l=>/CLIENTE DEMONSTRA/i.test(l.textContent));
+  alvo.querySelector('[data-abrir]').click();});
 await page.waitForSelector('.ed-aba');
 await page.click('.ed-aba[data-aba="fiscal"]');
 await page.waitForSelector('[data-nota]');
