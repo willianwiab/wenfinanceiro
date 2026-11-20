@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-a781f8e3';
+window.APP_VERSION='20261120-3b5d16d0';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -275,6 +275,8 @@ body{background:#f0f4f8;color:#1e293b}
 .cfi-chip{background:#f1f5f9;border:1px solid #e2e8f0;color:#94a3b8;border-radius:20px;padding:4px 11px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;width:auto;transition:all .12s}
 .cfi-chip:hover{border-color:#cbd5e1}
 .cfi-chip.on{background:#dcfce7;border-color:#86efac;color:#15803d}
+.cfi-cond{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;border-radius:20px;padding:4px 8px;font-size:.72rem;font-weight:700;cursor:pointer;min-width:0;margin:0;outline:none}
+.cfi-cond:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .cfi-chip:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .cfi-selo{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .cfi-selo.ok{background:#dcfce7;color:#166534}
@@ -3941,7 +3943,14 @@ function CFI_chips(id,f,nome){
     +' title="'+(on(campo)?'Clique para tirar':'Clique para ligar')+'"'
     +' data-k="'+NF_esc(id)+'" data-c="'+campo+'" data-n="'+NF_esc(nome||'')+'"'
     +' onclick="CFI_alternar(this.dataset.k,this.dataset.c,this.dataset.n)">'+ico+' '+rot+'</button>';
-  return '<div class="cfi-chips">'+chip('exigeNota','Nota','🧾')+chip('cobrancaAdministrativo','Cobrança','💰')+'</div>';
+  const cond=(f&&f.condicaoPagamento)||'avista';
+  const sel='<select class="cfi-cond" title="Como este cliente paga"'
+    +' data-k="'+NF_esc(id)+'" data-n="'+NF_esc(nome||'')+'"'
+    +' onchange="CFI_condicao(this.dataset.k,this.value,this.dataset.n)">'
+    +[['avista','💳 À vista'],['sinal50','💳 50% + 50%'],['sinal30','💳 30% + 70%']]
+      .map(([v,r])=>'<option value="'+v+'"'+(cond===v?' selected':'')+'>'+r+'</option>').join('')
+    +'</select>';
+  return '<div class="cfi-chips">'+chip('exigeNota','Nota','🧾')+chip('cobrancaAdministrativo','Cobrança','💰')+sel+'</div>';
 }
 function CFI_render(){
   const raiz=document.getElementById('nfConteudo'); if(!raiz)return;
@@ -4020,6 +4029,29 @@ window.CFI_conferir=function(){
 // Os dois padrões do cliente ligam e desligam DIRETO na lista — sem abrir a ficha.
 // Clicar num cliente que ainda não tem ficha cria a ficha mínima (só o nome) já com a
 // escolha aplicada: é assim que os 76 clientes sem cadastro entram no jogo sem 76 formulários.
+window.CFI_condicao=async function(chave,valor,nomeSugerido){
+  if(!['avista','sinal50','sinal30'].includes(valor))return;
+  let f=CFI_FICHAS[chave];
+  const novo=!f;
+  if(novo){
+    const nome=String(nomeSugerido||chave||'').trim();
+    if(!nome)return;
+    f=CFI_adicionarApelido(CFI_novaFicha(nome),nome);
+    f.criadoEm=f.atualizadoEm=new Date().toISOString();
+  }else f=Object.assign({},f);
+  f.condicaoPagamento=valor;
+  f.atualizadoEm=new Date().toISOString();
+  CFI_FICHAS[f.id]=f; CFI_salvarCache();
+  try{const pg=document.getElementById('page-notas');if(pg&&pg.classList.contains('active'))NF_montar();}catch(e){}
+  try{R_padraoRender();}catch(e){}
+  try{
+    await BC_fbUpsert(CFI_COL,f.id,f);
+    const rot={avista:'à vista',sinal50:'50% + 50%',sinal30:'30% + 70%'}[valor];
+    toast('💳 '+f.nome+' — '+rot);
+    try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,'Condição de pagamento = '+rot,null,null);}catch(e){}
+  }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
+};
+
 window.CFI_alternar=async function(chave,campo,nomeSugerido){
   if(!['exigeNota','cobrancaAdministrativo'].includes(campo))return;
   let f=CFI_FICHAS[chave];

@@ -96,6 +96,31 @@ await page.waitForFunction(()=>document.querySelectorAll('#rPadraoChips .cfi-chi
 assert.deepEqual(await noModal(),[{t:'🧾 Nota',on:true},{t:'💰 Cobrança',on:true}],
   'o bloco segue o cliente do campo');
 
+// ── 💳 a condição de pagamento mora no mesmo lugar: o card da diária ───────
+// Era um campo escondido no formulário de cadastro. O Will perguntou "onde
+// selecionamos a opção que marca a necessidade dos 50%?" — resposta: aqui.
+await page.fill('#rFCliente','VENDENDO VALOR');
+await page.waitForFunction(()=>document.querySelector('#rPadraoChips .cfi-cond')?.dataset.k==='vendendovalor');
+assert.equal(await page.locator('#rPadraoChips .cfi-cond').count(),1,'o seletor está no card');
+assert.deepEqual(await page.$$eval('#rPadraoChips .cfi-cond option',e=>e.map(o=>o.value)),
+  ['avista','sinal50','sinal30']);
+assert.equal(await page.inputValue('#rPadraoChips .cfi-cond'),'avista','cliente novo nasce à vista');
+
+const antesCond=await page.evaluate(()=>JSON.stringify(R_todosOsDados.find(r=>r.id==='vv1')));
+await page.selectOption('#rPadraoChips .cfi-cond','sinal50');
+await page.waitForFunction(()=>CFI_FICHAS['vendendovalor']?.condicaoPagamento==='sinal50');
+assert.equal(await page.evaluate(()=>CFI_FICHAS['vendendovalor'].condicaoPagamento),'sinal50');
+assert.equal(await page.evaluate(()=>JSON.stringify(R_todosOsDados.find(r=>r.id==='vv1'))),antesCond,
+  '🔒 e o lançamento do Receber continua intocado');
+
+// o fechamento daquele cliente passa a dizer o que cobrar agora
+const quanto=await page.evaluate(()=>{
+  const f=WENFechamentos.criar([{id:'z',cliente:'VENDENDO VALOR',mes:'NOV/2026',data:'18/11',
+    horas:2,studio:'STUDIO A',valorTotal:10000,valorReserva:0}],CFI_FICHAS['vendendovalor']);
+  return WENFechamentos.cobranca(f,f.condicao);});
+assert.equal(quanto.cobrarAgora,5000,'sem nada pago, a cobrança já pede os 50%');
+assert.equal(quanto.proxima,'Sinal (50%)');
+
 assert.deepEqual(erros,[]);
 console.log('✅ padroes-cliente: 🧾 e 💰 direto na lista, ficha nasce no 1º clique, Receber intocado');
 }finally{await browser.close();}

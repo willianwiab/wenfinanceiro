@@ -30,6 +30,94 @@ async function req(path,options={}){
  if(!r.ok)throw Error(r.status===403?'Este usuário não possui acesso administrativo liberado.':r.status===409||r.status===412?'Este fechamento mudou em outra sessão. Atualize antes de salvar.':'Falha de comunicação ('+r.status+'). Tente novamente.');
  return r.json();
 }
+// Ficha cadastral do cliente: CNPJ, razão social, contato, e-mail, WhatsApp.
+// Quem preenche é o administrativo — é ela quem fala com o financeiro do cliente.
+// As DECISÕES (exige nota, quem cobra, condição de pagamento) continuam do Will,
+// nos chips do card da diária: esses campos não entram no updateMask daqui.
+const FICHA_DELA=['razaoSocial','doc','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro','emailNota','telefone','responsavel'];
+let fichas={};
+function slugCliente(n){
+ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,80);
+}
+function fichaDe(cliente){
+ const id=slugCliente(cliente);
+ if(fichas[id])return fichas[id];
+ return Object.values(fichas).find(f=>(f.nomes||[]).some(n=>slugCliente(n)===id))||null;
+}
+async function fichasCarregar(){
+ if(mock){fichas={clientedemonstracao:{id:'clientedemonstracao',nome:'Cliente demonstração',
+   razaoSocial:'',doc:'',contatoFinanceiro:'',emailFinanceiro:'',whatsappFinanceiro:''}};return;}
+ try{
+  const j=await req('/clientes_fiscais?pageSize=300');
+  fichas=Object.fromEntries((j.documents||[]).map(d=>{
+    const o=Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)]));
+    o.id=d.name.split('/').at(-1);return [o.id,o];}));
+ }catch(e){fichas={};}
+}
+const soNum=v=>String(v||'').replace(/\D/g,'');
+function docValido(v){
+ const d=soNum(v);
+ if(d.length===11){ // CPF
+   if(/^(\d)+$/.test(d))return false;
+   const dv=n=>{let s=0;for(let i=0;i<n;i++)s+=+d[i]*(n+1-i);const r=(s*10)%11;return r===10?0:r;};
+   return dv(9)===+d[9]&&dv(10)===+d[10];
+ }
+ if(d.length===14){ // CNPJ
+   if(/^(\d)+$/.test(d))return false;
+   const calc=n=>{const p=n===12?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2];
+     let s=0;for(let i=0;i<n;i++)s+=+d[i]*p[i];const r=s%11;return r<2?0:11-r;};
+   return calc(12)===+d[12]&&calc(13)===+d[13];
+ }
+ return false;
+}
+function docFmt(v){
+ const d=soNum(v);
+ if(d.length===11)return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
+ if(d.length===14)return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5');
+ return String(v||'');
+}
+function fichaHTML(f){
+ const d=fichaDe(f.cliente)||{}, c=f.clienteFiscal||{};
+ const v=k=>esc(d[k]||c[k]||'');
+ const falta=[];
+ if(!(d.doc||c.doc))falta.push('CPF/CNPJ');
+ if(!(d.contatoFinanceiro||c.contatoFinanceiro))falta.push('contato');
+ if(!(d.whatsappFinanceiro||c.whatsappFinanceiro))falta.push('WhatsApp');
+ return `<div class="ficha-bloco">
+  <div class="ficha-top"><b>📇 Ficha do cliente</b>
+    ${falta.length?`<span class="nf-pill pend">falta ${esc(falta.join(', '))}</span>`:'<span class="nf-pill ok">completa</span>'}</div>
+  <p class="nf-sub" style="margin:2px 0 12px">Dados para emitir a nota e cobrar. Valem para <b>todas</b> as gravações de ${esc(f.cliente)}.</p>
+  <div class="row"><label>Nome na nota (razão social)<input id="fiRazao" maxlength="150" value="${v('razaoSocial')}" placeholder="${esc(f.cliente)}"></label>
+  <label>CPF / CNPJ<input id="fiDoc" maxlength="20" value="${esc(docFmt(d.doc||c.doc))}" placeholder="00.000.000/0000-00"></label></div>
+  <div class="row"><label>Pessoa do financeiro<input id="fiContato" maxlength="120" value="${v('contatoFinanceiro')}" placeholder="Com quem falar"></label>
+  <label>WhatsApp<input id="fiZap" maxlength="30" value="${v('whatsappFinanceiro')}" placeholder="(11) 99999-9999"></label></div>
+  <div class="row"><label>E-mail do financeiro<input id="fiMail" type="email" maxlength="150" value="${v('emailFinanceiro')}"></label>
+  <label>E-mail para a nota<input id="fiMailNota" type="email" maxlength="150" value="${v('emailNota')}" placeholder="se for outro"></label></div>
+  <div class="actions"><button type="button" id="fiSalvar">💾 Salvar ficha do cliente</button><span id="fiAviso" class="muted"></span></div>
+ </div>`;
+}
+async function fichaSalvar(cliente){
+ $('fiAviso').textContent='';
+ const doc=$('fiDoc').value.trim();
+ if(doc&&!docValido(doc)){$('fiAviso').textContent='CPF/CNPJ inválido — confira o número.';$('fiDoc').focus();return;}
+ const id=(fichaDe(cliente)||{}).id||slugCliente(cliente);
+ if(!id){avisar('Cliente sem nome — não dá para montar a ficha.',true);return;}
+ const dados={razaoSocial:$('fiRazao').value.trim(),doc:soNum(doc),
+   contatoFinanceiro:$('fiContato').value.trim(),whatsappFinanceiro:$('fiZap').value.trim(),
+   emailFinanceiro:$('fiMail').value.trim(),emailNota:$('fiMailNota').value.trim(),
+   atualizadoEm:new Date().toISOString()};
+ const antiga=fichas[id];
+ if(!antiga){dados.nome=cliente;dados.nomes=[cliente];dados.criadoEm=dados.atualizadoEm;}
+ fichas[id]={...(antiga||{}),...dados,id};
+ if(mock){avisar('Ficha salva (demonstração).');$('fiDoc').value=docFmt(dados.doc);return;}
+ try{
+  const campos=Object.keys(dados).map(k=>'updateMask.fieldPaths='+encodeURIComponent(k)).join('&');
+  await req('/clientes_fiscais/'+encodeURIComponent(id)+'?'+campos,
+    {method:'PATCH',body:JSON.stringify({fields:Object.fromEntries(Object.entries(dados).map(([k,x])=>[k,to(x)]))})});
+  $('fiDoc').value=docFmt(dados.doc);
+  avisar('Ficha de '+cliente+' salva.');
+ }catch(e){fichas[id]=antiga;avisar(e.message,true);}
+}
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function atrasada(f){return f.cobrancaStatus!=='pago'&&f.vencimento&&f.vencimento<today();}
 async function carregar(){
@@ -46,7 +134,7 @@ async function carregar(){
      {id:'d4',cliente:'Outro cliente demo',data:'28/10',mes:'2026-10',horario:'09:00 AS 13:00',horas:4,studio:'STUDIO B',valorTotal:3400,valorReserva:3400}],{exigeNota:false}),id:'demo2',cobrancaStatus:'pago',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
   docs=novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
-  await avisosCarregar();
+  await avisosCarregar();await fichasCarregar();
  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
@@ -397,6 +485,7 @@ function abrir(id){
   </div>
 
   <div class="ed-painel" data-painel="fiscal" hidden>
+   ${fichaHTML(f)}
    ${nf?`<div class="status">Notas já registradas no financeiro: ${esc(nf)}. Confira estas referências antes de registrar outra nota.</div>`:''}
    ${blocoFiscal(f)}
    <label>Descrição fiscal<textarea id="descricaoFiscal" rows="7">${esc(descricaoFiscalComBanco(f.descricaoFiscal))}</textarea></label>
@@ -444,6 +533,7 @@ function abrir(id){
    window.open('mailto:'+encodeURIComponent(dest)+'?subject='+encodeURIComponent('Cobrança — WEN Produtora ('+f.cliente+')')+'&body='+encodeURIComponent($('descricaoCobranca').value),'_blank','noopener');
    avisar('E-mail aberto no seu programa de e-mail. Confira antes de enviar.');};
  $('copiarCobranca').onclick=()=>copiar('descricaoCobranca');$('copiarFiscal').onclick=()=>copiar('descricaoFiscal');
+ if($('fiSalvar'))$('fiSalvar').onclick=()=>fichaSalvar(f.cliente);
  $('fZap').onclick=()=>copiarTexto(textoWhats(f),'📱 Texto do WhatsApp copiado. Revise o destinatário antes de enviar.');
  $('fXls').onclick=()=>excelFechamento(f);
  $('fNF').onclick=()=>{$('nfTextoArea').value=textoNF(f);$('modalNFBg').classList.add('open');};

@@ -11,6 +11,32 @@ service cloud.firestore {
     }
     // Nenhuma permissão administrativa sobre lançamentos, bancos, despesas ou folha.
     match /{document=**} { allow read, write: if proprietario(); }
+    // Ficha cadastral do cliente: o administrativo preenche os DADOS (CNPJ, razão
+    // social, contato, e-mail, WhatsApp) porque é ela quem fala com o financeiro do
+    // cliente. As DECISÕES do proprietário — exigeNota, cobrancaAdministrativo,
+    // condicaoPagamento, notaSinal, fechamentoPadrao, envioPreferido — ficam fora do
+    // que ela pode tocar: são os chips do card da diária, no WEN Financeiro.
+    match /clientes_fiscais/{id} {
+      allow read: if administrativo();
+      allow create: if administrativo()
+        && request.resource.data.keys().hasOnly([
+          'nome','nomes','razaoSocial','doc','contatoFinanceiro','emailFinanceiro',
+          'whatsappFinanceiro','emailNota','telefone','responsavel','criadoEm','atualizadoEm'])
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() > 0
+        && request.resource.data.nome.size() <= 150;
+      allow update: if administrativo()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'razaoSocial','doc','contatoFinanceiro','emailFinanceiro','whatsappFinanceiro',
+          'emailNota','telefone','responsavel','atualizadoEm'])
+        && request.resource.data.get('doc', '').size() <= 14
+        && request.resource.data.get('razaoSocial', '').size() <= 150
+        && request.resource.data.get('contatoFinanceiro', '').size() <= 120
+        && request.resource.data.get('whatsappFinanceiro', '').size() <= 30
+        && request.resource.data.get('emailFinanceiro', '').size() <= 150
+        && request.resource.data.get('emailNota', '').size() <= 150;
+    }
+
     // Avisos: ela LÊ e só marca como lido. Nunca cria, nunca apaga, nunca muda o texto.
     // Quem escreve aviso é o proprietário, pelo WEN Financeiro.
     match /administrativo_avisos/{id} {

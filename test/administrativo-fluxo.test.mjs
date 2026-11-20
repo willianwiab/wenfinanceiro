@@ -53,9 +53,13 @@ assert((await page.textContent('#editor')).includes('1.800,00'));await page.fill
 assert(await page.locator('#toast.show').count()===1,'a confirmação aparece como toast no rodapé');
 assert.equal((await page.textContent('#aviso')).trim(),'','e a tarja não fica suja com mensagem de sucesso');assert(saved.fields.enviadoEm.stringValue);assert.equal(saved.fields.cobrancaStatus.stringValue,'enviada');// O portal dela toca SÓ nas duas coleções administrativas. Nenhum lançamento,
 // banco, despesa ou folha — a invariante do portal restrito.
-assert(requests.every(u=>u.includes('/administrativo_fechamentos')||u.includes('/administrativo_avisos')),
-  'o portal pediu algo fora do administrativo: '+requests.filter(u=>!/administrativo_(fechamentos|avisos)/.test(u)).join(' '));
+const PERMITIDAS=/\/(administrativo_fechamentos|administrativo_avisos|clientes_fiscais)(\?|\/|$)/;
+const fora=requests.filter(u=>!PERMITIDAS.test(u));
+assert.deepEqual(fora,[],'o portal pediu algo fora do administrativo');
 assert(requests.some(u=>u.includes('/administrativo_avisos')),'os avisos são lidos');
+assert(requests.some(u=>u.includes('/clientes_fiscais')),'a ficha do cliente é lida');
+assert(!requests.some(u=>/\/(receber|lancamentos|contas|bancos|pagar|folha)/i.test(u)),
+  '🔒 nada do financeiro da empresa');
 assert(!await page.locator('body').evaluate(el=>el.textContent.includes('SIGILO FOLHA')));
 await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
 if(process.env.WEN_QA_DIR)await page.screenshot({path:process.env.WEN_QA_DIR+'/administrativo-mobile.png',fullPage:true});
