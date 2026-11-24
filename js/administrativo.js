@@ -438,7 +438,9 @@ function linha(f){
       ?(()=>{const vA=abertasF.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0)/100,
                rA=abertasF.reduce((t,i)=>t+Math.round((Number(i.recebido)||0)*100),0)/100;
         // o pago parcial aparece junto da diária em aberto: "3.500 · 1.750 pago"
-        return `<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(faltaCobrar(f))}`
+        // "Se a cobrança foi enviada, não falta cobrar — falta o cliente pagar" (Will, 24/11).
+        const rot=f.cobrancaStatus==='enviada'?['aguardando pagamento','esp']:f.cobrancaStatus==='informado'?['a conferir','esp']:['falta cobrar',''];
+        return `<div class="nf-val"><span class="nf-rot ${rot[1]}">${rot[0]}</span>${cash(faltaCobrar(f))}`
           +(rA>0?`<div class="nf-de">${cash(vA)} · ${cash(rA)} pago</div>`:'')+'</div>';})()
       :`<div class="nf-val">${cash(f.valor)}</div>`)
   +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
@@ -523,12 +525,13 @@ function listaCobranca(base){
  const pagas=minhas.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
  const hoje=today(), em7=(()=>{const d=new Date(hoje+'T12:00:00');d.setDate(d.getDate()+7);return d.toISOString().slice(0,10);})();
  const atr=abertas.filter(atrasada).length;
- const semana=abertas.filter(f=>!atrasada(f)&&vencEf(f)&&vencEf(f)<=em7).length;
+ const semana=abertas.filter(f=>f.cobrancaStatus==='pendente'&&!atrasada(f)&&vencEf(f)&&vencEf(f)<=em7).length;
  const cobradas=abertas.filter(f=>f.cobrancaStatus==='enviada'||f.cobrancaStatus==='informado').length;
+ const aCobrar=abertas.length-cobradas;
  $('cards').innerHTML=
    '<div class="card-p atrasado"><label>Em atraso</label><div class="val">'+atr+'</div><div class="val-sub">'+(atr?'passou do vencimento':'nada vencido')+'</div></div>'
-  +'<div class="card-p alerta"><label>Vence em 7 dias</label><div class="val">'+semana+'</div><div class="val-sub">cobrar agora</div></div>'
-  +'<div class="card-p pendente"><label>Já cobradas</label><div class="val">'+cobradas+'</div><div class="val-sub">aguardando pagamento</div></div>';
+  +'<div class="card-p alerta"><label>Falta cobrar</label><div class="val">'+aCobrar+'</div><div class="val-sub">'+semana+' vence'+(semana===1?'':'m')+' em 7 dias</div></div>'
+  +'<div class="card-p pendente"><label>Aguardando pagamento</label><div class="val">'+cobradas+'</div><div class="val-sub">já cobradas</div></div>';
  return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar.</div>')
   +(aGravar.length?grupo('agravar','⏳ Ainda vai gravar — cobrar depois da gravação',aGravar.map(linha),'',true):'')
   +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
@@ -585,21 +588,28 @@ function zapLink(num,texto){
  const full=d.length<=11?'55'+d:d;
  return 'https://wa.me/'+full+(texto?'?text='+encodeURIComponent(texto):'');
 }
+// Contato: a ficha que ela preenche (aba 🧾 Nota fiscal) vale na hora; o retrato guardado
+// na cobrança só muda quando o financeiro reespelha.
+function contatoDe(f){
+ const c={...(f.clienteFiscal||{})}, d=fichaDe(f.cliente)||{};
+ ['contatoFinanceiro','whatsappFinanceiro','emailFinanceiro','emailNota'].forEach(k=>{if(String(d[k]||'').trim())c[k]=d[k];});
+ return c;
+}
 function contatoHTML(f){
- const c=f.clienteFiscal||{};
+ const c=contatoDe(f);
  const linhas=[];
  if(c.contatoFinanceiro)linhas.push('👤 '+esc(c.contatoFinanceiro));
  if(c.whatsappFinanceiro)linhas.push('📱 '+esc(c.whatsappFinanceiro));
  const mail=c.emailFinanceiro||c.emailNota;
  if(mail)linhas.push('✉️ '+esc(mail));
  const pref={whatsapp:'WhatsApp',email:'e-mail',ambos:'WhatsApp e e-mail'}[c.envioPreferido]||'';
- if(!linhas.length)return '<div class="status">Sem contato financeiro cadastrado. Peça ao Will para preencher na ficha do cliente (🧾 Fiscal e Cobranças → 👥 Clientes).</div>';
+ if(!linhas.length)return '<div class="status">Sem contato financeiro cadastrado. Preencha na aba <b>🧾 Nota fiscal</b> → <b>📇 Ficha do cliente</b> (contato, WhatsApp e e-mail).</div>';
  return `<div class="contato-bloco"><b>📇 Contato financeiro</b>
    <div class="contato-linhas">${linhas.join('<span class="sep">·</span>')}</div>
    ${pref?`<div class="contato-pref">Prefere receber por <b>${esc(pref)}</b></div>`:''}</div>`;
 }
 function acoesEnvio(f){
- const c=f.clienteFiscal||{}, mail=c.emailFinanceiro||c.emailNota;
+ const c=contatoDe(f), mail=c.emailFinanceiro||c.emailNota;
  let h='';
  if(soDigitos(c.whatsappFinanceiro).length>=10)h+='<button type="button" id="enviarZap">📱 Abrir WhatsApp</button>';
  if(mail)h+='<button type="button" id="enviarMail">✉️ Abrir e-mail</button>';
@@ -903,7 +913,7 @@ function abrir(id){
  $('cobrancaDialog').scrollTop=0;
  $('formFechamento').oninput=()=>dirty=true;
  $('formFechamento').onsubmit=e=>{e.preventDefault();salvar(false);};$('enviada').onclick=()=>salvar(true);
- const cFis=f.clienteFiscal||{};
+ const cFis=contatoDe(f);
  const zap=$('enviarZap');
  if(zap)zap.onclick=()=>{const u=zapLink(cFis.whatsappFinanceiro,$('descricaoCobranca').value);
    if(u){window.open(u,'_blank','noopener');avisar('WhatsApp aberto com a mensagem. Confira antes de enviar.');}};

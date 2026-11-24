@@ -40,14 +40,16 @@ const txt=(await page.textContent('#lista')).replace(/\u00a0/g,' ');
 assert(/📨 cobrada em \d\d\/\d\d/.test(txt),'cobrada e não paga: status no card, com a data');
 assert(/em atraso há 2 dias/.test(txt),'e quantos dias de atraso');
 assert(/a cobrar/.test(txt),'a outra está a cobrar');
-assert(/falta cobrar\s*R\$\s*2\.000,00/.test(txt),'o número grande é o que falta cobrar');
+// "se a cobrança foi enviada, não falta cobrar — falta o cliente pagar" (Will, 24/11)
+assert(/aguardando pagamento\s*R\$\s*2\.000,00/.test(txt),'cobrada: o valor é "aguardando pagamento"');
+assert(/falta cobrar\s*R\$\s*1\.000,00/.test(txt),'a cobrar: o valor é "falta cobrar"');
 // ficha "💳 Fechamento mensal": cobra a partir do dia 1º do mês seguinte, sem clicar em nada
 const d1m=dia1Seguinte(-1);
 const mensal=(await page.locator('#lista .nf-lin',{hasText:'MENSAL LTDA'}).textContent()).replace(/\s+/g,' ');
 assert(new RegExp('📅 fechamento mensal · cobrar a partir de '+d1m.slice(8,10)+'/'+d1m.slice(5,7)).test(mensal),'mensal pela ficha: '+mensal);
 assert(!/em atraso/.test(mensal),'vencimento antigo do mensal não vira atraso');
 const cards=(await page.textContent('#cards')).replace(/\s+/g,' ');
-assert(/Em atraso ?1/.test(cards)&&/Já cobradas ?1/.test(cards),'cards da cobrança: '+cards);
+assert(/Em atraso ?1/.test(cards)&&/Aguardando pagamento ?1/.test(cards)&&/Falta cobrar ?2/.test(cards),'cards da cobrança: '+cards);
 
 // ── 🧾 Fiscal: gravou → nota; mensal → a partir do dia 1º do mês seguinte ──
 await page.click('.visoes [data-v="fiscal"]');
@@ -89,6 +91,8 @@ assert(!/falta cobrar|em atraso|a cobrar/.test(fu),'e não diz que falta cobrar:
 assert(!/Em atraso ?1/.test((await page.textContent('#cards')).replace(/\s+/g,' ')),'não conta como atraso');
 await page.locator('#lista .nf-lin',{hasText:'DANNY'}).locator('[data-abrir]').click();
 await page.waitForSelector('#rFechDoc .fech-secao.aberto');
+const edt=await page.textContent('#editor');
+assert(/Preencha na aba\s*🧾 Nota fiscal/.test(edt)&&!/Peça ao Will/.test(edt),'sem contato: manda preencher na ficha da própria tela');
 const doc=(await page.textContent('#rFechDoc')).replace(/\s+/g,' ').replace(/ /g,' ');
 assert(/🔴 Em aberto — 1 diária · falta R\$ 3\.750,00/.test(doc),'no documento, o bloco em aberto vem primeiro');
 assert(/✅ Já pagas — saíram da cobrança · 2 diárias/.test(doc),'e as pagas separadas embaixo');
