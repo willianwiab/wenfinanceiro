@@ -412,8 +412,7 @@ function blocos(vis){
  const modo=$('agrupar')?$('agrupar').value:'venc';
  const topo=vis.filter(f=>f.cobrancaStatus!=='pago'&&(f.urgente||lembreteHoje(f)));
  const resto=vis.filter(f=>!topo.includes(f));
- const cab=(t,n,cls='')=>`<div class="grupo-mes${cls}"><b>${t}</b><span>${n} ${n===1?'cobrança':'cobranças'}</span></div>`;
- let h=topo.length?cab('🔥 Urgentes e lembretes de hoje',topo.length,' urg')+topo.map(linha).join(''):'';
+ let h=topo.length?grupo('urg','🔥 Urgentes e lembretes de hoje',topo.map(linha),' urg'):'';
  if(modo==='nada')return h+resto.map(linha).join('');
  const chave=f=>(modo==='grav'?gravDe(f):(f.vencimento||'')).slice(0,7);
  const grupos=new Map();
@@ -421,9 +420,25 @@ function blocos(vis){
  [...grupos.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).forEach(k=>{
   const l=grupos.get(k);
   const t=k?mesExtenso(k):(modo==='grav'?'Sem data de gravação':'Sem vencimento');
-  h+=cab((modo==='grav'?'🎙️ ':'📅 ')+t,l.length)+l.map(linha).join('');
+  h+=grupo(modo+':'+(k||'sem'),(modo==='grav'?'🎙️ ':'📅 ')+t,l.map(linha));
  });
  return h;
+}
+// ── Grupos recolhíveis (24/11, Will: "esconder e expandir nessas separações").
+// O que ela recolheu fica guardado no aparelho, por visão e por grupo.
+let fechados=new Set();try{fechados=new Set(JSON.parse(localStorage.getItem('wen_fiscal_fechados')||'[]'));}catch(e){}
+function salvarFechados(){try{localStorage.setItem('wen_fiscal_fechados',JSON.stringify([...fechados]));}catch(e){}}
+let gruposDaTela=[];
+function grupo(chave,titulo,linhas,cls=''){
+ const k=visao+':'+chave, fechado=fechados.has(k), n=linhas.length;
+ gruposDaTela.push(k);
+ return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}" aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
+  +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?'cobrança':'cobranças'}${fechado?' · escondido':''}</span></button>`
+  +`<div class="grupo-corpo"${fechado?' hidden':''}>${linhas.join('')}</div>`;
+}
+function barraGrupos(){
+ if(gruposDaTela.length<2)return '';
+ return '<div class="grupos-acoes"><button type="button" data-todos="abrir">▾ Expandir tudo</button><button type="button" data-todos="fechar">▸ Esconder tudo</button></div>';
 }
 function listaFiscal(base){
  const itens=base.map(f=>({f,x:fiscal(f)})).filter(o=>o.x);
@@ -434,9 +449,8 @@ function listaFiscal(base){
    '<div class="card-p alerta"><label>Nota para emitir</label><div class="val">'+prontas.length+'</div><div class="val-sub">já gravou (ou já pode)</div></div>'
   +'<div class="card-p atrasado"><label>Há mais de 7 dias</label><div class="val">'+atras+'</div><div class="val-sub">'+(atras?'gravou e ainda sem nota':'nada esquecido')+'</div></div>'
   +'<div class="card-p pendente"><label>Ainda não é hora</label><div class="val">'+espera.length+'</div><div class="val-sub">gravação ou pagamento por vir</div></div>';
- const cab=(t,n,cls='')=>`<div class="grupo-mes${cls}"><b>${t}</b><span>${n} ${n===1?'cobrança':'cobranças'}</span></div>`;
- return (prontas.length?cab('🧾 Já gravou — emitir a nota',prontas.length,' urg')+prontas.map(o=>linha(o.f)).join(''):'')
-  +(espera.length?cab('⏳ Ainda não é hora da nota',espera.length)+espera.map(o=>linha(o.f)).join(''):'')
+ return (prontas.length?grupo('prontas','🧾 Já gravou — emitir a nota',prontas.map(o=>linha(o.f)),' urg'):'')
+  +(espera.length?grupo('espera','⏳ Ainda não é hora da nota',espera.map(o=>linha(o.f))):'')
   ||'<div class="nf-vazio">✅ Nenhuma nota pendente neste recorte.</div>';
 }
 function lista(){
@@ -446,7 +460,8 @@ function lista(){
  if($('chipsCob'))$('chipsCob').hidden=visao==='fiscal';
  ['ordem','agrupar'].forEach(id=>{const el=$(id);if(el&&el.closest('.fg'))el.closest('.fg').hidden=visao==='fiscal';});   // no fiscal a ordem é a da gravação
  if(visao==='fiscal'){
-  $('lista').innerHTML=listaFiscal(base.filter(f=>!adiada(f)));
+  gruposDaTela=[];const html=listaFiscal(base.filter(f=>!adiada(f)));
+  $('lista').innerHTML=barraGrupos()+html;
   ligarLista();return;
  }
  const nAdiadas=base.filter(adiada).length;
@@ -455,12 +470,18 @@ function lista(){
      :!adiada(f)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
    .sort(ordenador($('ordem')?$('ordem').value:'venc'));
  cards(vis,nAdiadas);
- $('lista').innerHTML=vis.length?blocos(vis)
+ gruposDaTela=[];
+ $('lista').innerHTML=vis.length?(h=>barraGrupos()+h)(blocos(vis))
   :(filtro==='adiada'?'<div class="nf-vazio">Nenhuma cobrança adiada.</div>'
    :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
  ligarLista();
 }
 function ligarLista(){
+ $('lista').querySelectorAll('[data-grupo]').forEach(b=>b.onclick=()=>{
+   const k=b.dataset.grupo;fechados.has(k)?fechados.delete(k):fechados.add(k);salvarFechados();lista();
+   $('lista').querySelector('[data-grupo="'+CSS.escape(k)+'"]')?.focus();});
+ $('lista').querySelectorAll('[data-todos]').forEach(b=>b.onclick=()=>{
+   gruposDaTela.forEach(k=>b.dataset.todos==='fechar'?fechados.add(k):fechados.delete(k));salvarFechados();lista();});
  if(dono){
  $('lista').querySelectorAll('[data-urg]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.urg);
    if(f)salvarMarcas(f,{urgente:!f.urgente},f.urgente?'Urgente removido de '+f.cliente+'.':'🔥 '+f.cliente+' marcado como urgente.');});

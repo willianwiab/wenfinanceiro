@@ -112,7 +112,14 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .visoes button{font:inherit;font-weight:700;font-size:.92rem;padding:11px 18px;border-radius:12px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;display:flex;align-items:baseline;gap:6px}
 .visoes button small{font-weight:500;font-size:.75rem;color:#64748b}
 .visoes button.on{background:#1e3a8a;border-color:#1e3a8a;color:#fff}.visoes button.on small{color:#c7d2fe}
-.grupo-mes{display:flex;justify-content:space-between;align-items:baseline;margin:18px 4px 8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0;color:#334155}
+.grupo-mes{display:flex;align-items:baseline;gap:8px;width:100%;font:inherit;text-align:left;background:none;border:0;border-bottom:2px solid #e2e8f0;border-radius:0;margin:18px 0 8px;padding:6px 4px;color:#334155;cursor:pointer}
+.grupo-mes:hover{background:#f8fafc}.grupo-mes:focus-visible{outline:2px solid #1e3a8a;outline-offset:2px}
+.grupo-mes .seta{width:14px;color:#64748b;font-size:.85rem}
+.grupo-mes .qtd{margin-left:auto}
+.grupo-mes.fechado{border-bottom-style:dashed;opacity:.85}
+.grupo-corpo[hidden]{display:none!important}
+.grupos-acoes{display:flex;justify-content:flex-end;gap:6px;margin:6px 0 -6px}
+.grupos-acoes button{font:inherit;font-size:.78rem;font-weight:600;padding:6px 11px;border-radius:9px;border:1px solid #e2e8f0;background:#fff;color:#475569;cursor:pointer}
 .grupo-mes b{font-size:.95rem}.grupo-mes span{font-size:.8rem;color:#64748b}
 .grupo-mes.urg{border-bottom-color:#fca5a5;color:#b91c1c}
 .marca-dlg{border:0;border-radius:16px;padding:0;max-width:420px;width:calc(100% - 32px);box-shadow:0 20px 50px rgba(15,23,42,.25)}
@@ -357,4 +364,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=fcb948b4"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=d4fab0e3"></script></body></html>
