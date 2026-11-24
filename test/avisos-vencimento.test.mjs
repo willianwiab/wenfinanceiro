@@ -63,4 +63,19 @@ assert.equal(FC_avisos([f('a', '2026-11-28')], HOJE, 30).vencendo.length, 1);
 const z = FC_avisos([], HOJE);
 assert.equal(z.emAberto.length, 0);assert.equal(z.totalAberto, 0);
 
+// marcas do Will (24/11): adiada sai da conta; urgente e lembrete do dia vão para o topo, sem duplicar
+const m = FC_avisos([
+  f('adiada', '2026-11-10', { adiadoAte: '2026-12-01' }),
+  f('adiadaVencida', '2026-11-10', { adiadoAte: '2026-11-19' }),   // a data chegou: volta
+  f('urgente', '2026-11-25', { urgente: true }),
+  f('lembrete', '2026-11-30', { lembreteData: '2026-11-19' }),
+  f('lembreteFuturo', '2026-11-30', { lembreteData: '2026-11-28' }),
+], HOJE);
+assert.deepEqual(m.adiadas.map(x => x.id), ['adiada'], 'adiada até 01/12 fica só no bloco dela');
+assert(m.vencidos.some(x => x.id === 'adiadaVencida'), 'chegou a data: volta como vencida');
+assert.deepEqual(m.urgentes.map(x => x.id).sort(), ['lembrete', 'urgente'], 'urgente e lembrete do dia no topo');
+assert(!m.vencendo.some(x => x.id === 'urgente') && !m.aVencer.some(x => x.id === 'lembrete'), 'sem aparecer duas vezes');
+assert(m.aVencer.some(x => x.id === 'lembreteFuturo'), 'lembrete futuro segue no lugar normal');
+assert.equal(m.totalVencido, 1000, 'a adiada não soma no vencido');
+
 console.log('✅ avisos-vencimento: vencidos, vencendo, a vencer, sem data e nota pendente separados certo');

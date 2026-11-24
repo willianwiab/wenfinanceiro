@@ -15,6 +15,10 @@ const src = fs.readFileSync(RAIZ + 'js/administrativo.js', 'utf8');
 const ini = src.indexOf('const AV_LIDOS=');
 const fim = src.indexOf('const todosOsAvisos=');
 assert(ini > 0 && fim > ini, 'não achei o trecho dos avisos de vencimento');
+// marcas do Will (24/11): adiada silencia, lembrete do dia avisa — helpers do mesmo arquivo
+const hIni = src.indexOf('const adiada='), hFim = src.indexOf('\n', src.indexOf('const ddmm='));
+assert(hIni > 0 && hFim > hIni, 'não achei os helpers das marcas');
+const helpers = src.slice(hIni, hFim);
 
 const HOJE = '2026-11-20';
 const d = n => { const x = new Date(Date.parse(HOJE + 'T12:00:00')); x.setDate(x.getDate() + n);
@@ -24,7 +28,7 @@ const d = n => { const x = new Date(Date.parse(HOJE + 'T12:00:00')); x.setDate(x
 function montar(lista, lidos = {}) {
   const loja = { v: JSON.stringify(lidos) };
   const ctx = new Function('docs', 'today', 'cash', 'localStorage',
-    src.slice(ini, fim) + '\nreturn {avisosDeVencimento, avLidosLocais, avMarcarLocal};');
+    helpers + '\n' + src.slice(ini, fim) + '\nreturn {avisosDeVencimento, avLidosLocais, avMarcarLocal};');
   return ctx(lista, () => HOJE, v => 'R$ ' + Number(v || 0).toFixed(2),
     { getItem: () => loja.v, setItem: (_, v) => { loja.v = v; } });
 }
@@ -99,5 +103,17 @@ assert.equal(ontem.filter(a => !a.lidoEm).length, 5,
 assert.doesNotThrow(() => montar([]).avisosDeVencimento());
 assert.deepEqual(montar([]).avisosDeVencimento(), []);
 assert.doesNotThrow(() => montar([{ id: 'x', vencimento: 'não é data' }]).avisosDeVencimento());
+
+// ── marcas do Will (24/11) ────────────────────────────────────────────────
+const mk = montar([
+  f('ADIADA', { vencimento: d(-3), adiadoAte: d(5) }),
+  f('LEMBRA', { vencimento: d(10), lembreteData: d(0), lembreteObs: 'ligar pra Ana' }),
+  f('LEMBRADEPOIS', { vencimento: d(10), lembreteData: d(2) }),
+]).avisosDeVencimento();
+assert(!mk.some(a => a.cliente === 'ADIADA'), 'adiada não gera aviso de atraso até a data');
+const lem = mk.find(a => a.cliente === 'LEMBRA' && a.tipo === 'lembrete');
+assert(lem && /ligar pra Ana/.test(lem.texto), 'lembrete do dia vira aviso com a anotação');
+assert.equal(mk[0].tipo, 'lembrete', 'e vem primeiro');
+assert(!mk.some(a => a.cliente === 'LEMBRADEPOIS'), 'lembrete futuro ainda não avisa');
 
 console.log('✅ aviso-antes-de-vencer: avisa 3 dias antes, respeita promessa e pagamento, e não gasta banco');

@@ -175,11 +175,15 @@ function FC_diasAte(iso,hoje){
 // devolve os grupos — é o que o teste exercita, sem navegador.
 function FC_avisos(lista,hoje,janela){
   const dia=hoje||FC_hojeIso(), prazo=janela==null?7:janela;
-  const g={vencidos:[],vencendo:[],aVencer:[],semData:[],notaPendente:[],pagos:[]};
+  const g={vencidos:[],vencendo:[],aVencer:[],semData:[],notaPendente:[],pagos:[],urgentes:[],adiadas:[]};
   (lista||[]).forEach(f=>{
     const nf=f.exigeNota&&f.fiscalStatus==='pendente';
     if(nf)g.notaPendente.push(f);
     if(f.cobrancaStatus==='pago'){g.pagos.push(f);return;}
+    // Marcas do Will (24/11): adiada sai da conta até a data; urgente e lembrete do dia
+    // vão para o topo. Não entram nos outros grupos para não aparecer duas vezes.
+    if(f.adiadoAte&&f.adiadoAte>dia){g.adiadas.push(f);return;}
+    if(f.urgente||(f.lembreteData&&f.lembreteData<=dia)){g.urgentes.push(f);return;}
     const d=FC_diasAte(f.vencimento,dia);
     if(d===null)g.semData.push(f);
     else if(d<0)g.vencidos.push(f);
@@ -187,9 +191,10 @@ function FC_avisos(lista,hoje,janela){
     else g.aVencer.push(f);
   });
   const ordem=(a,b)=>String(a.vencimento||'9999').localeCompare(String(b.vencimento||'9999'));
-  ['vencidos','vencendo','aVencer','semData','notaPendente'].forEach(k=>g[k].sort(ordem));
-  g.emAberto=g.vencidos.concat(g.vencendo,g.aVencer,g.semData);
-  g.totalVencido=g.vencidos.reduce((a,f)=>a+Math.round((Number(f.saldo)||0)*100),0)/100;
+  ['vencidos','vencendo','aVencer','semData','notaPendente','urgentes'].forEach(k=>g[k].sort(ordem));
+  g.adiadas.sort((a,b)=>String(a.adiadoAte).localeCompare(String(b.adiadoAte)));
+  g.emAberto=g.urgentes.concat(g.vencidos,g.vencendo,g.aVencer,g.semData);
+  g.totalVencido=g.vencidos.concat(g.urgentes.filter(f=>FC_diasAte(f.vencimento,dia)<0)).reduce((a,f)=>a+Math.round((Number(f.saldo)||0)*100),0)/100;
   g.totalAberto=g.emAberto.reduce((a,f)=>a+Math.round((Number(f.saldo)||0)*100),0)/100;
   return g;
 }
@@ -250,6 +255,19 @@ function FC_blocoConferencia(){
       +(a.diferenca>0?'+':'')+fmt(a.diferenca)+'</div></div>').join('')
       :'<div class="nf-vazio">✅ Tudo que foi gravado tem nota no valor certo.</div>');
 }
+// ── Marcas do Will no card da cobrança (24/11): "eu marco, ela vê". Os botões ficam
+// na tela DELA (wen-fiscal), visíveis só quando o Will entra lá com o login dele; aqui
+// no financeiro ele só vê os selos e o bloco das adiadas.
+const FC_ddmm=iso=>String(iso||'').split('-').reverse().join('/').slice(0,5);
+function FC_selosMarcas(f){
+  const hoje=FC_hojeIso(), esc=NF_esc;let h='';
+  if(f.urgente)h+='<span class="nf-pill erro">🔥 urgente</span>';
+  if(f.adiadoAte&&f.adiadoAte>hoje)h+=`<span class="nf-pill" style="background:#ede9fe;color:#5b21b6">💤 volta ${esc(FC_ddmm(f.adiadoAte))}</span>`;
+  if(f.lembreteData)h+=f.lembreteData<=hoje
+    ?`<span class="nf-pill erro">⏰ lembrete${f.lembreteObs?': '+esc(String(f.lembreteObs).slice(0,40)):''}</span>`
+    :`<span class="nf-pill" title="${esc(f.lembreteObs||'')}">⏰ ${esc(FC_ddmm(f.lembreteData))}</span>`;
+  return h;
+}
 function FC_renderAvisos(){
   const root=document.getElementById('nfConteudo'), esc=NF_esc;
   const cliente=NF_filtro().cliente;
@@ -265,9 +283,9 @@ function FC_renderAvisos(){
       :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
       :'<span class="nf-pill pend">nota pendente</span>';
     const cob=f.cobrancaStatus==='informado'?'<span class="nf-pill pend">pagamento comunicado · conferir no Receber</span>':f.cobrancaStatus==='enviada'?'<span class="nf-pill">cobrança enviada</span>':'<span class="nf-pill pend">a cobrar</span>';
-    return `<div class="nf-lin ${d!==null&&d<0?'div':'fila'}"><div class="nf-info">
+    return `<div class="nf-lin ${d!==null&&d<0?'div':'fila'}${f.urgente?' fc-urg':''}"><div class="nf-info">
       <div class="nf-nome">${esc(f.cliente)}</div>
-      <div class="nf-meta">${f.itens.length} diária(s) · vence ${esc(venc)}${quando} ${cob} ${selonf}</div></div>
+      <div class="nf-meta">${f.itens.length} diária(s) · vence ${esc(venc)}${quando} ${FC_selosMarcas(f)} ${cob} ${selonf}</div></div>
       <div class="nf-val">${fmt(f.saldo)}</div>
       <div class="nf-acao"><a class="btn" style="width:auto;padding:7px 13px;font-size:.8rem;text-decoration:none" href="${FISCAL_URL}#${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Abrir</a></div></div>`;
   };
@@ -276,11 +294,13 @@ function FC_renderAvisos(){
   root.innerHTML=`<div class="nf-resumo"><b>Vencimentos e pendências</b><br>
      Só o que já foi liberado para o administrativo. A data vem do vencimento do Receber —
      mudou lá, muda aqui no próximo fechamento.</div>`
+   +(g.urgentes.length?bloco('🔥 Urgentes e lembretes de hoje',g.urgentes,''):'')
    +bloco('🔴 Vencidos',g.vencidos,'Nenhuma cobrança vencida. 🎉')
    +bloco('⏰ Vencem nos próximos 7 dias',g.vencendo,'Nada vencendo esta semana.')
    +bloco('📅 A vencer',g.aVencer,'Nada mais agendado.')
    +bloco('❔ Sem data de vencimento',g.semData,'Todos com data definida.')
    +bloco('🧾 Esperando nota fiscal',g.notaPendente,'Nenhuma nota pendente.')
+   +(g.adiadas.length?bloco('💤 Adiadas — a Natália não vê até a data',g.adiadas,''):'')
    +FC_blocoConferencia();
 }
 
@@ -300,7 +320,8 @@ function FC_renderAvisos(){
 const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','vencimento',
   'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca'];
 const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm','promessaData','promessaObs',
-  'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus'];
+  'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus',
+  'urgente','adiadoAte','lembreteData','lembreteObs'];   // marcas dela no card (24/11)
 
 // A chave do agrupamento sai da ficha: mensal junta o mês do cliente, "diaria" é uma por uma.
 function FC_chaveGrupo(cliente,reg,ficha){

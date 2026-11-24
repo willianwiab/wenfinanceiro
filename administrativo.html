@@ -101,6 +101,23 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-pill.pend{background:#fef3c7;color:#92400e}
 .nf-pill.erro{background:#fee2e2;color:#b91c1c}
 .nf-pill.env{background:#dbeafe;color:#1d4ed8}
+.nf-pill.adi{background:#ede9fe;color:#5b21b6}
+.nf-lin.urg{border-left-color:#dc2626;background:#fff7f7;box-shadow:0 0 0 1px #fecaca}
+.marcas{display:flex;gap:4px;flex-wrap:wrap}
+.marcas .mk{font:inherit;font-size:.76rem;font-weight:600;padding:6px 9px;border-radius:9px;border:1px solid #e2e8f0;background:#fff;color:#475569;cursor:pointer;white-space:nowrap}
+.marcas .mk:hover{background:#f1f5f9}
+.marcas .mk.on{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}
+.grupo-mes{display:flex;justify-content:space-between;align-items:baseline;margin:18px 4px 8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0;color:#334155}
+.grupo-mes b{font-size:.95rem}.grupo-mes span{font-size:.8rem;color:#64748b}
+.grupo-mes.urg{border-bottom-color:#fca5a5;color:#b91c1c}
+.marca-dlg{border:0;border-radius:16px;padding:0;max-width:420px;width:calc(100% - 32px);box-shadow:0 20px 50px rgba(15,23,42,.25)}
+.marca-dlg::backdrop{background:rgba(15,23,42,.45)}
+.marca-form{padding:20px;display:grid;gap:12px}.marca-form h3{margin:0;font-size:1.05rem}
+.marca-form label{display:grid;gap:4px;font-size:.85rem;font-weight:600;color:#334155}
+.marca-form input{font:inherit;padding:9px 11px;border:1px solid #cbd5e1;border-radius:10px}
+.marca-bt{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.marca-bt button{font:inherit;font-weight:700;padding:9px 14px;border-radius:10px;border:0;background:#16a34a;color:#fff;cursor:pointer}
+.marca-bt button.sec{background:#f1f5f9;color:#334155}
 .nf-abas{display:flex;gap:5px;flex-wrap:wrap}
 .nf-abas button{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px 13px;font-size:.8rem;font-weight:700;color:#64748b;cursor:pointer;white-space:nowrap}
 .nf-abas button.on{background:#1e40af;border-color:#1e40af;color:#fff}
@@ -292,6 +309,11 @@ body.cobranca-aberta{overflow:hidden}
         <option value="valor">Maior valor</option>
         <option value="cliente">Cliente (A–Z)</option>
       </select></div>
+      <div class="fg"><label>Separar por</label><select id="agrupar">
+        <option value="venc">Mês do vencimento</option>
+        <option value="grav">Mês da gravação</option>
+        <option value="nada">Sem separação</option>
+      </select></div>
       <div class="fg"><label>Exibir</label>
         <div class="nf-abas">
           <button type="button" id="abaTudo" class="on" data-f="">Todos</button>
@@ -300,6 +322,7 @@ body.cobranca-aberta{overflow:hidden}
           <button type="button" data-f="informado">Pagamento comunicado</button>
           <button type="button" id="abaPago" data-f="pago">✅ Pagas</button>
           <button type="button" id="abaAtr" data-f="atrasada">⚠️ Em atraso</button>
+          <button type="button" id="abaAdi" data-f="adiada">💤 Adiadas</button>
           <button type="button" id="atualizar">↻ Atualizar</button>
         </div>
       </div>
@@ -324,4 +347,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=53c4e7d0"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=b69761df"></script></body></html>

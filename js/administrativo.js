@@ -6,6 +6,9 @@ const KEY='AIzaSyC7hYN3__Q_4MNAu6VCTXbTdvVSW37IneI', BASE='https://firestore.goo
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cash=WENFechamentos.money, mock=new URLSearchParams(location.search).get('mock')==='1';
 let token='',refresh='',expires=0,docs=[],selecionado='',busy=false,dirty=false;
+// O Will entra aqui com o login dele para marcar urgente/lembrete/adiar (24/11).
+const DONO_EMAIL='wenprodutora@gmail.com';
+let dono=mock&&new URLSearchParams(location.search).get('dono')==='1';
 let _toastT;
 function toast(msg,cor='#16a34a',ms=3000){
   const t=$('toast'); if(!t)return;
@@ -120,10 +123,27 @@ async function fichaSalvar(cliente){
 }
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function atrasada(f){return f.cobrancaStatus!=='pago'&&f.vencimento&&f.vencimento<today();}
+// ── Marcas do Will no card (24/11): 🔥 urgente, ⏰ lembrete, 💤 adiar e 📅 fechamento
+//    mensal. "Eu marco, ela vê": os botões só aparecem quando o Will entra AQUI com o login
+//    dele; com o login dela, só os selos. Adiar ESCONDE o card dela até a data; lembrete
+//    não esconde, avisa no dia. As regras do Firebase não deixam a conta dela gravar isso.
+const adiada=f=>!!f.adiadoAte&&f.adiadoAte>today()&&f.cobrancaStatus!=='pago';
+const lembreteHoje=f=>!!f.lembreteData&&f.lembreteData<=today()&&f.cobrancaStatus!=='pago';
+const dataBR=iso=>String(iso||'').split('-').reverse().join('/');
+const ddmm=iso=>dataBR(iso).slice(0,5);
+// Fechamento mensal: volta no dia 1º do mês seguinte ao da última gravação
+// (ou ao de hoje, se a gravação for de um mês que já passou).
+function inicioMesSeguinte(f){
+ const ult=(f.itens||[]).map(i=>WENFechamentos.mesChave(i.mes)).filter(Boolean).sort().at(-1)||'';
+ const hojeM=today().slice(0,7), base=ult>hojeM?ult:hojeM;
+ let [a,m]=base.split('-').map(Number);m++;if(m>12){m=1;a++;}
+ return a+'-'+String(m).padStart(2,'0')+'-01';
+}
+
 async function carregar(){
  if(busy)return;
  try{
-  if(!mock){if(Date.now()>expires)sessao(await auth('securetoken.googleapis.com/v1/token',{grant_type:'refresh_token',refresh_token:refresh}));const user=await auth('identitytoolkit.googleapis.com/v1/accounts:lookup',{idToken:token});const u=user.users?.[0];if(u?.email==='financeiro@wenprodutora.com.br'&&!u.emailVerified){$('verificar').hidden=false;throw Error('Verifique seu e-mail antes de acessar. Use o botão abaixo; depois de verificar, entre novamente.');}}
+  if(!mock){if(Date.now()>expires)sessao(await auth('securetoken.googleapis.com/v1/token',{grant_type:'refresh_token',refresh_token:refresh}));const user=await auth('identitytoolkit.googleapis.com/v1/accounts:lookup',{idToken:token});const u=user.users?.[0];dono=u?.email===DONO_EMAIL;if(u?.email==='financeiro@wenprodutora.com.br'&&!u.emailVerified){$('verificar').hidden=false;throw Error('Verifique seu e-mail antes de acessar. Use o botão abaixo; depois de verificar, entre novamente.');}}
   let novos=[];
   if(mock){novos=docs.length?docs:[
    {...WENFechamentos.criar([
@@ -136,6 +156,7 @@ async function carregar(){
      {id:'d5',cliente:'Vence amanhã Ltda',data:'03/11',mes:'2026-11',horario:'10:00 AS 12:00',horas:2,studio:'STUDIO A',valorTotal:1800,valorReserva:0,
       vencimento:(()=>{const x=new Date();x.setDate(x.getDate()+1);return String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0')+'/'+x.getFullYear();})()}],{}),id:'demo3',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
+  if(mock){try{const mk=JSON.parse(localStorage.getItem('wen_mock_marcas')||'{}');novos.forEach(f=>Object.assign(f,mk[f.id]||{}));}catch(e){}}
   docs=WENFechamentos.consolidarFechamentos(novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
   await avisosCarregar();await fichasCarregar();
  avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
@@ -178,7 +199,11 @@ function avMarcarLocal(id){
 function avisosDeVencimento(){
   const hoje=today(), lidos=new Set(avLidosLocais()), fora=[];
   (docs||[]).forEach(f=>{
+    if(lembreteHoje(f)){const id='lem-'+f.id+'-'+hoje;
+      fora.push({id,tipo:'lembrete',texto:'⏰ Lembrete — '+f.cliente+(f.lembreteObs?': '+f.lembreteObs:'')+(f.lembreteData<hoje?' (desde '+ddmm(f.lembreteData)+')':''),
+        fechamentoId:f.id,cliente:f.cliente,criadoEm:new Date().toISOString(),lidoEm:lidos.has(id)?hoje:'',local:true,dias:-9999});}
     if(f.cobrancaStatus==='pago'||f.cobrancaStatus==='informado')return;
+    if(adiada(f))return;                                               // 💤 adiada: volta na data
     if((f.clienteFiscal||{}).cobrancaAdministrativo===false)return;   // não é ela quem cobra
     if(!f.vencimento)return;
     const dias=Math.round((Date.parse(f.vencimento+'T00:00:00')-Date.parse(hoje+'T00:00:00'))/86400000);
@@ -237,14 +262,14 @@ async function abrirAviso(id,fechamentoId){
  if(fechamentoId&&docs.some(f=>f.id===fechamentoId)){avisosAbertos=false;abrir(fechamentoId);}
  sino();
 }
-function cards(vis){
+function cards(vis,nAdiadas=0){
  const el=document.getElementById('cards'); if(!el)return; const base=vis||docs;
  const n=s=>base.filter(f=>f.cobrancaStatus===s).length, atr=base.filter(atrasada).length;
  const nf=base.filter(f=>f.exigeNota&&f.fiscalStatus==='pendente').length;
  const plural=(q,a,b)=>q===1?a:b;
  el.innerHTML=
    '<div class="card-p pendente"><label>A cobrar</label><div class="val">'+n('pendente')+'</div>'
-  +'<div class="val-sub">'+n('enviada')+' já '+plural(n('enviada'),'enviada','enviadas')+' · '+n('pago')+' '+plural(n('pago'),'pago','pagos')+'</div></div>'
+  +'<div class="val-sub">'+n('enviada')+' já '+plural(n('enviada'),'enviada','enviadas')+' · '+n('pago')+' '+plural(n('pago'),'pago','pagos')+(nAdiadas?' · '+nAdiadas+' '+plural(nAdiadas,'adiada','adiadas'):'')+'</div></div>'
   +'<div class="card-p atrasado"><label>Em atraso</label><div class="val">'+atr+'</div>'
   +'<div class="val-sub">'+(atr?'passou do vencimento':'nada vencido')+'</div></div>'
   +'<div class="card-p alerta"><label>Nota pendente</label><div class="val">'+nf+'</div>'
@@ -281,6 +306,24 @@ function diarias(f){
    `<div class="nf-item"><span>✅</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} · ${i.saldo>0?'⏳ não pago':'✔️ pago'}</span></div>`).join('')
   +'<div class="nf-itens-rod">Conferência apenas. A composição do fechamento é definida no <b>WEN Financeiro</b> — aqui ela não muda.</div></div>';
 }
+function marcasSelos(f){
+ if(f.cobrancaStatus==='pago')return '';
+ let h='';
+ if(f.urgente)h+='<span class="nf-pill erro">🔥 urgente</span>';
+ if(adiada(f))h+=`<span class="nf-pill adi">💤 adiada até ${esc(ddmm(f.adiadoAte))}</span>`;
+ if(f.lembreteData)h+=lembreteHoje(f)
+   ?`<span class="nf-pill erro" title="${esc(f.lembreteObs||'')}">⏰ lembrete${f.lembreteObs?': '+esc(String(f.lembreteObs).slice(0,40)):''}</span>`
+   :`<span class="nf-pill" title="${esc(f.lembreteObs||'')}">⏰ ${esc(ddmm(f.lembreteData))}</span>`;
+ return h;
+}
+function marcasBotoes(f){
+ if(f.cobrancaStatus==='pago')return '';
+ const id=esc(f.id);
+ return `<div class="marcas"><button type="button" class="mk${f.urgente?' on':''}" data-urg="${id}" aria-pressed="${!!f.urgente}" title="${f.urgente?'Tirar o urgente':'Marcar como urgente'}">🔥 Urgente</button>`
+  +`<button type="button" class="mk${f.lembreteData?' on':''}" data-lem="${id}" title="Lembrete: avisa na data, sem esconder o card">⏰ Lembrete</button>`
+  +`<button type="button" class="mk${adiada(f)?' on':''}" data-adi="${id}" title="Adiar: o card some da tela dela até a data">💤 Adiar</button>`
+  +`<button type="button" class="mk" data-mensal="${id}" title="Fechamento mensal: volta em ${esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`;
+}
 function linha(f){
  const atraso=atrasada(f), aberto=abertos.has(f.id);
  const cor=atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
@@ -299,14 +342,14 @@ function linha(f){
    const [da,ma]=a.split('/'),[db,mb]=b.split('/');return (ma+da).localeCompare(mb+db);});
  const faixa=dias.length?(dias.length===1?dias[0]:dias[0]+' a '+dias.at(-1)):'';
  const venc=f.vencimento?'<b>vence '+esc(f.vencimento.split('-').reverse().join('/'))+'</b>':'<span class="muted">sem vencimento</span>';
- return `<div class="nf-lin ${cor}${selecionado===f.id?' ativo':''}" data-id="${esc(f.id)}"><div style="width:100%">`
+ return `<div class="nf-lin ${cor}${f.urgente&&f.cobrancaStatus!=='pago'?' urg':''}${selecionado===f.id?' ativo':''}" data-id="${esc(f.id)}"><div style="width:100%">`
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${semCobranca?'':selo}${selocob}${selonf}</div></div>`
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${marcasSelos(f)}${semCobranca?'':selo}${selocob}${selonf}</div></div>`
   +`<div class="nf-val">${cash(f.valor)}${Number(f.saldo)>0&&Number(f.saldo)!==Number(f.valor)
       ?`<div class="nf-de">saldo ${cash(f.saldo)}</div>`:''}</div>`
-  +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
+  +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
   +'</div>'+(aberto?diarias(f):'')+'</div></div>';
 }
 // Ordem da lista. Sem data de vencimento vai para o fim em "o mais urgente primeiro" —
@@ -328,14 +371,44 @@ function ordenador(modo){
   default:          return (a,b)=>txt(venc(a)||'9999-99-99',venc(b)||'9999-99-99')||txt(a.cliente,b.cliente);
  }
 }
+// Blocos por mês: do vencimento (padrão) ou da gravação. Só contagem no cabeçalho —
+// a tela dela não soma valores da empresa. Urgentes e lembretes do dia vêm antes de tudo.
+function blocos(vis){
+ const modo=$('agrupar')?$('agrupar').value:'venc';
+ const topo=vis.filter(f=>f.cobrancaStatus!=='pago'&&(f.urgente||lembreteHoje(f)));
+ const resto=vis.filter(f=>!topo.includes(f));
+ const cab=(t,n,cls='')=>`<div class="grupo-mes${cls}"><b>${t}</b><span>${n} ${n===1?'cobrança':'cobranças'}</span></div>`;
+ let h=topo.length?cab('🔥 Urgentes e lembretes de hoje',topo.length,' urg')+topo.map(linha).join(''):'';
+ if(modo==='nada')return h+resto.map(linha).join('');
+ const chave=f=>(modo==='grav'?gravDe(f):(f.vencimento||'')).slice(0,7);
+ const grupos=new Map();
+ resto.forEach(f=>{const k=chave(f);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(f);});
+ [...grupos.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).forEach(k=>{
+  const l=grupos.get(k);
+  const t=k?mesExtenso(k):(modo==='grav'?'Sem data de gravação':'Sem vencimento');
+  h+=cab((modo==='grav'?'🎙️ ':'📅 ')+t,l.length)+l.map(linha).join('');
+ });
+ return h;
+}
 function lista(){
  const cli=$('busca').value;
- const vis=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f)
-   &&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
+ const base=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f));
+ const nAdiadas=base.filter(adiada).length;
+ const vis=base.filter(f=>filtro==='adiada'?adiada(f)
+     :!adiada(f)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
    .sort(ordenador($('ordem')?$('ordem').value:'venc'));
- cards(vis);
- $('lista').innerHTML=vis.length?vis.map(linha).join('')
-  :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>';
+ cards(vis,nAdiadas);
+ $('lista').innerHTML=vis.length?blocos(vis)
+  :(filtro==='adiada'?'<div class="nf-vazio">Nenhuma cobrança adiada.</div>'
+   :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
+ if(dono){
+ $('lista').querySelectorAll('[data-urg]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.urg);
+   if(f)salvarMarcas(f,{urgente:!f.urgente},f.urgente?'Urgente removido de '+f.cliente+'.':'🔥 '+f.cliente+' marcado como urgente.');});
+ $('lista').querySelectorAll('[data-lem]').forEach(b=>b.onclick=e=>{e.stopPropagation();marcaDialogo('lembrete',b.dataset.lem);});
+ $('lista').querySelectorAll('[data-adi]').forEach(b=>b.onclick=e=>{e.stopPropagation();marcaDialogo('adiar',b.dataset.adi);});
+ $('lista').querySelectorAll('[data-mensal]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.mensal);
+   if(f){const d=inicioMesSeguinte(f);salvarMarcas(f,{adiadoAte:d},'📅 '+f.cliente+' volta em '+dataBR(d)+' (fechamento mensal).');}});
+ }
  $('lista').querySelectorAll('[data-exp]').forEach(b=>b.onclick=e=>{
    e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
 
@@ -730,6 +803,54 @@ async function registrarNota(f){
  }catch(e){avisar(e.message,true);if($('notaRegistrar'))$('notaRegistrar').disabled=false;}
  finally{busy=false;}
 }
+// Grava só as marcas (updateMask) com a mesma trava de concorrência do salvar.
+// Só o dono chega aqui (os botões nem aparecem para ela) e as regras barram a conta dela.
+async function salvarMarcas(f,update,msg){
+ if(busy||!dono)return;
+ update={...update,atualizadoEm:new Date().toISOString()};
+ busy=true;
+ try{
+  let time=f.updateTime;
+  if(!mock){
+   const masks=Object.keys(update).map(k=>'updateMask.fieldPaths='+k).join('&');
+   const j=await req('/administrativo_fechamentos/'+encodeURIComponent(f.id)+'?'+masks+'&currentDocument.updateTime='+encodeURIComponent(f.updateTime),
+     {method:'PATCH',body:JSON.stringify({fields:Object.fromEntries(Object.entries(update).map(([k,v])=>[k,to(v)]))})});
+   time=j.updateTime;
+  }
+  Object.assign(f,update,{updateTime:time});
+  avisar(msg||'Salvo.');
+ }catch(e){avisar(e.message,true);}
+ finally{busy=false;lista();sino();}
+}
+function marcaDialogo(tipo,id){
+ const f=docs.find(x=>x.id===id);if(!f)return;
+ let dlg=$('marcaDialog');
+ if(!dlg){dlg=document.createElement('dialog');dlg.id='marcaDialog';dlg.className='marca-dlg';document.body.appendChild(dlg);}
+ const amanha=(()=>{const d=new Date(today()+'T12:00:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})();
+ const lem=tipo==='lembrete', atual=lem?(f.lembreteData||''):(f.adiadoAte||'');
+ dlg.innerHTML=`<form method="dialog" class="marca-form">
+   <h3>${lem?'⏰ Lembrete':'💤 Adiar cobrança'} — ${esc(f.cliente)}</h3>
+   <p class="muted">${lem?'O card continua na lista dela. Na data, aparece um aviso no 🔔 e ele sobe para o topo.'
+     :'O card sai da lista dela e fica em <b>💤 Adiadas</b>. Na data, volta sozinho.'}</p>
+   <label>${lem?'Lembrar em':'Voltar a cobrar em'}<input type="date" id="mkData" required min="${lem?today():amanha}" value="${esc(atual)}"></label>
+   ${lem?`<label>Anotação (ela vê)<input id="mkObs" maxlength="300" placeholder="Ex: ligar para a Ana do financeiro" value="${esc(f.lembreteObs||'')}"></label>`:''}
+   <div class="marca-bt">${atual?'<button type="button" id="mkLimpar" class="sec">Remover</button>':''}
+     <button type="button" id="mkCancelar" class="sec">Cancelar</button><button type="submit" id="mkSalvar">Salvar</button></div>
+   <p id="mkAviso" class="status error" role="alert"></p></form>`;
+ dlg.querySelector('#mkCancelar').onclick=()=>dlg.close();
+ const limpar=dlg.querySelector('#mkLimpar');
+ if(limpar)limpar.onclick=()=>{dlg.close();salvarMarcas(f,lem?{lembreteData:'',lembreteObs:''}:{adiadoAte:''},lem?'Lembrete removido.':f.cliente+' voltou para a lista.');};
+ dlg.querySelector('form').onsubmit=e=>{
+   e.preventDefault();
+   const d=dlg.querySelector('#mkData').value;
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){dlg.querySelector('#mkAviso').textContent='Escolha a data.';return;}
+   if(!lem&&d<=today()){dlg.querySelector('#mkAviso').textContent='Para adiar, escolha uma data a partir de amanhã.';return;}
+   dlg.close();
+   if(lem)salvarMarcas(f,{lembreteData:d,lembreteObs:dlg.querySelector('#mkObs').value.trim()},'⏰ Lembrete de '+f.cliente+' para '+dataBR(d)+'.');
+   else salvarMarcas(f,{adiadoAte:d},'💤 '+f.cliente+' adiada até '+dataBR(d)+'.');
+ };
+ dlg.showModal();dlg.querySelector('#mkData').focus();
+}
 async function salvar(enviar){
  if(busy)return;
  const f=docs.find(f=>f.id===selecionado), update={};
@@ -771,7 +892,7 @@ $('nfFechar').onclick=()=>$('modalNFBg').classList.remove('open');
 $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota copiado.');
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace(location.pathname);};
-$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;$('ordem').onchange=lista;
+$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;$('ordem').onchange=lista;if($('agrupar'))$('agrupar').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
 window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar();});
