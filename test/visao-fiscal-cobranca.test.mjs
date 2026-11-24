@@ -125,6 +125,25 @@ assert.deepEqual(await emGrupo('fiscal:prontas'),['NORMAL'],'e a fila de emitir 
 const fc=(await page.textContent('#cards')).replace(/\s+/g,' ');
 assert(/Emitir nota agora ?1/.test(fc),'contador da fila de emitir não inclui os de acompanhar: '+fc);
 
+// ── Fiscal: "sempre o total da nota que precisa emitir, nunca o valor total" (Danny Ueda) ──
+await page.evaluate(c=>{localStorage.setItem('wen_fiscal_visao','fiscal');localStorage.setItem('wen_fiscal_fechados','[]');localStorage.setItem('wen_mock_marcas',JSON.stringify(c));},{
+  demo:{cliente:'DANNY',itens:[d('a',-12,3750,3750),d('b',-11,3750,3750),d('c',3,3750,0)],valor:11250,recebido:7500,saldo:3750,vencimento:iso(3),cobrancaStatus:'pendente',condicao:'avista',
+        exigeNota:true,fiscalStatus:'pendente',nfNumero:'1, 8',notasEmitidas:[{numero:'1',ids:['a'],valor:3750},{numero:'8',ids:['b'],valor:3750}]},
+  demo2:{cliente:'DUAS FALTAM',itens:[d('e',-9,2000,0),d('g',-8,1500,0),d('h',6,1000,0)],valor:4500,recebido:0,saldo:4500,vencimento:iso(9),cobrancaStatus:'pendente',condicao:'avista',
+        exigeNota:true,fiscalStatus:'pendente',notasEmitidas:[]},
+  demo3:{cliente:'TUDO COM NOTA',itens:[d('k',-20,1800,0)],valor:1800,recebido:0,saldo:1800,vencimento:iso(1),cobrancaStatus:'pendente',condicao:'avista',
+        exigeNota:true,fiscalStatus:'emitida',nfNumero:'7',notasEmitidas:[{numero:'7',ids:['k'],valor:1800}]}});
+await page.reload();await page.waitForSelector('#lista .nf-lin');
+await page.click('[data-todos="abrir"]');
+const fd=await card('DANNY');
+assert(/1 diária sem nota · 6h/.test(fd),'Danny no fiscal: só a diária sem nota: '+fd);
+assert(/✔️ 2 com nota/.test(fd)&&/nota depois ?R\$ 3\.750,00/.test(fd),'valor = só a nota que falta (3.750)');
+assert(!/11\.250/.test(fd),'nunca o total de 11.250');
+const ff=await card('DUAS FALTAM');
+assert(/2 diárias sem nota/.test(ff)&&/nota a emitir ?R\$ 3\.500,00/.test(ff)&&/\+ R\$ 1\.000,00 depois/.test(ff),'as duas já gravadas agora; a futura fica "depois": '+ff);
+assert(!/4\.500/.test(ff),'sem o total');
+assert(/nota emitida ?R\$ 1\.800,00/.test(await card('TUDO COM NOTA')),'já emitida mostra o valor da nota');
+
 await page.evaluate(()=>['wen_mock_marcas','wen_fiscal_visao','wen_fiscal_fechados'].forEach(k=>localStorage.removeItem(k)));
 assert.deepEqual(erros,[]);
 console.log('✅ visao-fiscal-cobranca: duas abas — fiscal pela gravação (mensal no dia 1º), cobrança pelo vencimento com status no card');

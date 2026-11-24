@@ -1,8 +1,10 @@
 /* Integração do proprietário. O portal recebe somente fechamentos liberados. */
 let FC_idsBrutos=new Set();
+let FC_maisRecente='', FC_emEspelho=0, FC_conferindo=false;
+function FC_marcarRecente(iso){if(iso&&String(iso)>FC_maisRecente)FC_maisRecente=String(iso);}
 let FC_dados={}, FC_ok=false, FC_selecionados=new Set(), FC_rascunho=null, FC_salvando=false;
 async function FC_carregar(){
-  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_idsBrutos=new Set(Object.keys(raw));FC_dados=Object.fromEntries(WENFechamentos.consolidarFechamentos(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>({...f,id}))).map(f=>[f.id,f]));FC_ok=true;}
+  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_idsBrutos=new Set(Object.keys(raw));FC_maisRecente=Object.values(raw).map(f=>String(f.atualizadoEm||'')).sort().at(-1)||'';FC_dados=Object.fromEntries(WENFechamentos.consolidarFechamentos(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>({...f,id}))).map(f=>[f.id,f]));FC_ok=true;}
   catch(e){FC_ok=false;}return FC_ok;
 }
 function FC_notas(){return Object.values(FC_dados).filter(f=>f.fiscalStatus==='emitida'&&(f.fiscalIds||f.lancamentoIds||[]).length).map(f=>({
@@ -388,6 +390,7 @@ async function FC_gravarCampos(id,doc,campos){
   const url=`${FS_URL}/administrativo_fechamentos/${encodeURIComponent(id)}?${mask}&key=${FB_API_KEY}`;
   const res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});
   if(!res.ok)throw Error('Espelho recusado ('+res.status+')');
+  FC_marcarRecente(doc.atualizadoEm);   // o que EU gravei não conta como "mudou lá fora"
 }
 
 // Criação e reserva das diárias na mesma operação: duas abas não criam cobranças concorrentes.
@@ -412,7 +415,7 @@ async function FC_criarEspelho(id,doc,campos){
   if(limpou)res=await tentar();
  }
  if(!res.ok)throw Error('Não foi possível reservar as diárias. Recarregue o financeiro antes de tentar novamente ('+res.status+').');
- FC_idsBrutos.add(id);
+ FC_idsBrutos.add(id);FC_marcarRecente(doc.atualizadoEm);
 }
 // As diárias que compõem um grupo, lidas do Receber AGORA (o espelho é sempre do estado atual).
 function FC_regsDoGrupo(chave,cliente,ficha){
@@ -424,6 +427,10 @@ function FC_regsDoGrupo(chave,cliente,ficha){
 // Recebe os lançamentos que mudaram e refaz o(s) grupo(s) deles. Devolve o que fez,
 // para os avisos. Nunca escreve no Receber.
 async function FC_espelhar(regs,motivo){
+  FC_emEspelho++;
+  try{return await FC_espelharInterno(regs,motivo);}finally{FC_emEspelho--;}
+}
+async function FC_espelharInterno(regs,motivo){
   if(!Array.isArray(regs))regs=[regs];
   const fichas=(typeof CFI_lista==='function'?CFI_lista():[]);
   const grupos=new Map();
@@ -726,6 +733,60 @@ async function FC_aoSalvarLancamento(reg,motivo){
     if(feitos.some(f=>f.divergencia))toast('⚠️ Nota já emitida com outro valor — confira os Avisos.','#f59e0b');
   }catch(e){console.warn('FC_aoSalvarLancamento',e.message);toast('Diária salva, mas o administrativo não foi atualizado. Recarregue o financeiro para tentar novamente.','#ef4444',8000);}
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AO VIVO NO FINANCEIRO (24/11, Will: "coloque") — o que a Natália faz na tela dela
+// (registrar nota, marcar cobrada, "cliente disse que pagou", promessa) aparece aqui sem
+// recarregar. A cada 30 s, com a aba visível, UMA consulta com limit 1 pergunta se alguma
+// cobrança mudou depois da mais recente que este financeiro conhece (o que ele mesmo grava
+// já entra nessa marca). Mudou: relê as cobranças, avisa o que ela fez e redesenha a aba.
+// ══════════════════════════════════════════════════════════════════════════════
+async function FC_algoMudou(){
+  const body={structuredQuery:{from:[{collectionId:'administrativo_fechamentos'}],
+    where:{fieldFilter:{field:{fieldPath:'atualizadoEm'},op:'GREATER_THAN',value:{stringValue:FC_maisRecente}}},limit:1}};
+  const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok)return false;
+  const j=await res.json();
+  return Array.isArray(j)&&j.some(x=>x&&x.document);
+}
+// O que mudou nos campos DELA entre duas leituras. Função pura.
+function FC_oQueElaFez(antes,depois){
+  const frases=[];
+  for(const f of Object.values(depois||{})){
+    const a=(antes||{})[f.id];if(!a)continue;
+    const nA=(a.notasEmitidas||[]).length, nD=(f.notasEmitidas||[]).length;
+    if(nD>nA)frases.push('🧾 Nota '+(f.notasEmitidas[nD-1].numero||'')+' registrada — '+f.cliente);
+    else if(a.fiscalStatus!=='emitida'&&f.fiscalStatus==='emitida')frases.push('🧾 Nota '+(f.nfNumero||'')+' registrada — '+f.cliente);
+    if(a.cobrancaStatus!==f.cobrancaStatus){
+      if(f.cobrancaStatus==='enviada')frases.push('📨 Cobrança enviada — '+f.cliente);
+      else if(f.cobrancaStatus==='informado')frases.push('💬 '+f.cliente+' disse que pagou — confira no banco e dê a baixa');
+    }
+    if(f.promessaData&&f.promessaData!==(a.promessaData||''))frases.push('🤝 '+f.cliente+' prometeu pagar em '+String(f.promessaData).split('-').reverse().slice(0,2).join('/'));
+  }
+  return frases;
+}
+async function FC_conferirMudancas(){
+  if(!FC_ok||FC_salvando||FC_emEspelho||FC_conferindo)return [];
+  FC_conferindo=true;
+  try{
+    if(!await FC_algoMudou())return [];
+    const antes=FC_dados;
+    if(FC_emEspelho)return [];                       // começou um espelho enquanto perguntava: fica para a próxima
+    if(!await FC_carregar())return [];
+    const frases=FC_oQueElaFez(antes,FC_dados);
+    if(frases.length)toast(frases.slice(0,2).join(' · ')+(frases.length>2?' · +'+(frases.length-2):''),'#1e3a8a',9000);
+    // redesenha a aba de notas se ela estiver aberta — menos se o Will estiver digitando nela
+    try{
+      const pg=document.getElementById('page-notas'), el=document.activeElement;
+      const digitando=el&&pg&&pg.contains(el)&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+      if(pg&&pg.classList.contains('active')&&!digitando&&!document.querySelector('dialog[open]')&&typeof NF_montar==='function')NF_montar();
+    }catch(e){}
+    return frases;
+  }catch(e){console.warn('FC_conferirMudancas',e.message);return [];}
+  finally{FC_conferindo=false;}
+}
+if(typeof setInterval!=='undefined'&&typeof document!=='undefined'&&(typeof SIMULACAO_LOCAL==='undefined'||!SIMULACAO_LOCAL))
+  setInterval(()=>{if(document.visibilityState==='visible')FC_conferirMudancas();},30000);
 
 // Compara objetos sem depender da ordem das chaves (o Firestore não preserva a ordem).
 function FC_canon(o){return JSON.stringify(Object.keys(o||{}).sort().map(k=>[k,o[k]==null?'':o[k]]));}

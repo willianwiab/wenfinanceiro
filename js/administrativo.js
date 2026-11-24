@@ -441,7 +441,12 @@ function linha(f){
  const cob=visao==='cobranca'&&f.cobrancaStatus!=='pago';
  const futF=cob?aGravarAbertas(f):[];
  const abertasF=cob?gravadasAbertas(f):(f.itens||[]).filter(i=>Number(i.saldo)>0), pagasF=(f.itens||[]).filter(i=>!(Number(i.saldo)>0)).length;
- const its=cob&&abertasF.length?abertasF:cob&&futF.length?futF:(f.itens||[]);
+ // Aba Fiscal (24/11, Will): "sempre o total da nota que precisa emitir, nunca o valor
+ // total" — o card conta só as diárias que ainda estão sem nota (Danny: 27/11, R$ 3.750).
+ const fis=visao==='fiscal';
+ const subF=fis&&xf?(xf.prontas.length?xf.prontas:xf.gravadas.length?xf.gravadas:xf.futuras):null;
+ const comNotaF=fis&&xf?(f.itens||[]).length-xf.livres.length:0;
+ const its=subF||(cob&&abertasF.length?abertasF:cob&&futF.length?futF:(f.itens||[]));
  const horas=its.reduce((t,i)=>t+(Number(i.horas)||0),0);
  const dias=[...new Set(its.map(i=>String(i.data||'').slice(0,5)).filter(Boolean))].sort((a,b)=>{
    const [da,ma]=a.split('/'),[db,mb]=b.split('/');return (ma+da).localeCompare(mb+db);});
@@ -451,8 +456,15 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
-  +(cob&&!abertasF.length&&futF.length&&sinalPend(f)>0
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${subF&&its.length<(f.itens||[]).length?' sem nota':cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f)+(comNotaF>0?`<span class="nf-pill ok">✔️ ${comNotaF} com nota</span>`:''):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
+  +(subF
+      ?(()=>{const c=l=>l.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0), v=c(subF), resto=c(xf.livres)-v;
+        return `<div class="nf-val"><span class="nf-rot${xf.prontas.length?'':' nada'}">${xf.prontas.length?'nota a emitir':'nota depois'}</span>${cash(v/100)}`
+          +(resto>0?`<div class="nf-de">+ ${cash(resto/100)} depois</div>`:'')+'</div>';})()
+      :fis&&!semNota(f)
+      ?(()=>{const n=(f.notasEmitidas||[]).reduce((t,x)=>t+Math.round((Number(x.valor)||0)*100),0);
+        return `<div class="nf-val"><span class="nf-rot esp">nota emitida</span>${cash(n?n/100:f.valor)}</div>`;})()
+      :cob&&!abertasF.length&&futF.length&&sinalPend(f)>0
       ?(()=>{const rot=f.cobrancaStatus==='enviada'?['aguardando o sinal','esp']:f.cobrancaStatus==='informado'?['a conferir','esp']:['falta cobrar o sinal',''];
         return `<div class="nf-val"><span class="nf-rot ${rot[1]}">${rot[0]}</span>${cash(sinalPend(f))}<div class="nf-de">de ${cash(futF.reduce((t,i)=>t+(Number(i.valor)||0),0))} · antes da gravação</div></div>`;})()
       :cob&&!abertasF.length&&futF.length
