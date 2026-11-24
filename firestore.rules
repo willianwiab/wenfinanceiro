@@ -47,6 +47,38 @@ service cloud.firestore {
         && request.resource.data.lidoEm.size() <= 30;
     }
     match /administrativo_fechamentos/{id} {
+      // Arquivos da nota: metadados separados da lista e partes limitadas a 512 KB.
+      match /anexos/{anexo} {
+        function fichaExiste() {
+          return exists(/databases/$(database)/documents/administrativo_fechamentos/$(id));
+        }
+        allow read: if administrativo() && fichaExiste();
+        allow create: if administrativo() && fichaExiste()
+          && request.resource.data.keys().hasOnly(['nome','tipo','tamanho','partes','estado','criadoEm'])
+          && request.resource.data.nome is string
+          && request.resource.data.nome.size() > 0 && request.resource.data.nome.size() <= 200
+          && request.resource.data.tipo in ['application/pdf','application/xml','image/jpeg','image/png']
+          && request.resource.data.tamanho is number
+          && request.resource.data.tamanho > 0 && request.resource.data.tamanho <= 5242880
+          && request.resource.data.partes is number
+          && request.resource.data.partes >= 1 && request.resource.data.partes <= 14
+          && request.resource.data.estado == 'enviando'
+          && request.resource.data.criadoEm is string && request.resource.data.criadoEm.size() <= 30;
+        allow update: if administrativo() && fichaExiste()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+          && resource.data.estado == 'enviando' && request.resource.data.estado == 'pronto';
+        match /partes/{parte} {
+          allow read: if administrativo() && fichaExiste();
+          allow create: if administrativo() && fichaExiste()
+            && get(/databases/$(database)/documents/administrativo_fechamentos/$(id)/anexos/$(anexo)).data.estado == 'enviando'
+            && parte.matches('^([0-9]|1[0-3])$')
+            && request.resource.data.keys().hasOnly(['dados'])
+            && request.resource.data.dados is string
+            && request.resource.data.dados.size() > 0
+            && request.resource.data.dados.size() <= 524288;
+        }
+      }
+
       allow read: if administrativo();
       // Cliente, valores, diárias e permissões são definidos exclusivamente pelo proprietário.
       allow update: if administrativo()
@@ -76,7 +108,12 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys()
              .hasAny(['itens','valor','recebido','saldo','vencimento','notaModo',
                       'cliente','lancamentoIds','divergencia','grupo'])
-        && request.resource.data.cobrancaStatus in ['pendente','enviada','pago']
+        // Situação da cobrança: ela pode pôr pendente, enviada ou "pagamento comunicado"
+        // (informado). PAGO só o Will, pela baixa no Receber — e o que já está pago ela
+        // não reabre. (Estava assim no ar desde 19/11 e tinha ficado de fora daqui.)
+        && (request.resource.data.cobrancaStatus == resource.data.cobrancaStatus
+          || (resource.data.cobrancaStatus != 'pago'
+            && request.resource.data.cobrancaStatus in ['pendente','enviada','informado']))
         && request.resource.data.fiscalStatus in ['pendente','emitida','nao_solicitada']
         && request.resource.data.descricaoFiscal is string
         && request.resource.data.descricaoFiscal.size() <= 30000
