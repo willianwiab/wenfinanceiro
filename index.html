@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261124-fb75b94a';
+window.APP_VERSION='20261124-9870b299';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2761,7 +2761,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=f8837676"></script>
-<script src="js/fechamentos-admin.js?v=2319702c"></script>
+<script src="js/fechamentos-admin.js?v=bd5ade7e"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -2962,6 +2962,8 @@ if (SIMULACAO_LOCAL){
 // tocar nos ~30 fetch espalhados. Em ?mock a autenticação é dispensada (o mock já
 // não toca no Firestore real). Detalhe em financeiro/_auditoria/plano-nuvem.html.
 // ══════════════════════════════════════════════════════════════════════════════
+// A tela da Natália mora em outro domínio (24/11): nada do financeiro é servido lá.
+const FISCAL_URL = (/^(localhost|127\.)/.test(location.hostname)?'administrativo.html':'https://wen-fiscal.vercel.app/');
 const AUTH_ATIVO = !SIMULACAO_LOCAL;               // em simulação, não exige login
 const AUTH_IDT_EP  = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB_API_KEY}`;
 const AUTH_TOK_EP  = `https://securetoken.googleapis.com/v1/token?key=${FB_API_KEY}`;
@@ -3072,7 +3074,7 @@ function AUTH_montarTela(){
 
 // ── Porteiro: decide entre abrir o app ou pedir login. Chamado no lugar de init(). ──
 let AUTH_appIniciado=false;
-function AUTH_iniciarApp(){ if(AUTH_ATIVO){try{const claims=JSON.parse(atob(AUTH_.idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));if(claims.email!=='wenprodutora@gmail.com'){location.replace('administrativo.html');return;}}catch(e){AUTH_.sair(false);AUTH_montarTela();return;}} if(AUTH_appIniciado) return; AUTH_appIniciado=true; MOD_prepararCachesLocais(); init(); }
+function AUTH_iniciarApp(){ if(AUTH_ATIVO){try{const claims=JSON.parse(atob(AUTH_.idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));if(claims.email!=='wenprodutora@gmail.com'){location.replace(FISCAL_URL);return;}}catch(e){AUTH_.sair(false);AUTH_montarTela();return;}} if(AUTH_appIniciado) return; AUTH_appIniciado=true; MOD_prepararCachesLocais(); init(); }
 async function AUTH_bootstrap(){
   if(!AUTH_ATIVO){ AUTH_iniciarApp(); return; }        // simulação: entra direto
   const rt=(()=>{ try{ return localStorage.getItem(AUTH_RT_KEY); }catch(e){ return null; } })();
@@ -3953,13 +3955,13 @@ function CFI_render(){
       +'<div class="cfi-nome">'+NF_esc(p.nome)+'</div>'
       +'<div class="cfi-sub">'+p.diarias+' diária(s) · '+fmt(p.faturado)+'</div></div>'
       +CFI_chips(CFI_slug(p.nome),CFI_FICHAS[CFI_slug(p.nome)],p.nome)
-      +'<a class="btn btn-blue" style="padding:6px 13px;font-size:.82rem;text-decoration:none" href="administrativo.html" target="_blank" rel="noopener">Cadastrar →</a></div>').join('');
+      +'<a class="btn btn-blue" style="padding:6px 13px;font-size:.82rem;text-decoration:none" href="'+FISCAL_URL+'" target="_blank" rel="noopener">Cadastrar →</a></div>').join('');
   }
   h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px 15px;margin-bottom:14px">'
     +'<button type="button" class="btn" id="cfiSync" style="width:auto;padding:8px 15px;font-size:.84rem;background:#1e40af;color:#fff;border:none">🔄 Sincronizar o administrativo</button>'
     +'<span style="font-size:.78rem;color:#64748b;flex:1;min-width:220px">As diárias chegam sozinhas na tela do administrativo. Use este botão depois de mexer em vários clientes aqui — ele aplica as fichas no que já está lá e tira quem você desmarcou.</span></div>';
   h+='<div class="cfi-sec">📇 Cadastrados ('+lista.length+')'
-    +'<a class="btn btn-blue" style="float:right;padding:5px 12px;font-size:.8rem;text-transform:none;letter-spacing:0;text-decoration:none" href="administrativo.html" target="_blank" rel="noopener">Cadastro no administrativo →</a></div>';
+    +'<a class="btn btn-blue" style="float:right;padding:5px 12px;font-size:.8rem;text-transform:none;letter-spacing:0;text-decoration:none" href="'+FISCAL_URL+'" target="_blank" rel="noopener">Cadastro no administrativo →</a></div>';
   h+=lista.length?lista.map(f=>{
       const c=CFI_completude(f);
       const semNota=CFI_notaRegra(f)==='nenhuma';
@@ -4143,7 +4145,7 @@ window.NF_vincular=function(id){
   NF_recalcular();
 };
 window.NF_editar=function(id){
-  if(String(id).startsWith('fc:')){window.open('administrativo.html#'+encodeURIComponent(String(id).slice(3)),'_blank','noopener');return;}
+  if(String(id).startsWith('fc:')){window.open(FISCAL_URL+'#'+encodeURIComponent(String(id).slice(3)),'_blank','noopener');return;}
 
   const n=NF_NOTAS[id]; if(!n)return;
   NF_editandoId=id; NF_ctxFila=null;

@@ -1,0 +1,7 @@
+{
+  "redirects": [
+    { "source": "/administrativo.html", "destination": "https://wen-fiscal.vercel.app/", "permanent": false },
+    { "source": "/administrativo", "destination": "https://wen-fiscal.vercel.app/", "permanent": false },
+    { "source": "/manual.html", "destination": "https://wen-fiscal.vercel.app/manual.html", "permanent": false }
+  ]
+}

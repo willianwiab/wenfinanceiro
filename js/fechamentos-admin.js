@@ -81,11 +81,11 @@ function FC_render(){
   document.getElementById('nfCards').innerHTML='';
   const regs=NF_lancamentosDoPeriodo(), cliente=NF_filtro().cliente;
   const historico=Object.values(FC_dados).filter(f=>!cliente||f.cliente===cliente);
-  root.innerHTML=`<div class="nf-resumo"><b>Fechamento por diária ou por período</b><br>As diárias aparecem automaticamente no administrativo após serem salvas no Receber. Selecione um cliente para consultar os fechamentos.<br><a href="administrativo.html" target="_blank" rel="noopener">Abrir área administrativa</a></div>
+  root.innerHTML=`<div class="nf-resumo"><b>Fechamento por diária ou por período</b><br>As diárias aparecem automaticamente no administrativo após serem salvas no Receber. Selecione um cliente para consultar os fechamentos.<br><a href="${FISCAL_URL}" target="_blank" rel="noopener">Abrir área administrativa</a></div>
     ${!FC_ok?'<div class="nf-alerta erro">Não foi possível ler os fechamentos. Recarregue antes de continuar.</div>':''}
     ${!cliente?FC_loteHTML():`<label class="nf-item"><input type="checkbox" id="fcTodas"> Selecionar todas as diárias disponíveis do filtro</label><div id="fcDiarias">${regs.map(r=>`<label class="nf-item"><input type="checkbox" data-id="${esc(r.id)}" ${ocupados.has(String(r.id))?'disabled':FC_selecionados.has(String(r.id))?'checked':''}><span>${esc(NF_rotuloLanc(r))}${ocupados.has(String(r.id))?' · Já possui fechamento':''}</span></label>`).join('')}</div>
     <p>Incluir nas descrições:</p><div id="fcCampos" style="display:flex;gap:16px;flex-wrap:wrap">${[['data','Data'],['horas','Horas'],['studio','Estúdio'],['descricao','Descrição do serviço']].map(([k,v])=>`<label><input type="checkbox" value="${k}" checked> ${v}</label>`).join('')}</div><button class="btn btn-green" id="fcPreparar" ${FC_ok?'':'disabled'}>Preparar fechamento</button>`}
-    <div id="fcEditor"></div><h3>Fechamentos liberados</h3>${historico.length?historico.map(f=>`<div class="nf-lin"><div class="nf-info"><b>${esc(f.cliente)}</b><div>${f.itens.length} diária(s) · ${esc(f.cobrancaStatus)} · ${f.exigeNota?'NF: '+esc(f.fiscalStatus):'NF não solicitada'}</div></div><a href="administrativo.html#${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Abrir fechamento</a></div>`).join(''):'<p>Nenhum fechamento liberado para este cliente.</p>'}`;
+    <div id="fcEditor"></div><h3>Fechamentos liberados</h3>${historico.length?historico.map(f=>`<div class="nf-lin"><div class="nf-info"><b>${esc(f.cliente)}</b><div>${f.itens.length} diária(s) · ${esc(f.cobrancaStatus)} · ${f.exigeNota?'NF: '+esc(f.fiscalStatus):'NF não solicitada'}</div></div><a href="${FISCAL_URL}#${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Abrir fechamento</a></div>`).join(''):'<p>Nenhum fechamento liberado para este cliente.</p>'}`;
   root.querySelectorAll('.fc-lote-cb').forEach(el=>el.onchange=()=>{
     el.checked?FC_loteFora.delete(el.dataset.cli):FC_loteFora.add(el.dataset.cli);FC_render();});
   const bl=document.getElementById('fcLiberarLote');if(bl)bl.onclick=FC_liberarLote;
@@ -269,7 +269,7 @@ function FC_renderAvisos(){
       <div class="nf-nome">${esc(f.cliente)}</div>
       <div class="nf-meta">${f.itens.length} diária(s) · vence ${esc(venc)}${quando} ${cob} ${selonf}</div></div>
       <div class="nf-val">${fmt(f.saldo)}</div>
-      <div class="nf-acao"><a class="btn" style="width:auto;padding:7px 13px;font-size:.8rem;text-decoration:none" href="administrativo.html#${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Abrir</a></div></div>`;
+      <div class="nf-acao"><a class="btn" style="width:auto;padding:7px 13px;font-size:.8rem;text-decoration:none" href="${FISCAL_URL}#${encodeURIComponent(f.id)}" target="_blank" rel="noopener">Abrir</a></div></div>`;
   };
   const bloco=(titulo,lista,vazio)=>`<h3 style="margin:18px 0 8px">${titulo} ${lista.length?'('+lista.length+')':''}</h3>`
     +(lista.length?lista.map(linha).join(''):`<div class="nf-vazio">${vazio}</div>`);
