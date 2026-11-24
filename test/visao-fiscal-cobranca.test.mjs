@@ -62,6 +62,14 @@ assert((await nomes()).includes('TIROLEZ'),'mas segue na cobrança');
 await page.click('.visoes [data-v="tudo"]');
 assert.equal((await nomes()).length,3,'Tudo mostra os três, como antes');
 
+// adiar é sobre cobrar: na visão fiscal a adiada continua pedindo a nota
+cen.demo3={...cen.demo3,notaQuando:'gravacao',adiadoAte:venc(10)};
+await page.evaluate(c=>localStorage.setItem('wen_mock_marcas',JSON.stringify(c)),cen);
+await page.reload();await page.waitForSelector('#lista .nf-lin');
+await page.click('.visoes [data-v="fiscal"]');
+assert((await nomes()).includes('FUTURO'),'adiada para cobrar, mas a nota continua na fila fiscal');
+await page.click('.visoes [data-v="cobranca"]');
+assert(/💤 Adiadas — voltam/.test(await page.textContent('#lista')),'e na cobrança aparece em Adiadas');
 await page.evaluate(()=>{localStorage.removeItem('wen_mock_marcas');localStorage.removeItem('wen_fiscal_visao');});
 assert.deepEqual(erros,[]);
 console.log('✅ visao-fiscal-cobranca: cobrança pelo vencimento, fiscal pela gravação');

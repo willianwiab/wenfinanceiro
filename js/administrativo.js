@@ -434,7 +434,7 @@ function grupo(chave,titulo,linhas,cls=''){
  gruposDaTela.push(k);
  return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}" aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
   +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?'cobrança':'cobranças'}${fechado?' · escondido':''}</span></button>`
-  +`<div class="grupo-corpo"${fechado?' hidden':''}>${linhas.join('')}</div>`;
+  +`<div class="grupo-corpo${cls}" data-corpo="${esc(k)}"${fechado?' hidden':''}>${linhas.join('')}</div>`;
 }
 function barraGrupos(){
  if(gruposDaTela.length<2)return '';
@@ -460,7 +460,8 @@ function lista(){
  if($('chipsCob'))$('chipsCob').hidden=visao==='fiscal';
  ['ordem','agrupar'].forEach(id=>{const el=$(id);if(el&&el.closest('.fg'))el.closest('.fg').hidden=visao==='fiscal';});   // no fiscal a ordem é a da gravação
  if(visao==='fiscal'){
-  gruposDaTela=[];const html=listaFiscal(base.filter(f=>!adiada(f)));
+  // Adiar é sobre COBRAR; a nota sai depois da gravação de qualquer jeito.
+  gruposDaTela=[];const html=listaFiscal(base);
   $('lista').innerHTML=barraGrupos()+html;
   ligarLista();return;
  }
@@ -471,7 +472,12 @@ function lista(){
    .sort(ordenador($('ordem')?$('ordem').value:'venc'));
  cards(vis,nAdiadas);
  gruposDaTela=[];
- $('lista').innerHTML=vis.length?(h=>barraGrupos()+h)(blocos(vis))
+ // 24/11, Will: a adiada não some — fica no fim, no grupo 💤 Adiadas ("adiadas são
+ // adiadas", não "futuras"), fora da contagem do "A cobrar".
+ const adiadasVis=filtro?[]:base.filter(daCobranca).filter(adiada)   // só em "Todos": nos atalhos, o atalho manda
+   .sort((a,b)=>String(a.adiadoAte).localeCompare(String(b.adiadoAte))||String(a.cliente).localeCompare(String(b.cliente),'pt-BR'));
+ const fut=adiadasVis.length?grupo('adiadas','💤 Adiadas — voltam para a cobrança na data marcada',adiadasVis.map(linha),' fut'):'';
+ $('lista').innerHTML=(vis.length||fut)?(h=>barraGrupos()+h)(blocos(vis)+fut)
   :(filtro==='adiada'?'<div class="nf-vazio">Nenhuma cobrança adiada.</div>'
    :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
  ligarLista();

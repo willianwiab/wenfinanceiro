@@ -8,6 +8,7 @@ const BASE=process.argv[2];
 if(!BASE){console.error('uso: node test/marcas-card.test.mjs <url-do-servidor>');process.exit(2);}
 const browser=await chromium.launch(),page=await browser.newPage();
 const erros=[];page.on('pageerror',e=>erros.push(e.message));page.on('dialog',d=>d.accept());
+const naAdiadas=async(pg,id)=>(await pg.$$eval('[data-corpo$=":adiadas"] .nf-lin',l=>l.map(x=>x.dataset.id))).includes(id);
 const hoje=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
 const somaDias=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
 try{
@@ -19,7 +20,8 @@ await page.evaluate(([a,b])=>localStorage.setItem('wen_mock_marcas',JSON.stringi
 await page.reload();await page.waitForSelector('#lista .nf-lin');
 let ela=await page.$$eval('#lista .nf-lin',l=>l.map(x=>({id:x.dataset.id,urg:x.classList.contains('urg'),txt:x.textContent})));
 assert(ela[0].id===ids[0]&&ela[0].urg&&/🔥 urgente/.test(ela[0].txt)&&/⏰ lembrete: ligar/.test(ela[0].txt),'ela vê o urgente no topo, com o lembrete');
-assert(!ela.find(x=>x.id===ids[1]),'e não vê o que o Will adiou');
+assert(await naAdiadas(page,ids[1]),'o que o Will adiou aparece no grupo Adiadas (não some)');
+assert(/💤 Adiadas — voltam/.test(await page.textContent('#lista')),'com o título do grupo');
 assert(/1 adiada/.test(await page.textContent('#cards')),'mas sabe que existe uma adiada');
 await page.evaluate(()=>localStorage.removeItem('wen_mock_marcas'));
 
@@ -75,7 +77,7 @@ await page.click(`[data-adi="${C}"]`);
 await page.fill('#mkData',hoje);await page.click('#mkSalvar');
 assert(await page.evaluate(()=>document.getElementById('marcaDialog').open),'não adia para hoje (a janela não fecha)');
 await page.fill('#mkData',somaDias(hoje,3));await page.click('#mkSalvar');
-assert(!(await linhas()).find(x=>x.id===C),'adiada some da lista');
+assert(await naAdiadas(page,C),'adiada vai para o grupo Adiadas');
 assert(/1 adiada/.test(await page.textContent('#cards')),'o card do topo conta a adiada');
 await page.click('#abaAdi');
 l=await linhas();
@@ -93,7 +95,7 @@ const m=tituloMensal.match(/(\d\d)\/(\d\d)\/(\d{4})/);
 assert(m&&m[1]==='01','volta no dia 1º: '+tituloMensal);
 assert(`${m[3]}-${m[2]}-01`>hoje,'num mês que ainda não começou');
 await page.click(`[data-mensal="${A}"]`);
-assert(!(await linhas()).find(x=>x.id===A),'mensal tira o card da lista');
+assert(await naAdiadas(page,A),'mensal manda o card para Adiadas');
 await page.click('#abaAdi');
 assert(new RegExp(`💤 adiada até 01/${m[2]}`).test((await linhas()).find(x=>x.id===A).txt),'e ele espera em Adiadas até o dia 1º');
 
