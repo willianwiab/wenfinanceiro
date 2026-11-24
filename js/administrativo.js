@@ -222,7 +222,18 @@ function inicioMesSeguinte(f){
  return a+'-'+String(m).padStart(2,'0')+'-01';
 }
 
-let brutoMaisRecente='';
+let brutoMaisRecente='', brutos=[], ultimaCompleta=0, avisoMaisRecente='';
+// ── Freio de segurança (24/11): conta as leituras que a tela faz SOZINHA no dia. Passou do
+// teto, a atualização automática para até amanhã e aparece um aviso — o botão ↻ Atualizar e
+// o uso normal continuam. Existe porque, sem a cota grátis como trava, um defeito que lê em
+// repetição viraria conta em vez de parada.
+const FREIO_TETO=12000, FREIO_KEY='wen_fiscal_leituras_auto';
+function freioLer(){try{const o=JSON.parse(localStorage.getItem(FREIO_KEY)||'{}');return o.dia===today()?(Number(o.n)||0):0;}catch(e){return 0;}}
+function freioSomar(n){try{localStorage.setItem(FREIO_KEY,JSON.stringify({dia:today(),n:freioLer()+(Number(n)||0)}));}catch(e){}}
+const freioAtivo=()=>freioLer()>=FREIO_TETO;
+function reconstruir(){
+ docs=WENFechamentos.consolidarFechamentos(brutos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
+}
 async function carregar(silencioso){
  if(busy)return;
  try{
@@ -241,8 +252,9 @@ async function carregar(silencioso){
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
   if(mock){try{const mk=JSON.parse(localStorage.getItem('wen_mock_marcas')||'{}');novos.forEach(f=>Object.assign(f,mk[f.id]||{}));}catch(e){}}
   brutoMaisRecente=novos.map(x=>String(x.atualizadoEm||'')).sort().at(-1)||'';
-  docs=WENFechamentos.consolidarFechamentos(novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
+  brutos=novos;reconstruir();ultimaCompleta=Date.now();$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
   await avisosCarregar();await fichasCarregar();
+  if(silencioso)freioSomar(brutos.length+avisos.length+Object.keys(fichas).length);   // releitura automática entra na conta
  if(!silencioso)avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
@@ -260,8 +272,10 @@ async function avisosCarregar(){
   return;}
  try{
   const j=await req('/administrativo_avisos?pageSize=200');
-  avisos=(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1)}))
-    .sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
+  const todos=(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1)}));
+  avisoMaisRecente=todos.map(a=>String(a.criadoEm||'')).sort().at(-1)||'';
+  // tipo "removido" é só um sinal do financeiro (cobrança apagada) — não é aviso para ela ler
+  avisos=todos.filter(a=>a.tipo!=='removido').sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
  }catch(e){avisos=[];}
 }
 // ── Avisos de VENCIMENTO: calculados na hora, não gravados ─────────────────
@@ -1256,25 +1270,56 @@ document.querySelectorAll('.visoes [data-v]').forEach(b=>b.onclick=()=>{visao=b.
 $('busca').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
-window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar(true);});
-// ── Ao vivo (24/11, Will: "as atualizações não aparecem em tempo real"). A cada 30 s, com a
-// aba visível, pergunta ao Firebase se ALGUMA cobrança ou aviso mudou depois do mais recente
-// que a tela tem — consulta com limit 1, então custa 1 leitura quando nada mudou. Se mudou,
-// recarrega. Não mexe na tela enquanto ela edita ou está com uma janela aberta.
+window.addEventListener('focus',aoVivo);   // voltar para a aba confere o que mudou (antes relia tudo a cada foco)
+// ── Ao vivo (24/11). A cada 30 s, com a aba visível, a tela pergunta ao Firebase o que mudou
+// depois do mais recente que ela tem e traz SÓ esses documentos (antes relia tudo: ~100
+// leituras por mudança). Parado, custa 2 leituras por consulta. Cobrança apagada chega por um
+// aviso-sinal "removido" que o financeiro grava. De hora em hora faz uma releitura completa,
+// como rede de segurança. Não mexe na tela enquanto ela edita ou está com uma janela aberta.
 const maisRecente=(l,k)=>l.map(x=>String(x[k]||'')).sort().at(-1)||'';
-async function algoMudou(){
- const q=(col,campo,desde)=>req(':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],
-   where:{fieldFilter:{field:{fieldPath:campo},op:'GREATER_THAN',value:{stringValue:desde}}},limit:1}})})
-   .then(j=>Array.isArray(j)&&j.some(x=>x.document)).catch(()=>false);
- const [f,a]=await Promise.all([q('administrativo_fechamentos','atualizadoEm',brutoMaisRecente||maisRecente(docs,'atualizadoEm')),
-   q('administrativo_avisos','criadoEm',maisRecente(avisos,'criadoEm'))]);
- return f||a;
+const docParaObj=d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime});
+const LIMITE_MUDADOS=60;
+async function mudados(col,campo,desde){
+ const j=await req(':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],
+   where:{fieldFilter:{field:{fieldPath:campo},op:'GREATER_THAN',value:{stringValue:desde}}},limit:LIMITE_MUDADOS}})});
+ const ds=(Array.isArray(j)?j:[]).filter(x=>x&&x.document).map(x=>docParaObj(x.document));
+ freioSomar(Math.max(1,ds.length));
+ return ds;
 }
-setInterval(async()=>{
+async function conferir(){
+ const [fs,as]=await Promise.all([
+   mudados('administrativo_fechamentos','atualizadoEm',brutoMaisRecente).catch(()=>[]),
+   mudados('administrativo_avisos','criadoEm',avisoMaisRecente).catch(()=>[])]);
+ if(!fs.length&&!as.length)return 0;
+ if(fs.length>=LIMITE_MUDADOS||as.length>=LIMITE_MUDADOS){await carregar(true);return fs.length+as.length;}   // mudou demais: relê tudo
+ for(const d of fs){const k=brutos.findIndex(x=>x.id===d.id);if(k>-1)brutos[k]=d;else brutos.push(d);
+   if(String(d.atualizadoEm||'')>brutoMaisRecente)brutoMaisRecente=String(d.atualizadoEm);}
+ for(const a of as){
+   if(String(a.criadoEm||'')>avisoMaisRecente)avisoMaisRecente=String(a.criadoEm);
+   if(a.tipo==='removido'){   // o financeiro apagou a cobrança (a não ser que ela tenha renascido depois do sinal)
+     if(a.fechamentoId)brutos=brutos.filter(x=>x.id!==a.fechamentoId||String(x.atualizadoEm||'')>String(a.criadoEm||''));
+     continue;}
+   const k=avisos.findIndex(x=>x.id===a.id);if(k>-1)avisos[k]=a;else avisos.unshift(a);
+ }
+ avisos.sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
+ reconstruir();combo();lista();sino();
+ return fs.length+as.length;
+}
+let ultimoAuto=0;
+async function aoVivo(){
  if(mock||document.visibilityState!=='visible'||dirty||busy||$('app').hidden)return;
  if($('cobrancaDialog').open||($('marcaDialog')&&$('marcaDialog').open))return;
- if(await algoMudou())carregar(true);
-},30000);
+ if(Date.now()-ultimoAuto<20000)return;                 // nunca mais de uma consulta a cada 20 s, venha de onde vier
+ if(freioAtivo()){freioMostrar();return;}
+ ultimoAuto=Date.now();
+ try{if(Date.now()-ultimaCompleta>3600000)await carregar(true);else await conferir();}catch(e){}
+ freioMostrar();
+}
+function freioMostrar(){const el=$('freioAviso');if(el)el.hidden=!freioAtivo();}
+setInterval(aoVivo,30000);
+if(mock)window.__fiscalTeste={conferir,freioSomar,freioAtivo,freioMostrar,FREIO_TETO,estado:()=>({brutos:brutos.length,docs:docs.map(f=>f.id),avisos:avisos.map(a=>a.id),brutoMaisRecente,avisoMaisRecente}),
+  semear:(fs,as)=>{brutos=fs;avisos=as||[];brutoMaisRecente=maisRecente(fs,'atualizadoEm');avisoMaisRecente=maisRecente(avisos,'criadoEm');reconstruir();lista();sino();},
+  entrar:()=>{token='t';expires=Date.now()+3600000;}};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 (async()=>{if(mock){await carregar();return;}refresh=sessionStorage.getItem('wen_admin_rt')||localStorage.getItem('wen_auth_rt');if(refresh)await carregar();})();
 })();

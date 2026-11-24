@@ -36,7 +36,7 @@ await page.evaluate(async()=>{
       if(m==='PATCH'){const campos=[...u.matchAll(/updateMask\.fieldPaths=([^&]+)/g)].map(x=>x[1]);window.__w.push('PATCH '+id+' ['+campos.join(',')+']');return new Response('{}',{status:200});}
       if(m==='DELETE'){window.__w.push('DEL fech '+id);return new Response('{}',{status:200});}
     }
-    if(u.includes('/administrativo_avisos/'))return new Response('{}',{status:200});
+    if(u.includes('/administrativo_avisos/')){window.__w.push('AVISO '+u.split('/administrativo_avisos/')[1].split('?')[0]);return new Response('{}',{status:200});}
     if(u.includes('/lancamentos/')&&m==='GET'){const id=u.split('/lancamentos/')[1].split('?')[0];const l=window.__lanc[id];
       return l===undefined?new Response('{}',{status:404}):new Response(JSON.stringify({fields:{excluido:{booleanValue:!!l}}}),{status:200});}
     if(/firestore|googleapis/.test(u))return new Response('{}',{status:200});
@@ -74,6 +74,7 @@ await page.evaluate(async r=>{
 assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'a cobrança da diária excluída some');
 const w3=await page.evaluate(()=>window.__w.join(' | '));
 assert(/DEL fech uuid-antigo/.test(w3)&&/DEL vinc S1/.test(w3),'apaga a cobrança e o vínculo dela: '+w3);
+assert(/AVISO removido-uuid-antigo-\d{4}-\d\d-\d\d/.test(w3),'e deixa o sinal "removido" para a tela dela tirar o card sem reler tudo: '+w3);
 
 // 3b. e a faxina ao abrir só remove depois de CONFIRMAR no Firebase que a diária foi excluída
 await page.evaluate(()=>{
@@ -93,7 +94,7 @@ await page.evaluate(async r=>{
   await FC_espelhar([r],'lancamento');
 },d('V1','Volta'));
 const w4=await page.evaluate(()=>window.__w.join(' | '));
-assert(/COMMIT recusado \| DEL vinc V1 \| COMMIT ok/.test(w4),'recusou, limpou o vínculo velho e criou: '+w4);
+assert(/COMMIT recusado \| DEL vinc V1 \| COMMIT ok/.test(w4.replace(/AVISO [^|]+ \| /g,'')),'recusou, limpou o vínculo velho e criou: '+w4);
 assert.equal(await page.evaluate(()=>Object.values(FC_dados).filter(f=>f.cliente==='Volta').length),1,'a diária voltou para a tela dela');
 // vínculo de cobrança que EXISTE continua valendo (a trava não é afrouxada)
 const preso=await page.evaluate(async r=>{

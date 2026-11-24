@@ -22,8 +22,11 @@ await page.evaluate(async()=>{
       const q=JSON.parse(opt.body).structuredQuery;
       if(q.from[0].collectionId==='administrativo_fechamentos'){
         const desde=q.where.fieldFilter.value.stringValue;window.__consultas.push(desde);
-        const novo=Object.values(window.__nuvem).some(x=>x.atualizadoEm>desde);
-        return new Response(JSON.stringify(novo?[{document:{name:'x'}}]:[{readTime:'t'}]),{status:200});
+        // devolve SÓ os documentos alterados depois da marca (é isso que o financeiro pede agora)
+        const mud=Object.entries(window.__nuvem).filter(([,x])=>x.atualizadoEm>desde).slice(0,q.limit||999);
+        window.__devolvidos=(window.__devolvidos||0)+mud.length;
+        return new Response(JSON.stringify(mud.length?mud.map(([id,x])=>({document:{name:'projects/p/databases/(default)/documents/administrativo_fechamentos/'+id,
+          fields:Object.fromEntries(Object.entries(x).map(([k,v])=>[k,toFV(v)])),updateTime:'t'}})):[{readTime:'t'}]),{status:200});
       }
     }
     if(/administrativo_(fechamentos|avisos|vinculos)/.test(u)&&opt&&opt.method&&opt.method!=='GET')return new Response('{}',{status:200});
@@ -54,6 +57,9 @@ assert(frases.some(x=>/📨 Cobrança enviada — BETA/.test(x)),'cobrança envi
 assert(frases.some(x=>/💬 GAMA disse que pagou — confira no banco e dê a baixa/.test(x)),'cliente disse que pagou');
 assert(frases.some(x=>/🤝 DELTA prometeu pagar em 30\/11/.test(x)),'promessa');
 assert.equal(await page.evaluate(()=>FC_dados.a.fiscalStatus),'emitida','os dados do financeiro foram atualizados sem recarregar');
+assert.equal(await page.evaluate(()=>window.__leituras),0,'sem reler a coleção inteira: vieram só os 4 alterados');
+assert.equal(await page.evaluate(()=>window.__devolvidos),4,'4 documentos trazidos');
+assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('wen_fin_leituras_auto')).n),1+4,'o freio contou 1 (consulta vazia) + 4');
 assert.equal(await page.evaluate(()=>window.__toasts.length),1,'um aviso só, resumindo');
 assert(/\+2/.test(await page.evaluate(()=>window.__toasts[0])),'com o resto contado: '+await page.evaluate(()=>window.__toasts[0]));
 assert.equal(await page.evaluate(()=>FC_maisRecente),'2026-11-24T10:05:00.000Z','a marca avança');
@@ -78,6 +84,25 @@ assert.equal(await page.evaluate(()=>window.__consultas.length),0,'espera o espe
 await page.evaluate(()=>{FC_emEspelho=0;});
 await page.evaluate(()=>FC_conferirMudancas());
 assert.equal(await page.evaluate(()=>FC_maisRecente),'2026-11-24T10:20:00.000Z','e pega na próxima');
+
+// ── cobrança que este financeiro não conhecia entra; duplicada escondida não ──
+await page.evaluate(()=>{
+  const it=id=>({id,mes:'NOV/2026',data:'10/11',horas:2,studio:'STUDIO A',valor:1000,recebido:0,saldo:1000});
+  window.__nuvem.nova={cliente:'NOVA',grupo:'nova',lancamentoIds:['novai'],itens:[it('novai')],valor:1000,recebido:0,saldo:1000,fiscalStatus:'pendente',cobrancaStatus:'pendente',atualizadoEm:'2026-11-24T10:30:00.000Z'};
+  window.__nuvem.dup={cliente:'ALFA',lancamentoIds:['ai'],itens:[it('ai')],valor:1000,recebido:0,saldo:1000,fiscalStatus:'pendente',cobrancaStatus:'pendente',atualizadoEm:'2026-11-24T10:31:00.000Z'};
+});
+await page.evaluate(()=>FC_conferirMudancas());
+assert(await page.evaluate(()=>!!FC_dados.nova),'cobrança nova entra');
+assert(await page.evaluate(()=>!FC_dados.dup),'duplicada da mesma diária continua escondida');
+
+// ── freio: passou do teto, para de consultar e avisa uma vez ──
+await page.evaluate(()=>{localStorage.setItem('wen_fin_leituras_auto',JSON.stringify({dia:FC_hojeIso(),n:FC_FREIO_TETO}));window.__consultas.length=0;window.__toasts.length=0;
+  window.__nuvem.a.atualizadoEm='2026-11-24T11:00:00.000Z';});
+await page.evaluate(()=>FC_conferirMudancas());await page.evaluate(()=>FC_conferirMudancas());
+assert.equal(await page.evaluate(()=>window.__consultas.length),0,'com o freio ativo não consulta');
+assert.equal(await page.evaluate(()=>window.__toasts.filter(t=>/pausada/.test(t)).length),1,'avisa uma vez só');
+await page.evaluate(()=>{localStorage.setItem('wen_fin_leituras_auto',JSON.stringify({dia:'2000-01-01',n:999999}));});
+assert.equal(await page.evaluate(()=>FC_freioAtivo()),false,'no dia seguinte a conta zera');
 
 // função pura: cobrança nova (sem "antes") não vira aviso; pagamento confirmado pelo Will também não
 assert.deepEqual(await page.evaluate(()=>FC_oQueElaFez({},{z:{id:'z',cliente:'Z',cobrancaStatus:'enviada'}})),[]);

@@ -680,6 +680,11 @@ async function FC_removerGrupo(chave,antigo){
   const res=await fetch(`${FS_URL}/administrativo_fechamentos/${encodeURIComponent(antigo.id)}?key=${FB_API_KEY}`,{method:'DELETE'});
   if(res.ok||res.status===404){
     delete FC_dados[antigo.id];FC_idsBrutos.delete(antigo.id);
+    // Sinal para a tela dela tirar o card sem reler tudo (ela só busca o que mudou).
+    try{const em=new Date().toISOString(), sinal={tipo:'removido',fechamentoId:antigo.id,cliente:antigo.cliente||'',texto:'',criadoEm:em,lidoEm:em};
+      const fields={};Object.entries(sinal).forEach(([k,v])=>fields[k]=toFV(v));
+      await fetch(`${FS_URL}/${AV_COL}/${encodeURIComponent('removido-'+antigo.id+'-'+em.slice(0,10))}?key=${FB_API_KEY}`,
+        {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})});}catch(e){}
     // Auditoria 24/11: o vínculo da diária ficava para trás (38 órfãos) e impedia a diária de
     // voltar a ter cobrança — a criação exige que o vínculo não exista.
     const ocupados=FC_ocupados();
@@ -740,13 +745,41 @@ async function FC_aoSalvarLancamento(reg,motivo){
 // cobrança mudou depois da mais recente que este financeiro conhece (o que ele mesmo grava
 // já entra nessa marca). Mudou: relê as cobranças, avisa o que ela fez e redesenha a aba.
 // ══════════════════════════════════════════════════════════════════════════════
-async function FC_algoMudou(){
+// Freio de segurança: leituras que o financeiro faz SOZINHO no dia (só as do "ao vivo").
+// Passou do teto, a conferência automática para até amanhã e avisa uma vez.
+const FC_FREIO_TETO=12000, FC_FREIO_KEY='wen_fin_leituras_auto';
+function FC_freioLer(){try{const o=JSON.parse(localStorage.getItem(FC_FREIO_KEY)||'{}');return o.dia===FC_hojeIso()?(Number(o.n)||0):0;}catch(e){return 0;}}
+function FC_freioSomar(n){try{localStorage.setItem(FC_FREIO_KEY,JSON.stringify({dia:FC_hojeIso(),n:FC_freioLer()+(Number(n)||0)}));}catch(e){}}
+function FC_freioAtivo(){return FC_freioLer()>=FC_FREIO_TETO;}
+const FC_LIMITE_MUDADOS=60;
+// Traz SÓ as cobranças alteradas depois da mais recente que este financeiro conhece
+// (antes: perguntava "mudou?" e relia as ~40). Parado, custa 1 leitura.
+async function FC_buscarMudados(){
   const body={structuredQuery:{from:[{collectionId:'administrativo_fechamentos'}],
-    where:{fieldFilter:{field:{fieldPath:'atualizadoEm'},op:'GREATER_THAN',value:{stringValue:FC_maisRecente}}},limit:1}};
+    where:{fieldFilter:{field:{fieldPath:'atualizadoEm'},op:'GREATER_THAN',value:{stringValue:FC_maisRecente}}},limit:FC_LIMITE_MUDADOS}};
   const res=await fetch(`${FS_URL}:runQuery?key=${FB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!res.ok)return false;
+  if(!res.ok)return [];
   const j=await res.json();
-  return Array.isArray(j)&&j.some(x=>x&&x.document);
+  const ds=(Array.isArray(j)?j:[]).filter(x=>x&&x.document).map(x=>{
+    const o={};Object.entries(x.document.fields||{}).forEach(([k,v])=>o[k]=fromFV(v));
+    o.id=String(x.document.name).split('/').pop();return o;});
+  FC_freioSomar(Math.max(1,ds.length));
+  return ds;
+}
+// Encaixa as alteradas no que já está em memória. Devolve o antes/depois das que mudaram.
+function FC_mesclar(ds){
+  const antes={},depois={};
+  for(const d of ds){
+    FC_idsBrutos.add(d.id);FC_marcarRecente(d.atualizadoEm);
+    if(!(d.itens&&d.itens.length&&d.itens.every(WENFechamentos.noPeriodo)))continue;
+    const atual=FC_dados[d.id];
+    if(atual){antes[d.id]=atual;FC_dados[d.id]={...d,historicoDuplicados:atual.historicoDuplicados||[]};depois[d.id]=FC_dados[d.id];continue;}
+    // desconhecida aqui: só entra se não for a duplicada escondida de uma que já está
+    const chave=WENFechamentos.chaveDiarias(d);
+    if(Object.values(FC_dados).some(f=>WENFechamentos.chaveDiarias(f)===chave))continue;
+    FC_dados[d.id]={...d,historicoDuplicados:[]};
+  }
+  return {antes,depois};
 }
 // O que mudou nos campos DELA entre duas leituras. Função pura.
 function FC_oQueElaFez(antes,depois){
@@ -764,15 +797,23 @@ function FC_oQueElaFez(antes,depois){
   }
   return frases;
 }
+let FC_freioAvisou=false;
 async function FC_conferirMudancas(){
   if(!FC_ok||FC_salvando||FC_emEspelho||FC_conferindo)return [];
+  if(FC_freioAtivo()){
+    if(!FC_freioAvisou){FC_freioAvisou=true;toast('⏸ Atualização automática do fiscal pausada por hoje (limite de segurança de leituras). Recarregue a página para ver o que a Natália fez.','#b45309',9000);}
+    return [];
+  }
   FC_conferindo=true;
   try{
-    if(!await FC_algoMudou())return [];
-    const antes=FC_dados;
+    const ds=await FC_buscarMudados();
+    if(!ds.length)return [];
     if(FC_emEspelho)return [];                       // começou um espelho enquanto perguntava: fica para a próxima
-    if(!await FC_carregar())return [];
-    const frases=FC_oQueElaFez(antes,FC_dados);
+    let frases;
+    if(ds.length>=FC_LIMITE_MUDADOS){                // mudou coisa demais: relê tudo de uma vez
+      const antes=FC_dados;if(!await FC_carregar())return [];
+      FC_freioSomar(FC_idsBrutos.size);frases=FC_oQueElaFez(antes,FC_dados);
+    }else{const m=FC_mesclar(ds);frases=FC_oQueElaFez(m.antes,m.depois);}
     if(frases.length)toast(frases.slice(0,2).join(' · ')+(frases.length>2?' · +'+(frases.length-2):''),'#1e3a8a',9000);
     // redesenha a aba de notas se ela estiver aberta — menos se o Will estiver digitando nela
     try{
