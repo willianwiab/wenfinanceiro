@@ -300,7 +300,7 @@ function FC_renderAvisos(){
    +bloco('📅 A vencer',g.aVencer,'Nada mais agendado.')
    +bloco('❔ Sem data de vencimento',g.semData,'Todos com data definida.')
    +bloco('🧾 Esperando nota fiscal',g.notaPendente,'Nenhuma nota pendente.')
-   +(g.adiadas.length?bloco('💤 Adiadas — a Natália não vê até a data',g.adiadas,''):'')
+   +(g.adiadas.length?bloco('💤 Adiadas — vencem na data nova (a Natália vê em 📆 A vencer)',g.adiadas,''):'')
    +FC_blocoConferencia();
 }
 

@@ -122,12 +122,16 @@ async function fichaSalvar(cliente){
  }catch(e){fichas[id]=antiga;avisar(e.message,true);}
 }
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
-function atrasada(f){return f.cobrancaStatus!=='pago'&&f.vencimento&&f.vencimento<today();}
+function atrasada(f){const v=vencEf(f);return f.cobrancaStatus!=='pago'&&!!v&&v<today();}
 // ── Marcas do Will no card (24/11): 🔥 urgente, ⏰ lembrete, 💤 adiar e 📅 fechamento
 //    mensal. "Eu marco, ela vê": os botões só aparecem quando o Will entra AQUI com o login
 //    dele; com o login dela, só os selos. Adiar ESCONDE o card dela até a data; lembrete
 //    não esconde, avisa no dia. As regras do Firebase não deixam a conta dela gravar isso.
 const adiada=f=>!!f.adiadoAte&&f.adiadoAte>today()&&f.cobrancaStatus!=='pago';
+// Vencimento que vale: o adiamento do Will passa na frente do vencimento do Receber (24/11:
+// "as adiadas precisam aparecer na lista de cobranças a vencer" — e não como "em atraso").
+const vencEf=f=>adiada(f)?f.adiadoAte:(f.vencimento||'');
+const aVencer=f=>f.cobrancaStatus!=='pago'&&!!vencEf(f)&&vencEf(f)>=today();
 const lembreteHoje=f=>!!f.lembreteData&&f.lembreteData<=today()&&f.cobrancaStatus!=='pago';
 const dataBR=iso=>String(iso||'').split('-').reverse().join('/');
 const ddmm=iso=>dataBR(iso).slice(0,5);
@@ -238,15 +242,15 @@ function avisosDeVencimento(){
       fora.push({id,tipo:'lembrete',texto:'⏰ Lembrete — '+f.cliente+(f.lembreteObs?': '+f.lembreteObs:'')+(f.lembreteData<hoje?' (desde '+ddmm(f.lembreteData)+')':''),
         fechamentoId:f.id,cliente:f.cliente,criadoEm:new Date().toISOString(),lidoEm:lidos.has(id)?hoje:'',local:true,dias:-9999});}
     if(f.cobrancaStatus==='pago'||f.cobrancaStatus==='informado')return;
-    if(adiada(f))return;                                               // 💤 adiada: volta na data
     if((f.clienteFiscal||{}).cobrancaAdministrativo===false)return;   // não é ela quem cobra
-    if(!f.vencimento)return;
-    const dias=Math.round((Date.parse(f.vencimento+'T00:00:00')-Date.parse(hoje+'T00:00:00'))/86400000);
+    const ve=vencEf(f);                                                // 💤 adiada: conta a data nova
+    if(!ve)return;
+    const dias=Math.round((Date.parse(ve+'T00:00:00')-Date.parse(hoje+'T00:00:00'))/86400000);
     if(dias>DIAS_AVISO)return;
     // A promessa do cliente silencia o aviso até a data prometida.
     if(f.promessaData&&f.promessaData>hoje)return;
     const jaFoi=f.cobrancaStatus==='enviada';
-    const venc=f.vencimento.split('-').reverse().join('/');
+    const venc=ve.split('-').reverse().join('/');
     const texto=dias<0
       ? `🔴 ${f.cliente} — venceu há ${-dias} dia(s) (${venc})${jaFoi?', cobrança já enviada':' e ainda não foi cobrado'}. Falta ${cash(f.saldo)}.`
       : dias===0
@@ -299,7 +303,7 @@ async function abrirAviso(id,fechamentoId){
 }
 function cards(vis,nAdiadas=0){
  const el=document.getElementById('cards'); if(!el)return; const base=vis||docs;
- const n=s=>base.filter(f=>f.cobrancaStatus===s).length, atr=base.filter(atrasada).length;
+ const n=s=>base.filter(f=>f.cobrancaStatus===s&&!(s==='pendente'&&adiada(f))).length, atr=base.filter(atrasada).length;
  const nf=base.filter(f=>f.exigeNota&&f.fiscalStatus==='pendente').length;
  const plural=(q,a,b)=>q===1?a:b;
  el.innerHTML=
@@ -356,7 +360,7 @@ function marcasBotoes(f){
  const id=esc(f.id);
  return `<div class="marcas"><button type="button" class="mk${f.urgente?' on':''}" data-urg="${id}" aria-pressed="${!!f.urgente}" title="${f.urgente?'Tirar o urgente':'Marcar como urgente'}">🔥 Urgente</button>`
   +`<button type="button" class="mk${f.lembreteData?' on':''}" data-lem="${id}" title="Lembrete: avisa na data, sem esconder o card">⏰ Lembrete</button>`
-  +`<button type="button" class="mk${adiada(f)?' on':''}" data-adi="${id}" title="Adiar: o card some da tela dela até a data">💤 Adiar</button>`
+  +`<button type="button" class="mk${adiada(f)?' on':''}" data-adi="${id}" title="Adiar: a cobrança passa a vencer na data escolhida (vai para 📆 A vencer)">💤 Adiar</button>`
   +`<button type="button" class="mk" data-mensal="${id}" title="Fechamento mensal: volta em ${esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`;
 }
 function linha(f){
@@ -395,7 +399,7 @@ const gravDe=f=>(f.itens||[]).map(i=>{
   return d.length>=2?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):m+'-00';
 }).sort().at(-1)||'';
 function ordenador(modo){
- const venc=f=>f.vencimento||'';
+ const venc=vencEf;
  const txt=(a,b)=>String(a||'').localeCompare(String(b||''),'pt-BR');
  switch(modo){
   case 'venc-desc': return (a,b)=>txt(venc(b),venc(a));
@@ -414,7 +418,7 @@ function blocos(vis){
  const resto=vis.filter(f=>!topo.includes(f));
  let h=topo.length?grupo('urg','🔥 Urgentes e lembretes de hoje',topo.map(linha),' urg'):'';
  if(modo==='nada')return h+resto.map(linha).join('');
- const chave=f=>(modo==='grav'?gravDe(f):(f.vencimento||'')).slice(0,7);
+ const chave=f=>(modo==='grav'?gravDe(f):vencEf(f)).slice(0,7);
  const grupos=new Map();
  resto.forEach(f=>{const k=chave(f);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(f);});
  [...grupos.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).forEach(k=>{
@@ -466,19 +470,18 @@ function lista(){
   ligarLista();return;
  }
  const nAdiadas=base.filter(adiada).length;
+ if(filtro==='adiada')filtro='avencer';   // aba antiga, guardada de antes
  const daCobranca=f=>visao!=='cobranca'||((f.clienteFiscal||{}).cobrancaAdministrativo!==false&&(f.cobrancaStatus!=='pago'||filtro==='pago'));
- const vis=base.filter(daCobranca).filter(f=>filtro==='adiada'?adiada(f)
-     :!adiada(f)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
+ const vis=base.filter(daCobranca).filter(f=>!filtro?true
+     :filtro==='atrasada'?atrasada(f)
+     :filtro==='avencer'?aVencer(f)
+     :filtro==='pendente'?f.cobrancaStatus==='pendente'&&!adiada(f)   // adiada não é "a cobrar" agora
+     :f.cobrancaStatus===filtro)
    .sort(ordenador($('ordem')?$('ordem').value:'venc'));
  cards(vis,nAdiadas);
  gruposDaTela=[];
- // 24/11, Will: a adiada não some — fica no fim, no grupo 💤 Adiadas ("adiadas são
- // adiadas", não "futuras"), fora da contagem do "A cobrar".
- const adiadasVis=filtro?[]:base.filter(daCobranca).filter(adiada)   // só em "Todos": nos atalhos, o atalho manda
-   .sort((a,b)=>String(a.adiadoAte).localeCompare(String(b.adiadoAte))||String(a.cliente).localeCompare(String(b.cliente),'pt-BR'));
- const fut=adiadasVis.length?grupo('adiadas','💤 Adiadas — voltam para a cobrança na data marcada',adiadasVis.map(linha),' fut'):'';
- $('lista').innerHTML=(vis.length||fut)?(h=>barraGrupos()+h)(blocos(vis)+fut)
-  :(filtro==='adiada'?'<div class="nf-vazio">Nenhuma cobrança adiada.</div>'
+ $('lista').innerHTML=vis.length?(h=>barraGrupos()+h)(blocos(vis))
+  :(filtro==='avencer'?'<div class="nf-vazio">Nenhuma cobrança a vencer.</div>'
    :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
  ligarLista();
 }
@@ -918,7 +921,7 @@ function marcaDialogo(tipo,id){
  dlg.innerHTML=`<form method="dialog" class="marca-form">
    <h3>${lem?'⏰ Lembrete':'💤 Adiar cobrança'} — ${esc(f.cliente)}</h3>
    <p class="muted">${lem?'O card continua na lista dela. Na data, aparece um aviso no 🔔 e ele sobe para o topo.'
-     :'O card sai da lista dela e fica em <b>💤 Adiadas</b>. Na data, volta sozinho.'}</p>
+     :'A cobrança passa a vencer na data escolhida: sai do <b>A cobrar</b>, vai para <b>📆 A vencer</b> e não aparece como atrasada até lá.'}</p>
    <label>${lem?'Lembrar em':'Voltar a cobrar em'}<input type="date" id="mkData" required min="${lem?today():amanha}" value="${esc(atual)}"></label>
    ${lem?`<label>Anotação (ela vê)<input id="mkObs" maxlength="300" placeholder="Ex: ligar para a Ana do financeiro" value="${esc(f.lembreteObs||'')}"></label>`:''}
    <div class="marca-bt">${atual?'<button type="button" id="mkLimpar" class="sec">Remover</button>':''}
