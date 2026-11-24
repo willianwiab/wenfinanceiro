@@ -59,6 +59,26 @@ assert(!/a cobrar|cobrada em/.test(ftxt),'sem status de cobrança no fiscal');
 await page.reload();await page.waitForSelector('#lista .nf-lin');
 assert.equal(await page.getAttribute('.visoes [data-v="fiscal"]','aria-selected'),'true','lembra a aba');
 
+// ── diária paga sai da cobrança; o pago parcial fica junto da diária em aberto (24/11) ──
+const d=(id,data,v,r)=>({id,data,mes:'2026-11',horario:'-',horas:6,studio:'STUDIO A',valor:v,recebido:r,saldo:v-r});
+await page.evaluate(c=>{localStorage.setItem('wen_fiscal_visao','cobranca');localStorage.setItem('wen_mock_marcas',JSON.stringify(c));},{
+  demo:{cliente:'DANNY',itens:[d('a','12/11',3750,3750),d('b','13/11',3750,3750),d('c','27/11',3750,0)],valor:11250,recebido:7500,saldo:3750,vencimento:iso(3),cobrancaStatus:'pendente'},
+  demo3:{cliente:'PARCIAL',itens:[d('x','10/11',3500,3500),d('y','20/11',3500,1750)],valor:7000,recebido:5250,saldo:1750,vencimento:iso(5),cobrancaStatus:'pendente'}});
+await page.reload();await page.waitForSelector('#lista .nf-lin');
+const card=n=>page.locator('#lista .nf-lin',{hasText:n}).textContent().then(t=>t.replace(/\s+/g,' ').replace(/\u00a0/g,' '));
+const dn=await card('DANNY');
+assert(/27\/11 · 1 diária em aberto · 6h/.test(dn),'Danny: só a diária em aberto no card: '+dn);
+assert(/✔️ 2 pagas · fora da cobrança/.test(dn)&&/falta cobrar ?R\$ 3\.750,00/.test(dn),'as pagas saem; falta cobrar 3.750: '+dn);
+assert(!/11\.250/.test(dn),'o total de 11.250 não aparece no card da cobrança');
+const pc=await card('PARCIAL');
+assert(/falta cobrar ?R\$ 1\.750,00 ?R\$ 3\.500,00 · R\$ 1\.750,00 pago/.test(pc),'parcial: 3.500 · 1.750 pago: '+pc);
+await page.locator('#lista .nf-lin',{hasText:'DANNY'}).locator('[data-abrir]').click();
+await page.waitForSelector('#rFechDoc .fech-secao.aberto');
+const doc=(await page.textContent('#rFechDoc')).replace(/\s+/g,' ').replace(/\u00a0/g,' ');
+assert(/🔴 Em aberto — 1 diária · falta R\$ 3\.750,00/.test(doc),'no documento, o bloco em aberto vem primeiro');
+assert(/✅ Já pagas — saíram da cobrança · 2 diárias/.test(doc),'e as pagas separadas embaixo');
+assert(doc.indexOf('Em aberto')<doc.indexOf('Já pagas'),'nessa ordem');
+await page.click('#fecharCobranca');
 await page.evaluate(()=>['wen_mock_marcas','wen_fiscal_visao','wen_fiscal_fechados'].forEach(k=>localStorage.removeItem(k)));
 assert.deepEqual(erros,[]);
 console.log('✅ visao-fiscal-cobranca: duas abas — fiscal pela gravação (mensal no dia 1º), cobrança pelo vencimento com status no card');

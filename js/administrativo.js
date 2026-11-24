@@ -348,6 +348,12 @@ function noRecorte(f){
 // ── A linha é a .nf-lin da fila de notas: ▸ para abrir as diárias, nome, selos,
 //    valor e a ação. As diárias aparecem só para conferência — a composição é do dono.
 function diarias(f){
+ const ab=f.itens.filter(i=>Number(i.saldo)>0), pg=f.itens.filter(i=>!(Number(i.saldo)>0));
+ if(visao==='cobranca'&&ab.length&&pg.length)
+  return '<div class="nf-itens">'+ab.map(i=>`<div class="nf-item"><span>🔴</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)}${Number(i.recebido)>0?' · '+cash(i.recebido)+' pago':''} · <b>falta ${cash(i.saldo)}</b></span></div>`).join('')
+   +'<div class="nf-itens-sep">✅ Já pagas — fora da cobrança</div>'
+   +pg.map(i=>`<div class="nf-item pago"><span>✔️</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} pago</span></div>`).join('')
+   +'<div class="nf-itens-rod">Conferência apenas. A composição do fechamento é definida no <b>WEN Financeiro</b> — aqui ela não muda.</div></div>';
  return '<div class="nf-itens">'+f.itens.map(i=>
    `<div class="nf-item"><span>✅</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} · ${i.saldo>0?'⏳ não pago':'✔️ pago'}</span></div>`).join('')
   +'<div class="nf-itens-rod">Conferência apenas. A composição do fechamento é definida no <b>WEN Financeiro</b> — aqui ela não muda.</div></div>';
@@ -387,8 +393,12 @@ function linha(f){
    :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
    :'<span class="nf-pill pend">nota pendente</span>';
  const ms=[...new Set(mesesDe(f))].sort(), per=ms.length?mesRotulo(ms[0])+(ms.length>1?' a '+mesRotulo(ms.at(-1)):''):'';
- const horas=f.itens.reduce((t,i)=>t+(Number(i.horas)||0),0);
- const dias=[...new Set((f.itens||[]).map(i=>String(i.data||'').slice(0,5)).filter(Boolean))].sort((a,b)=>{
+ // Na cobrança, a diária quitada sai do card: conta só o que está em aberto (24/11).
+ const cob=visao==='cobranca'&&f.cobrancaStatus!=='pago';
+ const abertasF=(f.itens||[]).filter(i=>Number(i.saldo)>0), pagasF=(f.itens||[]).length-abertasF.length;
+ const its=cob&&abertasF.length?abertasF:(f.itens||[]);
+ const horas=its.reduce((t,i)=>t+(Number(i.horas)||0),0);
+ const dias=[...new Set(its.map(i=>String(i.data||'').slice(0,5)).filter(Boolean))].sort((a,b)=>{
    const [da,ma]=a.split('/'),[db,mb]=b.split('/');return (ma+da).localeCompare(mb+db);});
  const faixa=dias.length?(dias.length===1?dias[0]:dias[0]+' a '+dias.at(-1)):'';
  const venc=f.vencimento?'<b>vence '+esc(f.vencimento.split('-').reverse().join('/'))+'</b>':'<span class="muted">sem vencimento</span>';
@@ -396,9 +406,13 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
-  +(visao==='cobranca'&&f.cobrancaStatus!=='pago'&&Number(f.saldo)!==Number(f.valor)
-      ?`<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(f.saldo)}<div class="nf-de">de ${cash(f.valor)} · ${cash(f.recebido)} já pago</div></div>`
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${cob&&pagasF&&abertasF.length?' em aberto':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&abertasF.length?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
+  +(cob&&abertasF.length
+      ?(()=>{const vA=abertasF.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0)/100,
+               rA=abertasF.reduce((t,i)=>t+Math.round((Number(i.recebido)||0)*100),0)/100;
+        // o pago parcial aparece junto da diária em aberto: "3.500 · 1.750 pago"
+        return `<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(f.saldo)}`
+          +(rA>0?`<div class="nf-de">${cash(vA)} · ${cash(rA)} pago</div>`:'')+'</div>';})()
       :`<div class="nf-val">${cash(f.valor)}</div>`)
   +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
   +'</div>'+(aberto?diarias(f):'')+'</div></div>';
@@ -576,28 +590,38 @@ function blocoCobranca(f){
    ${f.condicaoTexto?`<div class="cob-obs">${esc(f.condicaoTexto)}</div>`:''}
  </div>`;
 }
-function docFechamento(f){
- const it=f.itens||[], tT=soma(it,'valor'), tR=soma(it,'recebido'), tS=soma(it,'saldo');
- const tH=soma(it,'horas'), tk=tH>0?tT/tH:0;
- const porMes={};it.forEach(r=>{const c=mesChave(r.mes)||'—';(porMes[c]=porMes[c]||[]).push(r);});
- let corpo='';
+function tabelaMeses(lista){
+ const porMes={};lista.forEach(r=>{const c=mesChave(r.mes)||'—';(porMes[c]=porMes[c]||[]).push(r);});
+ let h='';
  Object.entries(porMes).sort(([a],[b])=>a.localeCompare(b)).forEach(([mes,regs])=>{
   const mT=soma(regs,'valor'), mR=soma(regs,'recebido'), mS=soma(regs,'saldo'), mH=soma(regs,'horas');
-  corpo+=`<div class="fech-mes-bloco-r">
+  h+=`<div class="fech-mes-bloco-r">
     <div class="fech-mes-titulo-r"><span class="mn">📅 ${esc(mesExtenso(mes))}</span><span class="mt">${regs.length} grav. · ${mH}h · ${cash(mT)}</span><span class="ms ${mS>0?'pend':'quitado'}">${mS>0?'🔴 '+cash(mS):'✅'}</span></div>
     <div class="fech-tbl-wrap"><table class="fech-tbl-r"><thead><tr><th>Data</th><th>Horário</th><th>Studio</th><th class="r">Horas</th><th class="r">Total</th><th class="r">Recebido</th><th class="r">Saldo</th><th>Status</th></tr></thead><tbody>`;
   regs.forEach(r=>{
    const st=(r.studio||'').toUpperCase(), sa=st.includes('A');
-   corpo+=`<tr><td>${esc(r.data||'-')}</td><td style="font-size:.8rem;color:#64748b">${esc(r.horario||'—')}</td>`
+   h+=`<tr><td>${esc(r.data||'-')}</td><td style="font-size:.8rem;color:#64748b">${esc(r.horario||'—')}</td>`
     +`<td><span class="studio-badge-r ${sa?'sa-r':'sb-r'}">${esc(st||'—')}</span></td>`
     +`<td class="r">${r.horas}h</td><td class="r">${cash(r.valor)}</td>`
     +`<td class="r" style="color:#16a34a">${cash(r.recebido)}</td>`
     +`<td class="r" style="color:${r.saldo>0?'#b91c1c':'#16a34a'};font-weight:800">${cash(r.saldo)}</td>`
     +`<td><span class="fech-badge-r ${r.saldo>0?'pend':'ok'}">${r.saldo>0?'PENDENTE':'PAGO'}</span></td></tr>`;
-   if(r.descricao)corpo+=`<tr><td colspan="8" style="font-size:.78rem;color:#6b7280;padding:4px 11px">📝 ${esc(r.descricao)}</td></tr>`;
+   if(r.descricao)h+=`<tr><td colspan="8" style="font-size:.78rem;color:#6b7280;padding:4px 11px">📝 ${esc(r.descricao)}</td></tr>`;
   });
-  corpo+=`</tbody><tfoot><tr><td colspan="3">SUBTOTAL</td><td class="r">${mH}h</td><td class="r">${cash(mT)}</td><td class="r">${cash(mR)}</td><td class="r">${cash(mS)}</td><td></td></tr></tfoot></table></div></div>`;
+  h+=`</tbody><tfoot><tr><td colspan="3">SUBTOTAL</td><td class="r">${mH}h</td><td class="r">${cash(mT)}</td><td class="r">${cash(mR)}</td><td class="r">${cash(mS)}</td><td></td></tr></tfoot></table></div></div>`;
  });
+ return h;
+}
+function docFechamento(f){
+ const it=f.itens||[], tT=soma(it,'valor'), tR=soma(it,'recebido'), tS=soma(it,'saldo');
+ const tH=soma(it,'horas'), tk=tH>0?tT/tH:0;
+ // 24/11 (Will): "pra não confundir, o que está pago se separa do que está aberto quando
+ // se relaciona a uma diária específica" — diária quitada sai do bloco da cobrança.
+ const abertos=it.filter(r=>Number(r.saldo)>0), pagos=it.filter(r=>!(Number(r.saldo)>0));
+ const separar=abertos.length&&pagos.length;
+ const corpo=separar?`<div class="fech-secao aberto"><h4>🔴 Em aberto — ${abertos.length} ${abertos.length===1?'diária':'diárias'} · falta ${cash(soma(abertos,'saldo'))}</h4>${tabelaMeses(abertos)}</div>`
+   +`<div class="fech-secao pago"><h4>✅ Já pagas — saíram da cobrança · ${pagos.length} ${pagos.length===1?'diária':'diárias'} · ${cash(soma(pagos,'valor'))}</h4>${tabelaMeses(pagos)}</div>`
+   :tabelaMeses(it);
  return `<div class="fech-acoes-r no-print">
    <button type="button" class="btn btn-green" id="fPdf">🖨 PDF / Imprimir</button>
    <button type="button" class="btn btn-blue" id="fZap">📱 WhatsApp</button>
