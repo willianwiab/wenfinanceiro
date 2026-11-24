@@ -1,7 +1,8 @@
 /* Integração do proprietário. O portal recebe somente fechamentos liberados. */
+let FC_idsBrutos=new Set();
 let FC_dados={}, FC_ok=false, FC_selecionados=new Set(), FC_rascunho=null, FC_salvando=false;
 async function FC_carregar(){
-  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_dados=Object.fromEntries(WENFechamentos.consolidarFechamentos(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>({...f,id}))).map(f=>[f.id,f]));FC_ok=true;}
+  try{const raw=await CC_fbCarregar('administrativo_fechamentos');FC_idsBrutos=new Set(Object.keys(raw));FC_dados=Object.fromEntries(WENFechamentos.consolidarFechamentos(Object.entries(raw).filter(([,f])=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo)).map(([id,f])=>({...f,id}))).map(f=>[f.id,f]));FC_ok=true;}
   catch(e){FC_ok=false;}return FC_ok;
 }
 function FC_notas(){return Object.values(FC_dados).filter(f=>f.fiscalStatus==='emitida'&&(f.fiscalIds||f.lancamentoIds||[]).length).map(f=>({
@@ -321,7 +322,11 @@ const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','venci
   'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca',
   // 24/11: a condição de pagamento da ficha (à vista, 50+50, mensal) também acompanha —
   // antes só entrava na criação, e mudar a ficha não chegava na tela dela.
-  'condicao','condicaoTexto'];
+  'condicao','condicaoTexto',
+  // Auditoria 24/11: o nome do cliente e o retrato da ficha (CNPJ, contato, "quem cobra")
+  // só eram gravados na criação. Renomear no Receber ("PRÉ TIROLEZ" → "TIROLEZ") ou
+  // religar a cobrança na ficha (Oswaldo Cruz) nunca chegava na tela dela.
+  'cliente','clienteFiscal'];
 const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm','promessaData','promessaObs',
   'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus',
   'urgente','adiadoAte','lembreteData','lembreteObs','mensal'];   // marcas dela no card (24/11)
@@ -381,8 +386,23 @@ async function FC_criarEspelho(id,doc,campos){
  const base=FS_URL.replace('https://firestore.googleapis.com/v1/','');
  const writes=[{update:{name:base+'/administrativo_fechamentos/'+id,fields},currentDocument:{exists:false}},
  ...doc.lancamentoIds.map(lid=>({update:{name:base+'/administrativo_vinculos/'+encodeURIComponent(lid),fields:{fechamentoId:toFV(id)}},currentDocument:{exists:false}}))];
- const res=await fetch(FS_URL+':commit?key='+FB_API_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({writes})});
+ const tentar=()=>fetch(FS_URL+':commit?key='+FB_API_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({writes})});
+ let res=await tentar();
+ if(!res.ok){
+  // Pode ser vínculo velho de uma cobrança que não existe mais: confere um a um e tenta de novo.
+  let limpou=0;
+  for(const lid of doc.lancamentoIds){
+   try{
+    const v=await fetch(`${FS_URL}/administrativo_vinculos/${encodeURIComponent(lid)}?key=${FB_API_KEY}`);
+    if(!v.ok)continue;
+    const alvo=((await v.json()).fields||{}).fechamentoId?.stringValue||'';
+    if(alvo&&!FC_idsBrutos.has(alvo)){await fetch(`${FS_URL}/administrativo_vinculos/${encodeURIComponent(lid)}?key=${FB_API_KEY}`,{method:'DELETE'});limpou++;}
+   }catch(e){}
+  }
+  if(limpou)res=await tentar();
+ }
  if(!res.ok)throw Error('Não foi possível reservar as diárias. Recarregue o financeiro antes de tentar novamente ('+res.status+').');
+ FC_idsBrutos.add(id);
 }
 // As diárias que compõem um grupo, lidas do Receber AGORA (o espelho é sempre do estado atual).
 function FC_regsDoGrupo(chave,cliente,ficha){
@@ -413,7 +433,12 @@ async function FC_espelhar(regs,motivo){
       const doGrupo=FC_regsDoGrupo(chave,cliente,ficha);
       const antigo=FC_porGrupo(chave,doGrupo);
       const id=antigo?antigo.id:chave;
-      if(!doGrupo.length){await FC_removerGrupo(chave,antigo);continue;}
+      if(!doGrupo.length){
+        // Auditoria 24/11 (SG TALK): cobrança antiga não tem "grupo" e não era achada quando
+        // a única diária dela era excluída — ficava de fantasma na tela. Procura pelas diárias.
+        const idsFora=new Set(regs.filter(r=>r&&r.cliente===cliente&&(r.excluido||r.naoFaturavel)).map(r=>String(r.id)));
+        const alvo=antigo||Object.values(FC_dados).find(f=>(f.lancamentoIds||[]).length&&(f.lancamentoIds||[]).every(i=>idsFora.has(String(i))));
+        await FC_removerGrupo(chave,alvo);continue;}
       const novo=WENFechamentos.criar(doGrupo,ficha||{});
       const textos=FC_preservarTexto(antigo,novo);
       const div=FC_divergenciaDe(antigo,novo.valor);
@@ -428,7 +453,7 @@ async function FC_espelhar(regs,motivo){
       // o que falta volta para "a cobrar". Quitou: pago.
       if(mudouPagamento)doc.cobrancaStatus=doc.saldo===0?'pago':'pendente';
       await (antigo?FC_gravarCampos:FC_criarEspelho)(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
-        :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
+        :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','fiscalIds','fiscalValor'));
       FC_dados[id]=doc;
       await FC_limparOrfaos(id,doc.lancamentoIds||[]);
       feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
@@ -635,7 +660,14 @@ async function FC_removerGrupo(chave,antigo){
     FC_dados[antigo.id]=doc;return;
   }
   const res=await fetch(`${FS_URL}/administrativo_fechamentos/${encodeURIComponent(antigo.id)}?key=${FB_API_KEY}`,{method:'DELETE'});
-  if(res.ok||res.status===404)delete FC_dados[antigo.id];
+  if(res.ok||res.status===404){
+    delete FC_dados[antigo.id];FC_idsBrutos.delete(antigo.id);
+    // Auditoria 24/11: o vínculo da diária ficava para trás (38 órfãos) e impedia a diária de
+    // voltar a ter cobrança — a criação exige que o vínculo não exista.
+    const ocupados=FC_ocupados();
+    for(const lid of antigo.lancamentoIds||[])if(!ocupados.has(String(lid)))
+      try{await fetch(`${FS_URL}/administrativo_vinculos/${encodeURIComponent(lid)}?key=${FB_API_KEY}`,{method:'DELETE'});}catch(e){}
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -683,6 +715,44 @@ async function FC_aoSalvarLancamento(reg,motivo){
   }catch(e){console.warn('FC_aoSalvarLancamento',e.message);toast('Diária salva, mas o administrativo não foi atualizado. Recarregue o financeiro para tentar novamente.','#ef4444',8000);}
 }
 
+// Compara objetos sem depender da ordem das chaves (o Firestore não preserva a ordem).
+function FC_canon(o){return JSON.stringify(Object.keys(o||{}).sort().map(k=>[k,o[k]==null?'':o[k]]));}
+// Cobranças cujas diárias não existem mais no Receber. Só CANDIDATAS: a lista local pode
+// estar incompleta, então cada uma é confirmada no Firebase antes de qualquer remoção.
+function FC_fantasmas(){
+  const vivos=new Set((R_todosOsDados||[]).filter(r=>!r.excluido).map(r=>String(r.id)));
+  return Object.values(FC_dados).filter(f=>(f.lancamentoIds||[]).length&&!(f.lancamentoIds||[]).some(i=>vivos.has(String(i))));
+}
+async function FC_limparFantasmas(){
+  let n=0;
+  for(const f of FC_fantasmas()){
+    try{
+      let todasFora=true;
+      for(const lid of f.lancamentoIds){
+        const r=await fetch(`${FS_URL}/lancamentos/${encodeURIComponent(lid)}?key=${FB_API_KEY}`);
+        if(r.status===404)continue;
+        if(!r.ok){todasFora=false;break;}
+        const campos=(await r.json()).fields||{};
+        if(!(campos.excluido&&campos.excluido.booleanValue===true)){todasFora=false;break;}
+      }
+      if(todasFora){await FC_removerGrupo(f.grupo,f);n++;}
+    }catch(e){console.warn('FC_limparFantasmas',f.id,e.message);}
+  }
+  return n;
+}
+// Vínculo (trava de duplicidade) que aponta para cobrança que não existe mais.
+async function FC_limparVinculosOrfaos(){
+  let n=0;
+  try{
+    const vinc=await CC_fbCarregar('administrativo_vinculos');
+    for(const [lid,v] of Object.entries(vinc)){
+      if(v&&v.fechamentoId&&FC_idsBrutos.has(v.fechamentoId))continue;
+      const r=await fetch(`${FS_URL}/administrativo_vinculos/${encodeURIComponent(lid)}?key=${FB_API_KEY}`,{method:'DELETE'});
+      if(r.ok)n++;
+    }
+  }catch(e){console.warn('FC_limparVinculosOrfaos',e.message);}
+  return n;
+}
 function FC_desatualizados(){
   const porId=new Map((R_todosOsDados||[]).map(r=>[String(r.id),r]));
   const c=v=>Math.round((Number(v)||0)*100);
@@ -693,9 +763,11 @@ function FC_desatualizados(){
     const rec=regs.reduce((s,r)=>s+c(r.valorReserva),0), tot=regs.reduce((s,r)=>s+c(r.valorTotal),0);
     // 24/11: além do pagamento, valor e vencimento — a edição no Receber ia para a diária
     // errada e o vencimento novo (Vendendo Valor, 24/11) nunca chegava.
-    let venc=f.vencimento||'', cond=f.condicao||'avista';
-    try{const n=WENFechamentos.criar(regs,CFI_casar(f.cliente,(typeof CFI_lista==='function'?CFI_lista():[]))||{});venc=n.vencimento||'';cond=n.condicao||'avista';}catch(e){}
-    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo)||tot!==c(f.valor)||venc!==(f.vencimento||'')||cond!==(f.condicao||'avista'))fora.push(...regs);
+    let venc=f.vencimento||'', cond=f.condicao||'avista', nome=f.cliente, retrato=FC_canon(f.clienteFiscal);
+    try{const n=WENFechamentos.criar(regs,CFI_casar(regs[0].cliente,(typeof CFI_lista==='function'?CFI_lista():[]))||{});
+      venc=n.vencimento||'';cond=n.condicao||'avista';nome=n.cliente;retrato=FC_canon(n.clienteFiscal);}catch(e){}
+    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo)||tot!==c(f.valor)||venc!==(f.vencimento||'')||cond!==(f.condicao||'avista')
+       ||nome!==f.cliente||retrato!==FC_canon(f.clienteFiscal))fora.push(...regs);
   }
   return fora;
 }
@@ -708,6 +780,9 @@ async function FC_sincronizarPendentes(){
   // Ao abrir o financeiro, todo fechamento cujo recebido/saldo diverge do Receber é refeito.
   FC_desatualizados().forEach(r=>{if(!pendentes.includes(r))pendentes.push(r);});
   console.info('Administrativo: '+pendentes.length+' diária(s) a espelhar ao abrir');
+  // Faxina (auditoria 24/11): cobrança de diária excluída e vínculo órfão. Não derruba o resto.
+  try{const nf=await FC_limparFantasmas();if(nf)toast('🧹 '+nf+' cobrança(s) de diária excluída saíram do administrativo.');}catch(e){}
+  try{await FC_limparVinculosOrfaos();}catch(e){}
   if(!pendentes.length)return;
   let feitos=[],erro=null;
   try{feitos=await FC_espelhar(pendentes,'automatico');}catch(e){erro=e;feitos=e.feitos||[];}

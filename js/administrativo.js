@@ -138,8 +138,13 @@ const isoDiaria=i=>{const d=String(i.data||'').split('/');let m=String(i.mes||''
  return d.length>=2&&m?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):'';};
 const gravadasAbertas=f=>(f.itens||[]).filter(i=>{if(!(Number(i.saldo)>0))return false;const x=isoDiaria(i);return !x||x<=today();});
 const aGravarAbertas=f=>(f.itens||[]).filter(i=>{if(!(Number(i.saldo)>0))return false;const x=isoDiaria(i);return !!x&&x>today();});
-const soAGravar=f=>f.cobrancaStatus!=='pago'&&!gravadasAbertas(f).length&&aGravarAbertas(f).length>0;
-const faltaCobrar=f=>Math.round(gravadasAbertas(f).reduce((t,i)=>t+Math.round((Number(i.saldo)||0)*100),0))/100;
+// Exceção (auditoria 24/11): condição com SINAL (50%+50%, 30%+70%) — o sinal é cobrado ANTES
+// da gravação. O que falta do sinal das diárias futuras entra no "falta cobrar".
+const PCT_SINAL={sinal50:.5,sinal30:.3};
+const sinalPend=f=>{const p=PCT_SINAL[f.condicao];if(!p)return 0;
+ return aGravarAbertas(f).reduce((t,i)=>t+Math.max(0,Math.round((Number(i.valor)||0)*p*100)-Math.round((Number(i.recebido)||0)*100)),0)/100;};
+const soAGravar=f=>f.cobrancaStatus!=='pago'&&!gravadasAbertas(f).length&&aGravarAbertas(f).length>0&&sinalPend(f)===0;
+const faltaCobrar=f=>(Math.round(gravadasAbertas(f).reduce((t,i)=>t+Math.round((Number(i.saldo)||0)*100),0))+Math.round(sinalPend(f)*100))/100;
 const vencEf=f=>{
  if(adiada(f))return f.adiadoAte;
  const v=f.vencimento||'';
@@ -173,6 +178,11 @@ const diaUmSeguinte=iso=>{let [a,m]=iso.slice(0,7).split('-').map(Number);m++;if
 const ehMensal=f=>f.condicao==='mensal'||!!f.mensal;
 function fiscal(f){
  if(!f.exigeNota)return null;
+ // Auditoria 24/11 (Vitrine Cast, Podcast Positivo, Biolab): "Nota emitida" marcada no
+ // campo Situação fiscal não cria o registro por diária — e o card continuava mandando
+ // emitir. Marcada emitida e sem registro por diária = a nota cobre a cobrança inteira.
+ if(f.notaModo==='separado'){if(f.nfSinalStatus==='emitida'&&f.nfSaldoStatus==='emitida')return null;}
+ else if(f.fiscalStatus==='emitida'&&!(f.notasEmitidas||[]).length)return null;
  const livres=WENFechamentos.diariasLivres(f);
  if(!livres.length)return null;
  const hoje=today(), mensal=ehMensal(f);
@@ -206,7 +216,8 @@ function inicioMesSeguinte(f){
  return a+'-'+String(m).padStart(2,'0')+'-01';
 }
 
-async function carregar(){
+let brutoMaisRecente='';
+async function carregar(silencioso){
  if(busy)return;
  try{
   if(!mock){if(Date.now()>expires)sessao(await auth('securetoken.googleapis.com/v1/token',{grant_type:'refresh_token',refresh_token:refresh}));const user=await auth('identitytoolkit.googleapis.com/v1/accounts:lookup',{idToken:token});const u=user.users?.[0];dono=u?.email===DONO_EMAIL;if(u?.email==='financeiro@wenprodutora.com.br'&&!u.emailVerified){$('verificar').hidden=false;throw Error('Verifique seu e-mail antes de acessar. Use o botão abaixo; depois de verificar, entre novamente.');}}
@@ -223,9 +234,10 @@ async function carregar(){
       vencimento:(()=>{const x=new Date();x.setDate(x.getDate()+1);return String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0')+'/'+x.getFullYear();})()}],{}),id:'demo3',updateTime:'mock'}];}
   else{let pt='';do{const j=await req('/administrativo_fechamentos?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''));novos.push(...(j.documents||[]).map(d=>({...Object.fromEntries(Object.entries(d.fields||{}).map(([k,v])=>[k,from(v)])),id:d.name.split('/').at(-1),updateTime:d.updateTime})));pt=j.nextPageToken||'';}while(pt);}
   if(mock){try{const mk=JSON.parse(localStorage.getItem('wen_mock_marcas')||'{}');novos.forEach(f=>Object.assign(f,mk[f.id]||{}));}catch(e){}}
+  brutoMaisRecente=novos.map(x=>String(x.atualizadoEm||'')).sort().at(-1)||'';
   docs=WENFechamentos.consolidarFechamentos(novos.filter(f=>f.itens?.length&&f.itens.every(WENFechamentos.noPeriodo))).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm));$('login').hidden=true;$('app').hidden=false;$('sair').hidden=false;$('sino').hidden=false;
   await avisosCarregar();await fichasCarregar();
- avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
+ if(!silencioso)avisar(mock?'Demonstração — dados fictícios.':'Fechamentos atualizados.');combo();lista();sino();
   if(selecionado&&docs.some(f=>f.id===selecionado))abrir(selecionado);else if(location.hash&&docs.some(f=>f.id===decodeURIComponent(location.hash.slice(1))))abrir(decodeURIComponent(location.hash.slice(1)));
  }catch(e){avisar(e.message,true);}
 }
@@ -403,7 +415,9 @@ function marcasBotoes(f){
 }
 function linha(f){
  const atraso=atrasada(f), aberto=abertos.has(f.id);
- const cor=atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
+ const xf=visao==='fiscal'?fiscal(f):null;
+ const cor=visao==='fiscal'?(xf&&xf.prontas.length?(xf.dias>7?'div':'fila'):'env')
+   :atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
  const diasAtr=atraso?Math.round((Date.parse(today()+'T00:00:00')-Date.parse(vencEf(f)+'T00:00:00'))/86400000):0;
  const dEnv=f.enviadoEm?ddmm(String(f.enviadoEm).slice(0,10)):'';
  const selo=f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
@@ -432,7 +446,10 @@ function linha(f){
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
   +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
-  +(cob&&!abertasF.length&&futF.length
+  +(cob&&!abertasF.length&&futF.length&&sinalPend(f)>0
+      ?(()=>{const rot=f.cobrancaStatus==='enviada'?['aguardando o sinal','esp']:f.cobrancaStatus==='informado'?['a conferir','esp']:['falta cobrar o sinal',''];
+        return `<div class="nf-val"><span class="nf-rot ${rot[1]}">${rot[0]}</span>${cash(sinalPend(f))}<div class="nf-de">de ${cash(futF.reduce((t,i)=>t+(Number(i.valor)||0),0))} · antes da gravação</div></div>`;})()
+      :cob&&!abertasF.length&&futF.length
       ?`<div class="nf-val"><span class="nf-rot nada">a gravar</span><span class="nf-futuro">${cash(futF.reduce((t,i)=>t+(Number(i.saldo)||0),0))}</span></div>`
       :cob&&abertasF.length
       ?(()=>{const vA=abertasF.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0)/100,
@@ -864,7 +881,7 @@ function abrir(id){
 
   <div class="ed-painel" data-painel="fechamento">
    ${contatoHTML(f)}
-   <div class="row"><label>Vencimento<input id="vencimento" type="date" value="${esc(f.vencimento)}"></label>
+   <div class="row"><label>Vencimento <span class="muted" style="font-weight:500">· vem do WEN Financeiro</span><input id="vencimento" type="date" value="${esc(f.vencimento)}" readonly tabindex="-1" style="background:#f1f5f9;color:#475569"></label>
    <label>Situação da cobrança<select id="cobrancaStatus"><option value="pendente">Pendente</option><option value="enviada">Enviada</option><option value="informado">Pagamento comunicado — aguardando Will</option>${f.cobrancaStatus==='pago'?'<option value="pago">Pagamento confirmado por Will</option>':''}</select></label></div>
    <p class="muted">${f.enviadoEm?'Último envio registrado: '+esc(new Date(f.enviadoEm).toLocaleString('pt-BR')):'Nenhum envio registrado ainda.'}</p>
   </div>
@@ -1030,13 +1047,30 @@ function marcaDialogo(tipo,id){
 async function salvar(enviar){
  if(busy)return;
  const f=docs.find(f=>f.id===selecionado), update={};
- const campos=['vencimento','cobrancaStatus','fiscalStatus','nfNumero','nfData','descricaoFiscal','descricaoCobranca'];
+ // O vencimento não vai: ele vem do Receber e as regras não deixam mudar aqui (auditoria 24/11:
+ // mexer no campo fazia o salvar inteiro ser recusado com "sem acesso").
+ const campos=['cobrancaStatus','fiscalStatus','nfNumero','nfData','descricaoFiscal','descricaoCobranca'];
  campos.push('promessaData','promessaObs');
  if(f.notaModo==='separado')campos.push('nfSinalStatus','nfSinalNumero','nfSinalData','nfSaldoStatus','nfSaldoNumero','nfSaldoData');
  for(const k of campos){const el=$(k);if(el)update[k]=el.value;}
  if(update.cobrancaStatus==='pago'&&f.cobrancaStatus!=='pago'){avisar('Só Will pode confirmar o pagamento no financeiro.',true);return;}
  if(f.cobrancaStatus==='pago')update.cobrancaStatus='pago';
  if(enviar){if(update.cobrancaStatus==='pago'){avisar('Este fechamento já está pago.',true);return;}update.cobrancaStatus='enviada';update.enviadoEm=new Date().toISOString();}
+ // "Enviada" escolhida no campo (sem o botão) também registra a data — o card mostra "cobrada em".
+ else if(update.cobrancaStatus==='enviada'&&(f.cobrancaStatus!=='enviada'||!f.enviadoEm))update.enviadoEm=new Date().toISOString();
+ // Nota pelo campo "Situação fiscal" (auditoria 24/11): tem que deixar o mesmo rastro do
+ // botão 🧾 Registrar nota — senão o card continua pedindo a nota.
+ if(f.exigeNota&&f.notaModo!=='separado'&&update.fiscalStatus!==undefined){
+  const num=String(update.nfNumero||'').trim(), jaReg=(f.notasEmitidas||[]), auto=jaReg.map(n=>n.numero).join(', ');
+  const livres=WENFechamentos.diariasLivres(f);
+  if(update.fiscalStatus==='pendente'&&num&&num!==auto){avisar('Você preencheu o número da nota. Para registrar, marque "Nota emitida" (ou use o botão 🧾 Registrar nota) — ou apague o número.',true);return;}
+  if(update.fiscalStatus==='emitida'&&livres.length){
+   if(jaReg.length){avisar('Ainda há '+livres.length+' diária(s) sem nota. Use o botão 🧾 Registrar nota para a(s) que falta(m).',true);return;}
+   if(!num||!/^\d{4}-\d{2}-\d{2}$/.test(String(update.nfData||''))){avisar('Informe o número e a data de emissão da nota.',true);return;}
+   update.notasEmitidas=[{numero:num,data:update.nfData,ids:livres.map(i=>String(i.id)),
+     valor:Math.round(livres.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0))/100,em:new Date().toISOString()}];
+  }
+ }
  update.atualizadoEm=new Date().toISOString();
  try{
   WENFechamentos.validarEdicao({...f,...update});busy=true;$('salvar').disabled=true;$('enviada').disabled=true;
@@ -1072,7 +1106,7 @@ document.querySelectorAll('.visoes [data-v]').forEach(b=>b.onclick=()=>{visao=b.
 $('busca').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
-window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar();});
+window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar(true);});
 // ── Ao vivo (24/11, Will: "as atualizações não aparecem em tempo real"). A cada 30 s, com a
 // aba visível, pergunta ao Firebase se ALGUMA cobrança ou aviso mudou depois do mais recente
 // que a tela tem — consulta com limit 1, então custa 1 leitura quando nada mudou. Se mudou,
@@ -1082,14 +1116,14 @@ async function algoMudou(){
  const q=(col,campo,desde)=>req(':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],
    where:{fieldFilter:{field:{fieldPath:campo},op:'GREATER_THAN',value:{stringValue:desde}}},limit:1}})})
    .then(j=>Array.isArray(j)&&j.some(x=>x.document)).catch(()=>false);
- const [f,a]=await Promise.all([q('administrativo_fechamentos','atualizadoEm',maisRecente(docs,'atualizadoEm')),
+ const [f,a]=await Promise.all([q('administrativo_fechamentos','atualizadoEm',brutoMaisRecente||maisRecente(docs,'atualizadoEm')),
    q('administrativo_avisos','criadoEm',maisRecente(avisos,'criadoEm'))]);
  return f||a;
 }
 setInterval(async()=>{
  if(mock||document.visibilityState!=='visible'||dirty||busy||$('app').hidden)return;
  if($('cobrancaDialog').open||($('marcaDialog')&&$('marcaDialog').open))return;
- if(await algoMudou())carregar();
+ if(await algoMudou())carregar(true);
 },30000);
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 (async()=>{if(mock){await carregar();return;}refresh=sessionStorage.getItem('wen_admin_rt')||localStorage.getItem('wen_auth_rt');if(refresh)await carregar();})();

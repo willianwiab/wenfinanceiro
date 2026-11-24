@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261124-0d714a82';
+window.APP_VERSION='20261124-ce243f18';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2229,9 +2229,11 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
          não ganha campo nenhum e R_salvar não encosta nisso. -->
     <div class="form-group" id="rNomeAviso" style="display:none"></div>
     <div class="form-group" style="margin-bottom:10px">
-      <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:.86rem;cursor:pointer;text-transform:none;letter-spacing:0">
-        <input type="checkbox" id="rFNaoFaturavel" onchange="R_padraoRender()"/>
-        🚫 Não é faturável <span style="font-weight:400;color:#9ca3af;font-size:.78rem">— pré-reserva, bloqueio de agenda, teste interno. Não vai para o administrativo.</span></label>
+      <!-- 24/11: `.form-group input{width:100%}` esticava a caixinha pela linha inteira e
+           empurrava o texto para fora da janela. A caixinha tem largura própria. -->
+      <label style="display:flex;align-items:flex-start;gap:8px;font-weight:600;font-size:.86rem;cursor:pointer;text-transform:none;letter-spacing:0">
+        <input type="checkbox" id="rFNaoFaturavel" onchange="R_padraoRender()" style="width:18px;height:18px;flex:0 0 18px;padding:0;margin:1px 0 0;border:0"/>
+        <span style="flex:1;min-width:0">🚫 Não é faturável <span style="font-weight:400;color:#9ca3af;font-size:.78rem">— pré-reserva, bloqueio de agenda, teste interno. Não vai para o administrativo.</span></span></label>
     </div>
     <div class="form-group" id="rPadraoCliente" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:12px 14px">
       <label style="margin-bottom:6px">🎯 Padrão deste cliente <span style="font-size:.72rem;color:#9ca3af;font-weight:400">(vale para todas as gravações dele)</span></label>
@@ -2761,7 +2763,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=77d3a402"></script>
-<script src="js/fechamentos-admin.js?v=878b93ff"></script>
+<script src="js/fechamentos-admin.js?v=569b9491"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
