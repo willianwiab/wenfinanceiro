@@ -894,10 +894,135 @@ function cobrancaSemSaudacao(texto,cliente){
  const t=String(texto||''),inicio='Olá! Segue o fechamento de '+cliente+'.';
  return t.startsWith(inicio)?t.slice(inicio.length).trimStart():t;
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// 📋 SITUAÇÃO — o resumo em português do que está acontecendo com esta cobrança.
+// Will (24/11): "ela precisa entender exatamente a situação. Ex.: cliente precisa emitir
+// nota; vencimento tá dia tal; ele disse que vai pagar dia tal; pagou 50% com a nota tal e
+// falta pagar 50% da nota tal, da diária tal." Montado por REGRAS em cima dos dados (sem IA:
+// numa tela financeira o resumo não pode inventar valor nem data, e sai na hora).
+// ══════════════════════════════════════════════════════════════════════════════
+function situacao(f){
+ const hoje=today(), it=f.itens||[], c=v=>Math.round((Number(v)||0)*100), R=v=>cash(v/100);
+ const e=v=>esc(String(v??''));
+ const junta=a=>a.length<=1?a.join(''):a.slice(0,-1).join(', ')+' e '+a.at(-1);
+ const dia=i=>e(String(i.data||'').slice(0,5));
+ const dias=l=>junta(l.map(dia));
+ const nd=l=>l.length===1?'a diária de '+dias(l):'as diárias de '+dias(l);
+ const diasEntre=(a,b)=>Math.round((Date.parse(b+'T00:00:00')-Date.parse(a+'T00:00:00'))/86400000);
+ const notas=f.notasEmitidas||[], separado=f.notaModo==='separado';
+ const legado=!notas.length&&!separado&&f.fiscalStatus==='emitida';
+ const notasDa=i=>legado?[String(f.nfNumero||'emitida')]:notas.filter(n=>(n.ids||[]).map(String).includes(String(i.id))).map(n=>String(n.numero));
+ const unicos=l=>[...new Set(l)];
+ const semNF=semNota(f), x=semNF?null:fiscal(f);
+ const semCob=(f.clienteFiscal||{}).cobrancaAdministrativo===false;
+ const tot=c(f.valor), rec=c(f.recebido), sal=c(f.saldo), pct=v=>tot?Math.round(v*100/tot):0;
+ const linhas=[], passos=[];
+
+ // ── nota fiscal ──
+ if(semNF)linhas.push(['🧾','Nota fiscal',f.exigeNota?'Marcada como <b>“NF não solicitada”</b> nesta cobrança.':'Este cliente <b>não pede nota fiscal</b>.']);
+ else{
+  let t='<b>Precisa de nota fiscal.</b> ';
+  if(separado){
+   const p=(rot,st,num,dt)=>st==='emitida'?`nota do ${rot} <b>nº ${e(num)}</b>${dt?' ('+ddmm(dt)+')':''}`:`nota do ${rot} <b>ainda não emitida</b>`;
+   t+='Sinal e saldo em notas separadas: '+p('sinal',f.nfSinalStatus,f.nfSinalNumero,f.nfSinalData)+' · '+p('saldo',f.nfSaldoStatus,f.nfSaldoNumero,f.nfSaldoData)+'.';
+  }else{
+   if(legado)t+=`Já emitida: nota <b>nº ${e(f.nfNumero||'—')}</b>${f.nfData?' ('+ddmm(f.nfData)+')':''}, cobrindo tudo.`;
+   else if(notas.length)t+='Já emitida'+(notas.length>1?'s':'')+': '+junta(notas.map(n=>`nota <b>nº ${e(n.numero)}</b> (${cash(n.valor)}${n.data?', '+ddmm(n.data):''})`))+'.';
+   if(x){
+    if(x.prontas.length)t+=` <b>Falta emitir ${cash(soma(x.prontas,'valor'))}</b> — ${nd(x.prontas)}, que já ${x.prontas.length===1?'foi gravada':'foram gravadas'}.`;
+    if(x.gravadas.length)t+=` Fechamento mensal: a nota d${nd(x.gravadas)} sai a partir de <b>${ddmm(x.liberaEm)}</b>.`;
+    if(x.futuras.length)t+=` A nota d${nd(x.futuras)} (${cash(soma(x.futuras,'valor'))}) só depois da gravação.`;
+   }else if(!legado)t+=' Todas as gravações já têm nota.';
+  }
+  linhas.push(['🧾','Nota fiscal',t]);
+ }
+
+ // ── vencimento ──
+ const v=vencEf(f), atr=atrasada(f);
+ if(f.cobrancaStatus!=='pago'){
+  let t;
+  if(adiada(f))t=(f.mensal?'Fechamento mensal':'Adiada pelo Will')+`: cobrar a partir de <b>${dataBR(f.adiadoAte)}</b>`+(f.vencimento?` (o vencimento era ${dataBR(f.vencimento)})`:'')+'.';
+  else if(!v)t='Sem data de vencimento definida no financeiro.';
+  else if(semCob){const d=diasEntre(hoje,v);t=(d<0?'Venceu em ':'Vence em ')+`<b>${dataBR(v)}</b>.`;}   // o Will cobra: sem alarme para ela
+  else{const d=diasEntre(hoje,v);
+   t=`Vence em <b>${dataBR(v)}</b>`+(atr?` — <b>em atraso há ${-d} dia${d===-1?'':'s'}</b>.`:d===0?' — <b>é hoje</b>.':d>0?` — daqui a ${d} dia${d===1?'':'s'}.`:'.');
+   if(f.condicao==='mensal'&&v!==(f.vencimento||''))t+=' (fechamento mensal pela ficha do cliente)';}
+  linhas.push(['📅','Vencimento',t]);
+ }
+
+ // ── o que o cliente combinou ──
+ const promessaVale=f.promessaData&&sal>0;
+ if(promessaVale)linhas.push(['🤝','Combinado',`O cliente disse que paga em <b>${dataBR(f.promessaData)}</b>`+(f.promessaObs?` — “${e(f.promessaObs)}”`:'')+(f.promessaData<hoje?' — <b>a data passou e o pagamento não entrou</b>.':'.')]);
+
+ // ── o que já entrou ──
+ const pagos=it.filter(i=>c(i.recebido)>0);
+ if(rec>0){
+  const partes=pagos.map(i=>dia(i)+(c(i.recebido)<c(i.valor)?` (${cash(i.recebido)} de ${cash(i.valor)})`:''));
+  let nt='';
+  if(separado)nt=f.nfSinalStatus==='emitida'?`, com a nota do sinal nº ${e(f.nfSinalNumero)}`:'';
+  else{const ns=unicos(pagos.flatMap(notasDa));nt=ns.length?`, com a${ns.length>1?'s':''} nota${ns.length>1?'s':''} nº ${junta(ns.map(e))}`:(semNF?'':', ainda sem nota');}
+  linhas.push(['✅','Já pagou',`<b>${R(rec)}</b> (${pct(rec)}%) — ${pagos.length===1?'diária':'diárias'} de ${junta(partes)}${nt}.`]);
+ }else linhas.push(['✅','Já pagou','Ainda <b>não entrou nenhum pagamento</b>.']);
+
+ // ── o que falta ──
+ if(sal>0){
+  const ab=it.filter(i=>c(i.saldo)>0);
+  const cada=ab.map(i=>{
+   let nt='';
+   if(separado)nt=f.nfSaldoStatus==='emitida'?` — nota do saldo nº ${e(f.nfSaldoNumero)}`:' — nota do saldo ainda não emitida';
+   else if(!semNF){const ns=notasDa(i);nt=ns.length?` — nota${ns.length>1?'s':''} nº ${junta(ns.map(e))}`:' — ainda sem nota';}
+   const fut=isoDiaria(i)&&isoDiaria(i)>hoje;
+   return `diária de ${dia(i)}: <b>${cash(i.saldo)}</b>`+(c(i.recebido)>0?` (de ${cash(i.valor)})`:'')+nt+(fut?' — <b>ainda vai gravar</b>':'');});
+  linhas.push(['🔴','Falta pagar',`<b>${R(sal)}</b> (${pct(sal)}%) — ${cada.join('; ')}.`]);
+ }else linhas.push(['🎉','Falta pagar','Nada — <b>está tudo pago</b>.']);
+
+ // ── cobrança ──
+ if(sal>0){
+  linhas.push(['📨','Cobrança',semCob?'Quem cobra este cliente é <b>o Will</b> — você só acompanha.'
+   :f.cobrancaStatus==='enviada'?`Você <b>já cobrou</b>${f.enviadoEm?' em '+ddmm(String(f.enviadoEm).slice(0,10)):''} e o pagamento ainda não entrou.`
+   :f.cobrancaStatus==='informado'?'O cliente <b>disse que já pagou</b> — o Will vai conferir no banco e dar a baixa.'
+   :'<b>Ainda não foi cobrado.</b>']);
+ }
+
+ // ── 👉 o que fazer agora ──
+ // Primeiro o que é para JÁ; depois, numa frase, o que vem depois da gravação — no formato
+ // que o Will aprovou: "Nada agora. Depois de 27/11, emitir a nota e cobrar R$ 3.750."
+ const agora=[];
+ if(x&&x.prontas.length)agora.push(`<b>Emitir a nota</b> de ${cash(soma(x.prontas,'valor'))} (${nd(x.prontas)}) e registrar o número aqui.`);
+ if(separado&&!semNF&&!(f.nfSinalStatus==='emitida'&&f.nfSaldoStatus==='emitida'))agora.push('<b>Emitir a nota</b> que falta ('+(f.nfSinalStatus==='emitida'?'saldo':'sinal')+') e registrar o número aqui.');
+ const fut=aGravarAbertas(f), fc=faltaCobrar(f);
+ if(sal>0&&!semCob&&!soAGravar(f)){
+  if(f.cobrancaStatus==='informado')agora.push('<b>Aguardar</b> o Will conferir o pagamento no banco.');
+  else if(adiada(f))agora.push(`<b>Cobrar ${cash(fc)}</b> só a partir de ${dataBR(f.adiadoAte)}.`);
+  else if(promessaVale&&f.promessaData>=hoje)agora.push(`<b>Aguardar até ${dataBR(f.promessaData)}</b>, a data que o cliente prometeu. Se não pagar, cobrar ${cash(fc)}.`);
+  else if(f.cobrancaStatus==='enviada')agora.push(atr||promessaVale?`<b>Cobrar de novo ${cash(fc)}</b> — ${promessaVale?'a data prometida passou':'está em atraso'}.`:`<b>Aguardar o pagamento</b> de ${cash(fc)}${v?' até '+dataBR(v):''}.`);
+  else agora.push(`<b>Cobrar ${cash(fc)}</b>`+(sinalPend(f)>0&&!gravadasAbertas(f).length?' de sinal, antes da gravação':'')+(v?(atr?' — já venceu':' — vence em '+dataBR(v)):'')+'.');
+ }
+ let depois='';
+ const notaFut=x?x.futuras:[], datasFut=[...notaFut,...fut].map(isoDiaria).filter(Boolean).sort();
+ if(datasFut.length){
+  const acoes=[];
+  if(notaFut.length)acoes.push('emitir a nota');
+  const aCobrarDepois=Math.round(fut.reduce((t,i)=>t+c(i.saldo),0)-Math.round(sinalPend(f)*100));
+  if(fut.length&&!semCob&&aCobrarDepois>0)acoes.push('cobrar '+R(aCobrarDepois));
+  if(acoes.length)depois=`Depois de ${ddmm(datasFut[0])}, ${acoes.join(' e ')}.`;
+ }
+ if(agora.length){passos.push(...agora);if(depois)passos.push(depois);}
+ else passos.push(depois?'<b>Nada agora.</b> '+depois:sal>0&&semCob?'Nada. A cobrança é do Will.':'Nada. Está tudo em dia. 🎉');
+ return {linhas,passos};
+}
+function situacaoHTML(f){
+ const s=situacao(f);
+ return `<section class="situacao" id="situacao" aria-label="Situação desta cobrança">
+   <h3>📋 Situação — ${esc(f.cliente)}</h3>
+   <dl>${s.linhas.map(([ico,rot,txt])=>`<div class="sit-l"><dt><span aria-hidden="true">${ico}</span> ${rot}</dt><dd>${txt}</dd></div>`).join('')}</dl>
+   <div class="sit-fazer"><b>👉 O que fazer agora</b>${s.passos.length===1?`<p>${s.passos[0]}</p>`:'<ol>'+s.passos.map(p=>`<li>${p}</li>`).join('')+'</ol>'}</div>
+ </section>`;
+}
 function abrir(id){
  const f=docs.find(x=>x.id===id||(x.historicoDuplicados||[]).some(h=>h.id===id));if(!f)return;id=f.id;selecionado=id;dirty=false;lista();location.hash=id;
  const nf=(f.notasExistentes||[]).map(n=>n.numero).join(', ');
- $('editor').innerHTML=docFechamento(f)
+ $('editor').innerHTML=situacaoHTML(f)+docFechamento(f)
  +((f.historicoDuplicados||[]).length?'<details class="status"><summary>Registro anterior da mesma diária preservado no histórico ('+f.historicoDuplicados.length+')</summary>'+f.historicoDuplicados.map(h=>'<p>Registro: '+esc(h.id)+' · número informado: '+esc(h.nfNumero||'—')+' · cobrança: '+esc(h.cobrancaStatus||'—')+'</p>').join('')+'</details>':'')
  +`<section class="cartao-edicao">
  <div class="ed-abas" role="tablist">

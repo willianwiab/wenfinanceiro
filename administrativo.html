@@ -101,6 +101,16 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-pill.pend{background:#fef3c7;color:#92400e}
 .nf-pill.erro{background:#fee2e2;color:#b91c1c}
 .nf-pill.env{background:#dbeafe;color:#1d4ed8}
+.situacao{background:#fff;border:1px solid #c7d2fe;border-left:5px solid #1e3a8a;border-radius:14px;padding:16px 18px;margin:0 0 16px}
+.situacao h3{margin:0 0 10px;font-size:1.05rem;color:#1e3a8a}
+.situacao dl{margin:0;display:grid;gap:8px}
+.sit-l{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:baseline}
+.sit-l dt{font-size:.8rem;font-weight:700;color:#475569;white-space:nowrap}
+.sit-l dd{margin:0;font-size:.92rem;line-height:1.45;color:#0f172a}
+.sit-fazer{margin-top:12px;padding:11px 14px;border-radius:11px;background:#eff6ff;border:1px solid #bfdbfe;font-size:.93rem;line-height:1.45}
+.sit-fazer p{margin:4px 0 0}.sit-fazer ol{margin:6px 0 0;padding-left:20px}.sit-fazer li{margin:2px 0}
+@media(max-width:640px){.sit-l{grid-template-columns:1fr;gap:2px}}
+@media print{.situacao{display:none}}
 .fech-secao{margin:14px 0}.fech-secao h4{margin:0 0 8px;font-size:.95rem}
 .fech-secao.aberto h4{color:#b91c1c}
 .fech-secao.pago{opacity:.6}
@@ -351,4 +361,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=7a254e5a"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=37d3fa3b"></script></body></html>
