@@ -181,6 +181,8 @@ function fiscal(f){
  // Auditoria 24/11 (Vitrine Cast, Podcast Positivo, Biolab): "Nota emitida" marcada no
  // campo Situação fiscal não cria o registro por diária — e o card continuava mandando
  // emitir. Marcada emitida e sem registro por diária = a nota cobre a cobrança inteira.
+ // "NF não solicitada pelo cliente" marcada nesta cobrança: nada a emitir (Leaders Brief out/26).
+ if(f.fiscalStatus==='nao_solicitada'&&!(f.notasEmitidas||[]).length)return null;
  if(f.notaModo==='separado'){if(f.nfSinalStatus==='emitida'&&f.nfSaldoStatus==='emitida')return null;}
  else if(f.fiscalStatus==='emitida'&&!(f.notasEmitidas||[]).length)return null;
  const livres=WENFechamentos.diariasLivres(f);
@@ -427,7 +429,7 @@ function linha(f){
     +(atraso?`<span class="nf-pill erro">em atraso há ${diasAtr} dia${diasAtr===1?'':'s'}</span>`:'');
  const semCobranca=(f.clienteFiscal||{}).cobrancaAdministrativo===false;
  const selocob=semCobranca?'<span class="nf-pill erro">não cobrar — é o Will quem cobra</span>':'';
- const selonf=!f.exigeNota?'<span class="nf-pill">NF não solicitada</span>'
+ const selonf=(!f.exigeNota||f.fiscalStatus==='nao_solicitada')?'<span class="nf-pill">NF não solicitada</span>'
    :f.fiscalStatus==='emitida'?`<span class="nf-pill ok">nota ${esc(f.nfNumero||'emitida')}</span>`
    :'<span class="nf-pill pend">nota pendente</span>';
  const ms=[...new Set(mesesDe(f))].sort(), per=ms.length?mesRotulo(ms[0])+(ms.length>1?' a '+mesRotulo(ms.at(-1)):''):'';

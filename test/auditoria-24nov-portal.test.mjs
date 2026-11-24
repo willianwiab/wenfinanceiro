@@ -77,6 +77,14 @@ await cenario({
   demo3:{...base,cliente:'FALTA O SALDO',itens:[it('d2',-10)],notaModo:'separado',nfSinalStatus:'emitida',nfSaldoStatus:'pendente',fiscalStatus:'pendente',notasEmitidas:[]}},'fiscal');
 assert.deepEqual(await nomes(),['FALTA O SALDO'],'separado: só sai da fila com as duas notas');
 
+// ── "NF não solicitada pelo cliente" marcada na cobrança: não entra na fila de emitir ──
+await cenario({
+  demo:{...base,cliente:'SEM NF NESTA',itens:[it('n1',-10)],fiscalStatus:'nao_solicitada',nfNumero:'',notasEmitidas:[]},
+  demo3:{...base,cliente:'COM NF',itens:[it('n2',-10)],fiscalStatus:'pendente',notasEmitidas:[]}},'fiscal');
+assert.deepEqual(await nomes(),['COM NF'],'não solicitada fica fora da fila fiscal');
+await page.click('.visoes [data-v="cobranca"]');
+assert(/NF não solicitada/.test(await card('SEM NF NESTA'))&&!/nota pendente/.test(await card('SEM NF NESTA')),'e o selo diz "NF não solicitada"');
+
 await limpar();
 assert.deepEqual(erros,[]);
 console.log('✅ auditoria-24nov-portal: nota pelo campo, número sem status, data do envio, vencimento só leitura, sinal antes da gravação');
