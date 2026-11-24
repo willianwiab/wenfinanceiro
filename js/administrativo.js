@@ -131,6 +131,41 @@ const adiada=f=>!!f.adiadoAte&&f.adiadoAte>today()&&f.cobrancaStatus!=='pago';
 const lembreteHoje=f=>!!f.lembreteData&&f.lembreteData<=today()&&f.cobrancaStatus!=='pago';
 const dataBR=iso=>String(iso||'').split('-').reverse().join('/');
 const ddmm=iso=>dataBR(iso).slice(0,5);
+// ── Visão (24/11, Will): "a parte fiscal precisa ser feita após a gravação e a cobrança
+//    pelo vencimento — o filtro precisa ser separado por cobrança ou fiscal". Ex.: a
+//    Tirolez gravou e não tem nota, mas vence em dezembro: na fila de COBRANÇA ela espera,
+//    na fila FISCAL ela é prioridade.
+let visao='tudo';try{visao=localStorage.getItem('wen_fiscal_visao')||'tudo';}catch(e){}
+// Data da gravação de uma diária (ISO), do dia/mês da diária + ano do mês do lançamento.
+function diaIso(i){
+ const d=String(i.data||'').split('/'), m=WENFechamentos.mesChave(i.mes)||'';
+ return d.length>=2&&m?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):'';
+}
+// Quais diárias sem nota JÁ podem ter nota, pela regra da ficha (notaQuando):
+// gravação = depois de gravar · pagamento = depois de pagar · reserva = já ·
+// parcela (sinal/saldo separados) = quando entrar pagamento ou depois de gravar.
+function fiscal(f){
+ if(!f.exigeNota)return null;
+ const livres=WENFechamentos.diariasLivres(f);
+ if(!livres.length)return null;
+ const hoje=today(), q=f.notaQuando||'gravacao';
+ const pronta=i=>q==='reserva'?true:q==='pagamento'?Number(i.recebido)>0
+   :q==='parcela'?(Number(i.recebido)>0||(diaIso(i)&&diaIso(i)<=hoje)):(!!diaIso(i)&&diaIso(i)<=hoje);
+ const prontas=livres.filter(pronta), espera=livres.filter(i=>!pronta(i));
+ const desde=prontas.map(diaIso).filter(Boolean).sort()[0]||'';
+ const dias=desde?Math.round((Date.parse(hoje+'T00:00:00')-Date.parse(desde+'T00:00:00'))/86400000):0;
+ const proxima=espera.map(diaIso).filter(Boolean).sort()[0]||'';
+ return {livres,prontas,espera,desde,dias,proxima,quando:q};
+}
+function seloFiscal(f){
+ const x=fiscal(f);if(!x)return '';
+ if(x.prontas.length){
+   const quem=x.prontas.length+' '+(x.prontas.length===1?'diária':'diárias');
+   const tempo=x.quando==='pagamento'?'já pago':x.quando==='reserva'?'na reserva':x.dias<=0?'gravou hoje':'gravou há '+x.dias+' dia'+(x.dias===1?'':'s');
+   return `<span class="nf-pill ${x.dias>7?'erro':'pend'}">🧾 emitir nota · ${quem} · ${tempo}</span>`;
+ }
+ return `<span class="nf-pill">⏳ nota ${x.quando==='pagamento'?'depois do pagamento':'depois da gravação'}${x.proxima?' · '+ddmm(x.proxima):''}</span>`;
+}
 // Fechamento mensal: volta no dia 1º do mês seguinte ao da última gravação
 // (ou ao de hoje, se a gravação for de um mês que já passou).
 function inicioMesSeguinte(f){
@@ -346,7 +381,7 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${marcasSelos(f)}${semCobranca?'':selo}${selocob}${selonf}</div></div>`
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
   +`<div class="nf-val">${cash(f.valor)}${Number(f.saldo)>0&&Number(f.saldo)!==Number(f.valor)
       ?`<div class="nf-de">saldo ${cash(f.saldo)}</div>`:''}</div>`
   +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
@@ -390,17 +425,42 @@ function blocos(vis){
  });
  return h;
 }
+function listaFiscal(base){
+ const itens=base.map(f=>({f,x:fiscal(f)})).filter(o=>o.x);
+ const prontas=itens.filter(o=>o.x.prontas.length).sort((a,b)=>String(a.x.desde).localeCompare(String(b.x.desde))||a.f.cliente.localeCompare(b.f.cliente,'pt-BR'));
+ const espera=itens.filter(o=>!o.x.prontas.length).sort((a,b)=>String(a.x.proxima||'9999').localeCompare(String(b.x.proxima||'9999')));
+ const atras=prontas.filter(o=>o.x.dias>7).length;
+ $('cards').innerHTML=
+   '<div class="card-p alerta"><label>Nota para emitir</label><div class="val">'+prontas.length+'</div><div class="val-sub">já gravou (ou já pode)</div></div>'
+  +'<div class="card-p atrasado"><label>Há mais de 7 dias</label><div class="val">'+atras+'</div><div class="val-sub">'+(atras?'gravou e ainda sem nota':'nada esquecido')+'</div></div>'
+  +'<div class="card-p pendente"><label>Ainda não é hora</label><div class="val">'+espera.length+'</div><div class="val-sub">gravação ou pagamento por vir</div></div>';
+ const cab=(t,n,cls='')=>`<div class="grupo-mes${cls}"><b>${t}</b><span>${n} ${n===1?'cobrança':'cobranças'}</span></div>`;
+ return (prontas.length?cab('🧾 Já gravou — emitir a nota',prontas.length,' urg')+prontas.map(o=>linha(o.f)).join(''):'')
+  +(espera.length?cab('⏳ Ainda não é hora da nota',espera.length)+espera.map(o=>linha(o.f)).join(''):'')
+  ||'<div class="nf-vazio">✅ Nenhuma nota pendente neste recorte.</div>';
+}
 function lista(){
  const cli=$('busca').value;
  const base=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f));
+ document.querySelectorAll('.visoes [data-v]').forEach(b=>{b.classList.toggle('on',b.dataset.v===visao);b.setAttribute('aria-selected',String(b.dataset.v===visao));});
+ if($('chipsCob'))$('chipsCob').hidden=visao==='fiscal';
+ ['ordem','agrupar'].forEach(id=>{const el=$(id);if(el&&el.closest('.fg'))el.closest('.fg').hidden=visao==='fiscal';});   // no fiscal a ordem é a da gravação
+ if(visao==='fiscal'){
+  $('lista').innerHTML=listaFiscal(base.filter(f=>!adiada(f)));
+  ligarLista();return;
+ }
  const nAdiadas=base.filter(adiada).length;
- const vis=base.filter(f=>filtro==='adiada'?adiada(f)
+ const daCobranca=f=>visao!=='cobranca'||((f.clienteFiscal||{}).cobrancaAdministrativo!==false&&(f.cobrancaStatus!=='pago'||filtro==='pago'));
+ const vis=base.filter(daCobranca).filter(f=>filtro==='adiada'?adiada(f)
      :!adiada(f)&&(!filtro||(filtro==='atrasada'?atrasada(f):f.cobrancaStatus===filtro)))
    .sort(ordenador($('ordem')?$('ordem').value:'venc'));
  cards(vis,nAdiadas);
  $('lista').innerHTML=vis.length?blocos(vis)
   :(filtro==='adiada'?'<div class="nf-vazio">Nenhuma cobrança adiada.</div>'
    :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
+ ligarLista();
+}
+function ligarLista(){
  if(dono){
  $('lista').querySelectorAll('[data-urg]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.urg);
    if(f)salvarMarcas(f,{urgente:!f.urgente},f.urgente?'Urgente removido de '+f.cliente+'.':'🔥 '+f.cliente+' marcado como urgente.');});
@@ -892,6 +952,7 @@ $('nfFechar').onclick=()=>$('modalNFBg').classList.remove('open');
 $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota copiado.');
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace(location.pathname);};
+document.querySelectorAll('.visoes [data-v]').forEach(b=>b.onclick=()=>{visao=b.dataset.v;try{localStorage.setItem('wen_fiscal_visao',visao);}catch(e){}lista();});
 $('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;$('ordem').onchange=lista;if($('agrupar'))$('agrupar').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};

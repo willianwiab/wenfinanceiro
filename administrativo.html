@@ -107,6 +107,11 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .marcas .mk{font:inherit;font-size:.76rem;font-weight:600;padding:6px 9px;border-radius:9px;border:1px solid #e2e8f0;background:#fff;color:#475569;cursor:pointer;white-space:nowrap}
 .marcas .mk:hover{background:#f1f5f9}
 .marcas .mk.on{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}
+.nf-filtros .fg[hidden],#chipsCob[hidden]{display:none!important}
+.visoes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.visoes button{font:inherit;font-weight:700;font-size:.92rem;padding:11px 18px;border-radius:12px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;display:flex;align-items:baseline;gap:6px}
+.visoes button small{font-weight:500;font-size:.75rem;color:#64748b}
+.visoes button.on{background:#1e3a8a;border-color:#1e3a8a;color:#fff}.visoes button.on small{color:#c7d2fe}
 .grupo-mes{display:flex;justify-content:space-between;align-items:baseline;margin:18px 4px 8px;padding-bottom:6px;border-bottom:2px solid #e2e8f0;color:#334155}
 .grupo-mes b{font-size:.95rem}.grupo-mes span{font-size:.8rem;color:#64748b}
 .grupo-mes.urg{border-bottom-color:#fca5a5;color:#b91c1c}
@@ -297,6 +302,11 @@ body.cobranca-aberta{overflow:hidden}
     </form>
   </section>
   <div id="app" hidden>
+    <div class="visoes" role="tablist" aria-label="O que você vai trabalhar agora">
+      <button type="button" role="tab" data-v="tudo">🗂️ Tudo</button>
+      <button type="button" role="tab" data-v="cobranca">💰 Cobrança <small>pelo vencimento</small></button>
+      <button type="button" role="tab" data-v="fiscal">🧾 Fiscal <small>nota depois da gravação</small></button>
+    </div>
     <div class="nf-filtros">
       <div class="fg cli"><label>Cliente</label><select id="busca"><option value="">— Todos —</option></select></div>
       <div class="fg"><label>Mês inicial</label><select id="mesIni"></select></div>
@@ -314,7 +324,7 @@ body.cobranca-aberta{overflow:hidden}
         <option value="grav">Mês da gravação</option>
         <option value="nada">Sem separação</option>
       </select></div>
-      <div class="fg"><label>Exibir</label>
+      <div class="fg" id="chipsCob"><label>Exibir</label>
         <div class="nf-abas">
           <button type="button" id="abaTudo" class="on" data-f="">Todos</button>
           <button type="button" id="abaPend" data-f="pendente">📋 A cobrar</button>
@@ -347,4 +357,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=b69761df"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=fcb948b4"></script></body></html>
