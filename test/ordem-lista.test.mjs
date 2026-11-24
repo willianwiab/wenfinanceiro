@@ -13,8 +13,12 @@ const fim = src.indexOf('function lista(){', ini);
 assert(ini > 0 && fim > ini, 'não achei o trecho da ordenação');
 // mesChave vem do módulo compartilhado, como no navegador
 const { mesChave } = await import('../js/fechamentos.js').then(m => m.default || m);
-const { ordenador, gravDe } = new Function('WENFechamentos',
-  src.slice(ini, fim) + '\nreturn {ordenador, gravDe};')({ mesChave });
+// vencEf (24/11): o adiamento do Will vale como vencimento — vem do mesmo arquivo
+const hIni = src.indexOf('const adiada='), hFim = src.indexOf('\n', src.indexOf('const aVencer='));
+assert(hIni > 0 && hFim > hIni, 'não achei vencEf');
+const HOJE = '2026-11-24';
+const { ordenador, gravDe } = new Function('WENFechamentos', 'today',
+  src.slice(hIni, hFim) + '\n' + src.slice(ini, fim) + '\nreturn {ordenador, gravDe};')({ mesChave }, () => HOJE);
 
 const f = (cliente, vencimento, saldo, diarias) =>
   ({ cliente, vencimento, saldo, itens: diarias.map(([data, mes]) => ({ data, mes })) });
@@ -49,5 +53,9 @@ assert.deepEqual([E1, E2].sort(ordenador('venc')).map(x => x.cliente), ['Aqua', 
 // fechamento sem diária não quebra
 assert.equal(gravDe({ itens: [] }), '');
 assert.doesNotThrow(() => [{ itens: [] }, A].sort(ordenador('grav')));
+
+// adiada (24/11): ordena pela data do adiamento, não pelo vencimento antigo
+const E = f('Eco', '2026-11-20', 1000, [['10/11', 'NOV/2026']]); E.adiadoAte = '2026-12-30'; E.cobrancaStatus = 'pendente';
+assert.deepEqual([A, E, D].sort(ordenador('venc')).map(x => x.cliente), ['Delta', 'Alfa', 'Eco'], 'adiada vai para a data nova');
 
 console.log('✅ ordem-lista: vencimento, gravação, valor e cliente — sem data vai para o fim');
