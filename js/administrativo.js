@@ -122,7 +122,7 @@ async function fichaSalvar(cliente){
  }catch(e){fichas[id]=antiga;avisar(e.message,true);}
 }
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
-function atrasada(f){const v=vencEf(f);return f.cobrancaStatus!=='pago'&&!!v&&v<today();}
+function atrasada(f){const v=vencEf(f);return f.cobrancaStatus!=='pago'&&!soAGravar(f)&&!!v&&v<today();}
 // ── Marcas do Will no card (24/11): 🔥 urgente, ⏰ lembrete, 💤 adiar e 📅 fechamento
 //    mensal. "Eu marco, ela vê": os botões só aparecem quando o Will entra AQUI com o login
 //    dele; com o login dela, só os selos. Adiar ESCONDE o card dela até a data; lembrete
@@ -130,7 +130,27 @@ function atrasada(f){const v=vencEf(f);return f.cobrancaStatus!=='pago'&&!!v&&v<
 const adiada=f=>!!f.adiadoAte&&f.adiadoAte>today()&&f.cobrancaStatus!=='pago';
 // Vencimento que vale: o adiamento do Will passa na frente do vencimento do Receber (24/11:
 // "as adiadas precisam aparecer na lista de cobranças a vencer" — e não como "em atraso").
-const vencEf=f=>adiada(f)?f.adiadoAte:(f.vencimento||'');
+// "Se ainda não gravou, não falta cobrar" (Will, 24/11): só a diária JÁ gravada e não paga
+// entra no "falta cobrar". Diária futura espera a gravação. Sem data conta como gravada.
+const MES3=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+const isoDiaria=i=>{const d=String(i.data||'').split('/');let m=String(i.mes||'').toUpperCase();
+ if(!/^\d{4}-\d{2}$/.test(m)){const a=m.split('/'),k=MES3.indexOf(a[0]);m=k>=0&&/^\d{4}$/.test(a[1]||'')?a[1]+'-'+String(k+1).padStart(2,'0'):'';}
+ return d.length>=2&&m?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):'';};
+const gravadasAbertas=f=>(f.itens||[]).filter(i=>{if(!(Number(i.saldo)>0))return false;const x=isoDiaria(i);return !x||x<=today();});
+const aGravarAbertas=f=>(f.itens||[]).filter(i=>{if(!(Number(i.saldo)>0))return false;const x=isoDiaria(i);return !!x&&x>today();});
+const soAGravar=f=>f.cobrancaStatus!=='pago'&&!gravadasAbertas(f).length&&aGravarAbertas(f).length>0;
+const faltaCobrar=f=>Math.round(gravadasAbertas(f).reduce((t,i)=>t+Math.round((Number(i.saldo)||0)*100),0))/100;
+const vencEf=f=>{
+ if(adiada(f))return f.adiadoAte;
+ const v=f.vencimento||'';
+ // Ficha com "💳 Fechamento mensal" (24/11, Will: "concordo"): cobra a partir do dia 1º do
+ // mês seguinte ao da última gravação, sem ninguém clicar em 📅 Mensal.
+ if(f.condicao==='mensal'){
+  const ult=(f.itens||[]).map(i=>WENFechamentos.mesChave(i.mes)).filter(Boolean).sort().at(-1);
+  if(ult){let [a,m]=ult.split('-').map(Number);m++;if(m>12){m=1;a++;}const d1=a+'-'+String(m).padStart(2,'0')+'-01';return v>d1?v:d1;}
+ }
+ return v;
+};
 const aVencer=f=>f.cobrancaStatus!=='pago'&&!!vencEf(f)&&vencEf(f)>=today();
 const lembreteHoje=f=>!!f.lembreteData&&f.lembreteData<=today()&&f.cobrancaStatus!=='pago';
 const dataBR=iso=>String(iso||'').split('-').reverse().join('/');
@@ -250,6 +270,7 @@ function avisosDeVencimento(){
         fechamentoId:f.id,cliente:f.cliente,criadoEm:new Date().toISOString(),lidoEm:lidos.has(id)?hoje:'',local:true,dias:-9999});}
     if(f.cobrancaStatus==='pago'||f.cobrancaStatus==='informado')return;
     if((f.clienteFiscal||{}).cobrancaAdministrativo===false)return;   // não é ela quem cobra
+    if(soAGravar(f))return;                                            // ainda não gravou: nada a cobrar
     const ve=vencEf(f);                                                // 💤 adiada: conta a data nova
     if(!ve)return;
     const dias=Math.round((Date.parse(ve+'T00:00:00')-Date.parse(hoje+'T00:00:00'))/86400000);
@@ -348,10 +369,11 @@ function noRecorte(f){
 // ── A linha é a .nf-lin da fila de notas: ▸ para abrir as diárias, nome, selos,
 //    valor e a ação. As diárias aparecem só para conferência — a composição é do dono.
 function diarias(f){
- const ab=f.itens.filter(i=>Number(i.saldo)>0), pg=f.itens.filter(i=>!(Number(i.saldo)>0));
- if(visao==='cobranca'&&ab.length&&pg.length)
+ const ab=gravadasAbertas(f), fu=aGravarAbertas(f), pg=f.itens.filter(i=>!(Number(i.saldo)>0));
+ if(visao==='cobranca'&&[ab,fu,pg].filter(l=>l.length).length>1)
   return '<div class="nf-itens">'+ab.map(i=>`<div class="nf-item"><span>🔴</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)}${Number(i.recebido)>0?' · '+cash(i.recebido)+' pago':''} · <b>falta ${cash(i.saldo)}</b></span></div>`).join('')
-   +'<div class="nf-itens-sep">✅ Já pagas — fora da cobrança</div>'
+   +(fu.length?'<div class="nf-itens-sep fut">⏳ Ainda vai gravar — cobrar depois</div>'+fu.map(i=>`<div class="nf-item"><span>⏳</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.saldo)}</span></div>`).join(''):'')
+   +(pg.length?'<div class="nf-itens-sep">✅ Já pagas — fora da cobrança</div>':'')
    +pg.map(i=>`<div class="nf-item pago"><span>✔️</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} pago</span></div>`).join('')
    +'<div class="nf-itens-rod">Conferência apenas. A composição do fechamento é definida no <b>WEN Financeiro</b> — aqui ela não muda.</div></div>';
  return '<div class="nf-itens">'+f.itens.map(i=>
@@ -362,6 +384,7 @@ function marcasSelos(f){
  if(f.cobrancaStatus==='pago')return '';
  let h='';
  if(f.urgente)h+='<span class="nf-pill erro">🔥 urgente</span>';
+ if(f.condicao==='mensal'&&!adiada(f)&&vencEf(f)>today())h+=`<span class="nf-pill adi">📅 fechamento mensal · cobrar a partir de ${esc(ddmm(vencEf(f)))}</span>`;
  if(adiada(f))h+=f.mensal?`<span class="nf-pill adi">📅 mensal · cobrar a partir de ${esc(ddmm(f.adiadoAte))}</span>`
    :`<span class="nf-pill adi">💤 adiada até ${esc(ddmm(f.adiadoAte))}</span>`;
  if(f.lembreteData)h+=lembreteHoje(f)
@@ -375,7 +398,8 @@ function marcasBotoes(f){
  return `<div class="marcas"><button type="button" class="mk${f.urgente?' on':''}" data-urg="${id}" aria-pressed="${!!f.urgente}" title="${f.urgente?'Tirar o urgente':'Marcar como urgente'}">🔥 Urgente</button>`
   +`<button type="button" class="mk${f.lembreteData?' on':''}" data-lem="${id}" title="Lembrete: avisa na data, sem esconder o card">⏰ Lembrete</button>`
   +`<button type="button" class="mk${adiada(f)?' on':''}" data-adi="${id}" title="Adiar: a cobrança passa a vencer na data escolhida (vai para 📆 A vencer)">💤 Adiar</button>`
-  +`<button type="button" class="mk${f.mensal?' on':''}" data-mensal="${id}" aria-pressed="${!!f.mensal}" title="${f.mensal?'Desmarcar fechamento mensal':'Fechamento mensal: nota e cobrança a partir de '+esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`;
+  +(f.condicao==='mensal'?`<button type="button" class="mk on" disabled title="Fechamento mensal pela ficha do cliente — já vale para nota e cobrança">📅 Mensal (ficha)</button></div>`:'')
+  +(f.condicao==='mensal'?'':`<button type="button" class="mk${f.mensal?' on':''}" data-mensal="${id}" aria-pressed="${!!f.mensal}" title="${f.mensal?'Desmarcar fechamento mensal':'Fechamento mensal: nota e cobrança a partir de '+esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`);
 }
 function linha(f){
  const atraso=atrasada(f), aberto=abertos.has(f.id);
@@ -385,7 +409,7 @@ function linha(f){
  const selo=f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
    :(f.cobrancaStatus==='informado'?'<span class="nf-pill pend">cliente disse que pagou · Will confere</span>'
      :f.cobrancaStatus==='enviada'?`<span class="nf-pill env">📨 cobrada${dEnv?' em '+dEnv:''}</span>`
-     :'<span class="nf-pill pend">a cobrar</span>')
+     :soAGravar(f)?'':'<span class="nf-pill pend">a cobrar</span>')
     +(atraso?`<span class="nf-pill erro">em atraso há ${diasAtr} dia${diasAtr===1?'':'s'}</span>`:'');
  const semCobranca=(f.clienteFiscal||{}).cobrancaAdministrativo===false;
  const selocob=semCobranca?'<span class="nf-pill erro">não cobrar — é o Will quem cobra</span>':'';
@@ -395,8 +419,9 @@ function linha(f){
  const ms=[...new Set(mesesDe(f))].sort(), per=ms.length?mesRotulo(ms[0])+(ms.length>1?' a '+mesRotulo(ms.at(-1)):''):'';
  // Na cobrança, a diária quitada sai do card: conta só o que está em aberto (24/11).
  const cob=visao==='cobranca'&&f.cobrancaStatus!=='pago';
- const abertasF=(f.itens||[]).filter(i=>Number(i.saldo)>0), pagasF=(f.itens||[]).length-abertasF.length;
- const its=cob&&abertasF.length?abertasF:(f.itens||[]);
+ const futF=cob?aGravarAbertas(f):[];
+ const abertasF=cob?gravadasAbertas(f):(f.itens||[]).filter(i=>Number(i.saldo)>0), pagasF=(f.itens||[]).filter(i=>!(Number(i.saldo)>0)).length;
+ const its=cob&&abertasF.length?abertasF:cob&&futF.length?futF:(f.itens||[]);
  const horas=its.reduce((t,i)=>t+(Number(i.horas)||0),0);
  const dias=[...new Set(its.map(i=>String(i.data||'').slice(0,5)).filter(Boolean))].sort((a,b)=>{
    const [da,ma]=a.split('/'),[db,mb]=b.split('/');return (ma+da).localeCompare(mb+db);});
@@ -406,12 +431,14 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${cob&&pagasF&&abertasF.length?' em aberto':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&abertasF.length?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
-  +(cob&&abertasF.length
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
+  +(cob&&!abertasF.length&&futF.length
+      ?`<div class="nf-val"><span class="nf-rot nada">a gravar</span><span class="nf-futuro">${cash(futF.reduce((t,i)=>t+(Number(i.saldo)||0),0))}</span></div>`
+      :cob&&abertasF.length
       ?(()=>{const vA=abertasF.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0)/100,
                rA=abertasF.reduce((t,i)=>t+Math.round((Number(i.recebido)||0)*100),0)/100;
         // o pago parcial aparece junto da diária em aberto: "3.500 · 1.750 pago"
-        return `<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(f.saldo)}`
+        return `<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(faltaCobrar(f))}`
           +(rA>0?`<div class="nf-de">${cash(vA)} · ${cash(rA)} pago</div>`:'')+'</div>';})()
       :`<div class="nf-val">${cash(f.valor)}</div>`)
   +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
@@ -490,7 +517,9 @@ function listaFiscal(base){
 // foi cobrado e não pagou continua aqui, com o status no card — não vai para outra aba.
 function listaCobranca(base){
  const minhas=base.filter(f=>(f.clienteFiscal||{}).cobrancaAdministrativo!==false);
- const abertas=minhas.filter(f=>f.cobrancaStatus!=='pago').sort(ordenador('venc'));
+ const todasAbertas=minhas.filter(f=>f.cobrancaStatus!=='pago');
+ const aGravar=todasAbertas.filter(soAGravar).sort((a,b)=>String(aGravarAbertas(a).map(isoDiaria).sort()[0]).localeCompare(String(aGravarAbertas(b).map(isoDiaria).sort()[0])));
+ const abertas=todasAbertas.filter(f=>!soAGravar(f)).sort(ordenador('venc'));
  const pagas=minhas.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
  const hoje=today(), em7=(()=>{const d=new Date(hoje+'T12:00:00');d.setDate(d.getDate()+7);return d.toISOString().slice(0,10);})();
  const atr=abertas.filter(atrasada).length;
@@ -501,6 +530,7 @@ function listaCobranca(base){
   +'<div class="card-p alerta"><label>Vence em 7 dias</label><div class="val">'+semana+'</div><div class="val-sub">cobrar agora</div></div>'
   +'<div class="card-p pendente"><label>Já cobradas</label><div class="val">'+cobradas+'</div><div class="val-sub">aguardando pagamento</div></div>';
  return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar.</div>')
+  +(aGravar.length?grupo('agravar','⏳ Ainda vai gravar — cobrar depois da gravação',aGravar.map(linha),'',true):'')
   +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
 }
 function lista(){
@@ -585,7 +615,7 @@ function blocoCobranca(f){
  return `<div class="cob-bloco">
    <div class="cob-top"><b>💳 Como cobrar</b><span class="nf-pill pend">${esc(c.rotulo)}</span></div>
    ${linhas}
-   <div class="cob-agora">${c.quitado?'✅ Nada a cobrar — tudo pago.'
+   <div class="cob-agora">${c.quitado?'✅ Nada a cobrar — tudo pago.':soAGravar(f)?'⏳ Nada a cobrar agora — a próxima gravação é em '+ddmm(aGravarAbertas(f).map(isoDiaria).sort()[0])+'.'
      :`Cobrar agora: <b>${cash(c.cobrarAgora)}</b> <span class="muted">(${esc(c.proxima)})</span>`}</div>
    ${f.condicaoTexto?`<div class="cob-obs">${esc(f.condicaoTexto)}</div>`:''}
  </div>`;
@@ -617,10 +647,13 @@ function docFechamento(f){
  const tH=soma(it,'horas'), tk=tH>0?tT/tH:0;
  // 24/11 (Will): "pra não confundir, o que está pago se separa do que está aberto quando
  // se relaciona a uma diária específica" — diária quitada sai do bloco da cobrança.
- const abertos=it.filter(r=>Number(r.saldo)>0), pagos=it.filter(r=>!(Number(r.saldo)>0));
- const separar=abertos.length&&pagos.length;
- const corpo=separar?`<div class="fech-secao aberto"><h4>🔴 Em aberto — ${abertos.length} ${abertos.length===1?'diária':'diárias'} · falta ${cash(soma(abertos,'saldo'))}</h4>${tabelaMeses(abertos)}</div>`
-   +`<div class="fech-secao pago"><h4>✅ Já pagas — saíram da cobrança · ${pagos.length} ${pagos.length===1?'diária':'diárias'} · ${cash(soma(pagos,'valor'))}</h4>${tabelaMeses(pagos)}</div>`
+ const abertos=gravadasAbertas(f), futuros=aGravarAbertas(f), pagos=it.filter(r=>!(Number(r.saldo)>0));
+ const separar=[abertos,futuros,pagos].filter(l=>l.length).length>1;
+ const qd=n=>n+' '+(n===1?'diária':'diárias');
+ const corpo=separar
+   ?(abertos.length?`<div class="fech-secao aberto"><h4>🔴 Em aberto — ${qd(abertos.length)} · falta ${cash(soma(abertos,'saldo'))}</h4>${tabelaMeses(abertos)}</div>`:'')
+   +(futuros.length?`<div class="fech-secao futuro"><h4>⏳ Ainda vai gravar — cobrar depois · ${qd(futuros.length)} · ${cash(soma(futuros,'saldo'))}</h4>${tabelaMeses(futuros)}</div>`:'')
+   +(pagos.length?`<div class="fech-secao pago"><h4>✅ Já pagas — saíram da cobrança · ${qd(pagos.length)} · ${cash(soma(pagos,'valor'))}</h4>${tabelaMeses(pagos)}</div>`:'')
    :tabelaMeses(it);
  return `<div class="fech-acoes-r no-print">
    <button type="button" class="btn btn-green" id="fPdf">🖨 PDF / Imprimir</button>
@@ -653,7 +686,9 @@ function docFechamento(f){
       <div class="tb-item-r"><span class="tb-label-r">Horas</span><span class="tb-val-r">${tH}h</span></div>
       <div class="tb-item-r"><span class="tb-label-r">Ticket/h</span><span class="tb-val-r">${tH>0?cash(tk):'—'}</span></div>
     </div>
-    <div class="fech-nota-r ${tS>0?'pend':'ok'}">${tS>0?`⚠️ <b>Saldo em aberto: ${cash(tS)}</b><br>Por favor, entre em contato. — WEN Produtora`:'✅ <b>Tudo quitado!</b> Obrigado. — WEN Produtora'}</div>
+    <div class="fech-nota-r ${tS>0&&!soAGravar(f)?'pend':'ok'}">${soAGravar(f)
+      ?`⏳ <b>Nada a cobrar agora.</b> Próxima gravação em ${ddmm(aGravarAbertas(f).map(isoDiaria).sort()[0])} — a cobrança vem depois dela. — WEN Produtora`
+      :tS>0?`⚠️ <b>Saldo em aberto: ${cash(faltaCobrar(f)||tS)}</b><br>Por favor, entre em contato. — WEN Produtora`:'✅ <b>Tudo quitado!</b> Obrigado. — WEN Produtora'}</div>
    </div>
   </div>`;
 }

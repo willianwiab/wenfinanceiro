@@ -318,7 +318,10 @@ function FC_renderAvisos(){
 // datas, situação da cobrança) NUNCA entram na máscara.
 // ══════════════════════════════════════════════════════════════════════════════
 const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','vencimento',
-  'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca'];
+  'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca',
+  // 24/11: a condição de pagamento da ficha (à vista, 50+50, mensal) também acompanha —
+  // antes só entrava na criação, e mudar a ficha não chegava na tela dela.
+  'condicao','condicaoTexto'];
 const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm','promessaData','promessaObs',
   'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus',
   'urgente','adiadoAte','lembreteData','lembreteObs','mensal'];   // marcas dela no card (24/11)
@@ -690,9 +693,9 @@ function FC_desatualizados(){
     const rec=regs.reduce((s,r)=>s+c(r.valorReserva),0), tot=regs.reduce((s,r)=>s+c(r.valorTotal),0);
     // 24/11: além do pagamento, valor e vencimento — a edição no Receber ia para a diária
     // errada e o vencimento novo (Vendendo Valor, 24/11) nunca chegava.
-    let venc=f.vencimento||'';
-    try{venc=WENFechamentos.criar(regs,CFI_casar(f.cliente,(typeof CFI_lista==='function'?CFI_lista():[]))||{}).vencimento||'';}catch(e){}
-    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo)||tot!==c(f.valor)||venc!==(f.vencimento||''))fora.push(...regs);
+    let venc=f.vencimento||'', cond=f.condicao||'avista';
+    try{const n=WENFechamentos.criar(regs,CFI_casar(f.cliente,(typeof CFI_lista==='function'?CFI_lista():[]))||{});venc=n.vencimento||'';cond=n.condicao||'avista';}catch(e){}
+    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo)||tot!==c(f.valor)||venc!==(f.vencimento||'')||cond!==(f.condicao||'avista'))fora.push(...regs);
   }
   return fora;
 }

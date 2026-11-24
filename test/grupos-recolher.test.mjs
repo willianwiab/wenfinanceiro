@@ -35,7 +35,7 @@ await page.locator('#lista .grupo-mes',{hasText:'Emitir nota agora'}).click();
 assert.deepEqual(await visiveis(),['VAI GRAVAR'],'esconde o grupo de cima');
 // e é por aba: na Cobrança nada disso vale
 await page.click('.visoes [data-v="cobranca"]');
-assert.equal((await visiveis()).length,2,'outra aba, outros grupos');
+assert.deepEqual(await visiveis(),['GRAVOU'],'outra aba, outros grupos (quem ainda vai gravar não está a cobrar)');
 await page.click('.visoes [data-v="fiscal"]');
 // esconder tudo / expandir tudo
 await page.click('[data-todos="fechar"]');

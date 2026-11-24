@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261124-40f3acb2';
+window.APP_VERSION='20261124-0d714a82';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2761,7 +2761,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=77d3a402"></script>
-<script src="js/fechamentos-admin.js?v=ca7b7768"></script>
+<script src="js/fechamentos-admin.js?v=878b93ff"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4041,6 +4041,7 @@ window.CFI_condicao=async function(chave,valor,nomeSugerido){
     const rot={avista:'à vista',sinal50:'50% + 50%',sinal30:'30% + 70%',mensal:'fechamento mensal'}[valor];
     toast('💳 '+f.nome+' — '+rot);
     try{AUD_log(novo?'criar':'editar','clientes_fiscais',f.nome,'Condição de pagamento = '+rot,null,null);}catch(e){}
+    try{await FC_aoMudarFicha(f.nome);}catch(e){}   // a condição chega nas cobranças da Natália (mensal → dia 1º)
   }catch(e){toast('Não consegui salvar na nuvem: '+e.message,'#ef4444');}
 };
 
