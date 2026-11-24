@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261124-b0700268';
+window.APP_VERSION='20261124-3760fbb9';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2761,7 +2761,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=77d3a402"></script>
-<script src="js/fechamentos-admin.js?v=ba4de39b"></script>
+<script src="js/fechamentos-admin.js?v=17f9e69c"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4685,16 +4685,19 @@ async function R_salvarLancamento(){
   const base={mes:mesLanc,cliente,data:dataFmt,vencimento:vencFmt,horario:document.getElementById('rFHorario').value.trim()||'-',studio:document.getElementById('rFStudio').value,horas:parseFloat(document.getElementById('rFHoras').value)||0,naoFaturavel:!!document.getElementById('rFNaoFaturavel').checked,valorLocacao:vl,valorEdicao:ve,qtdEdicao:parseInt(document.getElementById('rFQtdEdicao').value,10)||0,valorTotal:vt,valorReserva:vr,saldo:Math.max(0,vt-vr),desc:document.getElementById('rFDesc').value.trim(),obs:document.getElementById('rFObs').value.trim()};
   if(R_pendingGoogleEventId)base.googleEventId=R_pendingGoogleEventId;
   loading(true,R_editandoId?'Atualizando...':'Salvando...');setSyncStatus('saving');
+  // O id da diária é guardado AQUI: o R_fecharModal() logo abaixo zera o R_editandoId, e o
+  // espelho lia depois disso — numa edição ia para o administrativo a ÚLTIMA diária da lista,
+  // não a editada (24/11: Vendendo Valor, Danny Ueda e IA Onde Isso Vai Dar ficaram para trás).
+  let idEsp=R_editandoId;
   try{
     if(R_editandoId){const salvo=await R_fbSalvar({...base,id:R_editandoId});const idx=R_todosOsDados.findIndex(r=>String(r.id)===String(R_editandoId));if(idx>-1)R_todosOsDados[idx]={...R_todosOsDados[idx],...salvo};toast('✅ Atualizado!');}
-    else{const novoId=gerarId();const salvo=await R_fbSalvar({...base,id:novoId});R_todosOsDados.push(salvo);toast('✅ Lançamento adicionado em '+mesLanc+'!');}
+    else{const novoId=gerarId();idEsp=novoId;const salvo=await R_fbSalvar({...base,id:novoId});R_todosOsDados.push(salvo);toast('✅ Lançamento adicionado em '+mesLanc+'!');}
     if(R_pendingGoogleEventId){
       await R_marcarConciliado(R_pendingGoogleEventId,{cliente:base.cliente,mes:base.mes,data:base.data,acao:'lancado',lancadoEm:new Date().toLocaleDateString('pt-BR')});
     }
     if(mesLanc&&mesLanc!==R_mesAtual){R_mesAtual=mesLanc;renderMesSelectR();}
     setSyncStatus('ok');R_fecharModal();renderTabelaR();renderDashboardR();renderAgendaWidget();
     // Espelha para o administrativo DEPOIS de salvar. Falha aqui não desfaz o lançamento.
-    const idEsp=R_editandoId||(R_todosOsDados[R_todosOsDados.length-1]||{}).id;
     FC_aoSalvarLancamento(R_todosOsDados.find(x=>String(x.id)===String(idEsp)),'lancamento');
   }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}finally{loading(false);}
 }

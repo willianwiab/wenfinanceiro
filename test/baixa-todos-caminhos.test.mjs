@@ -93,6 +93,30 @@ assert.equal(r2b.ia,'pago','o IA foi corrigido mesmo com o outro cliente falhand
 assert(/Ruim: recusado/.test(r2b.erro||''),'o erro do outro cliente aparece com o nome dele: '+r2b.erro);
 assert(r2b.toasts.some(m=>/Administrativo atualizado: 1/.test(m)),'e o Will vê quantas atualizou: '+r2b.toasts.join(' | '));
 
+// ── 2c. EDITAR a diária no Receber espelha a diária EDITADA (não a última da lista) ──
+const r2c=await page.evaluate(async()=>{
+  const chamadas=[];const orig=window.FC_aoSalvarLancamento;
+  window.FC_aoSalvarLancamento=(reg,m)=>{chamadas.push({id:reg&&reg.id,m});};
+  // a editada é a PRIMEIRA; a última da lista é outra
+  R_todosOsDados.push({id:'ULTIMA',cliente:'Outro',mes:'NOV/2026',data:'20/11/2026',horario:'-',horas:1,studio:'STUDIO A',valorTotal:100,valorReserva:0,saldo:100,desc:'x'});
+  R_abrirModal('A1');await new Promise(r=>setTimeout(r,300));
+  document.getElementById('rFValorReserva').value='0';
+  R_vencSet('30/11/2026');
+  await R_salvarLancamento();
+  window.FC_aoSalvarLancamento=orig;
+  return chamadas;
+});
+assert.deepEqual(r2c.map(c=>c.id),['A1'],'a edição espelha a diária editada: '+JSON.stringify(r2c));
+
+// ── 2d. autocorreção pega vencimento que ficou para trás ──────────────────────
+const r2d=await page.evaluate(async()=>{
+  const f=Object.values(FC_dados).find(x=>x.cliente==='IA Teste');
+  const a1=R_todosOsDados.find(r=>r.id==='A1');a1.vencimento='30/11/2026';
+  f.vencimento='2026-10-10';
+  return FC_desatualizados().map(r=>r.id).sort();
+});
+assert(r2d.includes('A1'),'vencimento diferente do Receber entra na autocorreção: '+r2d);
+
 // ── 3. conciliação pelo extrato: baixa e desfazer chamam o gancho ──────────────
 const src=fs.readFileSync(new globalThis.URL('../index.html',import.meta.url),'utf8');
 const conc=src.slice(src.indexOf('async function CONC_conciliar('),src.indexOf('async function CONC_conciliarTodas('));

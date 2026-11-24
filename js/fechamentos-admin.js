@@ -685,7 +685,11 @@ function FC_desatualizados(){
     const regs=(f.lancamentoIds||[]).map(id=>porId.get(String(id))).filter(r=>r&&!r.excluido);
     if(!regs.length)continue;
     const rec=regs.reduce((s,r)=>s+c(r.valorReserva),0), tot=regs.reduce((s,r)=>s+c(r.valorTotal),0);
-    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo))fora.push(...regs);
+    // 24/11: além do pagamento, valor e vencimento — a edição no Receber ia para a diária
+    // errada e o vencimento novo (Vendendo Valor, 24/11) nunca chegava.
+    let venc=f.vencimento||'';
+    try{venc=WENFechamentos.criar(regs,CFI_casar(f.cliente,(typeof CFI_lista==='function'?CFI_lista():[]))||{}).vencimento||'';}catch(e){}
+    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo)||tot!==c(f.valor)||venc!==(f.vencimento||''))fora.push(...regs);
   }
   return fora;
 }
