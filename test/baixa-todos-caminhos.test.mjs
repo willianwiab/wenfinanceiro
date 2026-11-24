@@ -52,7 +52,7 @@ await page.evaluate(()=>{
 });
 await page.click('#__t tr[data-rid="A1"] button');
 await page.waitForFunction(()=>Object.values(FC_dados)[0]?.recebido===1000,null,{timeout:8000});
-assert.deepEqual(await espelho(),[{recebido:1000,saldo:1000,cob:'enviada'}],'pagou uma das duas: recebido sobe, cobrança dela continua');
+assert.deepEqual(await espelho(),[{recebido:1000,saldo:1000,cob:'pendente'}],'pagou uma das duas: recebido sobe e o que falta volta para "a cobrar" (Danny Ueda, 24/11)');
 await page.click('#__t tr[data-rid="A2"] button');
 await page.waitForFunction(()=>Object.values(FC_dados)[0]?.saldo===0,null,{timeout:8000});
 assert.deepEqual(await espelho(),[{recebido:2000,saldo:0,cob:'pago'}],'quitou tudo: vira "pago" para a Natália');

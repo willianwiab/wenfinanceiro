@@ -51,7 +51,9 @@ await test('baixa total do proprietário confirma pagamento',async()=>{
 });
 await test('recebimento parcial não confirma pagamento total',async()=>{
  const c=ctx({legado:{...antigo,cobrancaStatus:'informado'}},[{...reg,valorReserva:1000}]);
- await vm.runInContext('FC_espelhar(R_todosOsDados)',c);assert.equal(c.writes[0].doc.cobrancaStatus,'informado');assert.equal(c.writes[0].doc.saldo,4400);
+ await vm.runInContext('FC_espelhar(R_todosOsDados)',c);
+ // 24/11 (Will): entrou só parte — não é pago, e o que falta volta para "a cobrar"
+ assert.equal(c.writes[0].doc.cobrancaStatus,'pendente');assert.equal(c.writes[0].doc.saldo,4400);
 });
 await test('criação reserva todas as diárias com precondição atômica',async()=>{
  let request;

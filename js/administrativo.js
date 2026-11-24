@@ -139,36 +139,43 @@ const ddmm=iso=>dataBR(iso).slice(0,5);
 //    pelo vencimento — o filtro precisa ser separado por cobrança ou fiscal". Ex.: a
 //    Tirolez gravou e não tem nota, mas vence em dezembro: na fila de COBRANÇA ela espera,
 //    na fila FISCAL ela é prioridade.
-let visao='tudo';try{visao=localStorage.getItem('wen_fiscal_visao')||'tudo';}catch(e){}
+let visao='cobranca';try{visao=localStorage.getItem('wen_fiscal_visao')||'cobranca';}catch(e){}
+if(visao!=='fiscal')visao='cobranca';   // 24/11: só duas abas — 🧾 Fiscal e 💰 Cobrança
 // Data da gravação de uma diária (ISO), do dia/mês da diária + ano do mês do lançamento.
 function diaIso(i){
  const d=String(i.data||'').split('/'), m=WENFechamentos.mesChave(i.mes)||'';
  return d.length>=2&&m?m.slice(0,4)+'-'+d[1].padStart(2,'0')+'-'+d[0].padStart(2,'0'):'';
 }
-// Quais diárias sem nota JÁ podem ter nota, pela regra da ficha (notaQuando):
-// gravação = depois de gravar · pagamento = depois de pagar · reserva = já ·
-// parcela (sinal/saldo separados) = quando entrar pagamento ou depois de gravar.
+// Regra do Will (24/11): "gravou, faz nota — a não ser fechamento mensal". Mensal é a
+// condição de pagamento da ficha ou o 📅 Mensal que ele marca no card: aí a nota sai a
+// partir do dia 1º do mês seguinte ao da gravação.
+const diaUmSeguinte=iso=>{let [a,m]=iso.slice(0,7).split('-').map(Number);m++;if(m>12){m=1;a++;}return a+'-'+String(m).padStart(2,'0')+'-01';};
+const ehMensal=f=>f.condicao==='mensal'||!!f.mensal;
 function fiscal(f){
  if(!f.exigeNota)return null;
  const livres=WENFechamentos.diariasLivres(f);
  if(!livres.length)return null;
- const hoje=today(), q=f.notaQuando||'gravacao';
- const pronta=i=>q==='reserva'?true:q==='pagamento'?Number(i.recebido)>0
-   :q==='parcela'?(Number(i.recebido)>0||(diaIso(i)&&diaIso(i)<=hoje)):(!!diaIso(i)&&diaIso(i)<=hoje);
- const prontas=livres.filter(pronta), espera=livres.filter(i=>!pronta(i));
- const desde=prontas.map(diaIso).filter(Boolean).sort()[0]||'';
+ const hoje=today(), mensal=ehMensal(f);
+ const libera=i=>{const d=diaIso(i);return !d?'':mensal?diaUmSeguinte(d):d;};
+ const prontas=livres.filter(i=>libera(i)&&libera(i)<=hoje);
+ const gravadas=livres.filter(i=>diaIso(i)&&diaIso(i)<=hoje&&!prontas.includes(i));   // mensal esperando o mês fechar
+ const futuras=livres.filter(i=>!diaIso(i)||diaIso(i)>hoje);
+ const desde=prontas.map(libera).sort()[0]||'';
  const dias=desde?Math.round((Date.parse(hoje+'T00:00:00')-Date.parse(desde+'T00:00:00'))/86400000):0;
- const proxima=espera.map(diaIso).filter(Boolean).sort()[0]||'';
- return {livres,prontas,espera,desde,dias,proxima,quando:q};
+ const liberaEm=gravadas.map(libera).sort()[0]||'';
+ const proxima=futuras.map(diaIso).filter(Boolean).sort()[0]||'';
+ return {livres,prontas,gravadas,futuras,desde,dias,liberaEm,proxima,mensal};
 }
 function seloFiscal(f){
  const x=fiscal(f);if(!x)return '';
+ const n=k=>k+' '+(k===1?'diária':'diárias');
  if(x.prontas.length){
-   const quem=x.prontas.length+' '+(x.prontas.length===1?'diária':'diárias');
-   const tempo=x.quando==='pagamento'?'já pago':x.quando==='reserva'?'na reserva':x.dias<=0?'gravou hoje':'gravou há '+x.dias+' dia'+(x.dias===1?'':'s');
-   return `<span class="nf-pill ${x.dias>7?'erro':'pend'}">🧾 emitir nota · ${quem} · ${tempo}</span>`;
+   const tempo=x.mensal?(x.dias<=0?'mês fechou hoje':'mês fechou há '+x.dias+' dia'+(x.dias===1?'':'s'))
+     :(x.dias<=0?'gravou hoje':'gravou há '+x.dias+' dia'+(x.dias===1?'':'s'));
+   return `<span class="nf-pill ${x.dias>7?'erro':'pend'}">🧾 emitir nota · ${n(x.prontas.length)} · ${tempo}</span>`;
  }
- return `<span class="nf-pill">⏳ nota ${x.quando==='pagamento'?'depois do pagamento':'depois da gravação'}${x.proxima?' · '+ddmm(x.proxima):''}</span>`;
+ if(x.gravadas.length)return `<span class="nf-pill adi">📅 fechamento mensal · nota a partir de ${ddmm(x.liberaEm)}</span>`;
+ return `<span class="nf-pill">⏳ ainda vai gravar${x.proxima?' · '+ddmm(x.proxima):''}</span>`;
 }
 // Fechamento mensal: volta no dia 1º do mês seguinte ao da última gravação
 // (ou ao de hoje, se a gravação for de um mês que já passou).
@@ -328,13 +335,13 @@ function combo(){
  cli.value=nomes.includes(atual)?atual:'';
  const meses=[...new Set(docs.flatMap(mesesDe))].sort();
  for(const [id,padrao] of [['mesIni',meses[0]],['mesFim',meses.at(-1)]]){
-   const el=$(id), tinha=el.value;
+   const el=$(id);if(!el)continue;const tinha=el.value;
    el.innerHTML=meses.map(m=>`<option value="${m}">${mesRotulo(m)}</option>`).join('');
    el.value=meses.includes(tinha)?tinha:(padrao||'');
  }
 }
 function noRecorte(f){
- const ini=$('mesIni').value, fim=$('mesFim').value, ms=mesesDe(f);
+ const ini=$('mesIni')?$('mesIni').value:'', fim=$('mesFim')?$('mesFim').value:'', ms=mesesDe(f);
  if(!ini&&!fim)return true;
  return ms.some(m=>(!ini||m>=ini)&&(!fim||m<=fim));
 }
@@ -349,7 +356,8 @@ function marcasSelos(f){
  if(f.cobrancaStatus==='pago')return '';
  let h='';
  if(f.urgente)h+='<span class="nf-pill erro">🔥 urgente</span>';
- if(adiada(f))h+=`<span class="nf-pill adi">💤 adiada até ${esc(ddmm(f.adiadoAte))}</span>`;
+ if(adiada(f))h+=f.mensal?`<span class="nf-pill adi">📅 mensal · cobrar a partir de ${esc(ddmm(f.adiadoAte))}</span>`
+   :`<span class="nf-pill adi">💤 adiada até ${esc(ddmm(f.adiadoAte))}</span>`;
  if(f.lembreteData)h+=lembreteHoje(f)
    ?`<span class="nf-pill erro" title="${esc(f.lembreteObs||'')}">⏰ lembrete${f.lembreteObs?': '+esc(String(f.lembreteObs).slice(0,40)):''}</span>`
    :`<span class="nf-pill" title="${esc(f.lembreteObs||'')}">⏰ ${esc(ddmm(f.lembreteData))}</span>`;
@@ -361,15 +369,18 @@ function marcasBotoes(f){
  return `<div class="marcas"><button type="button" class="mk${f.urgente?' on':''}" data-urg="${id}" aria-pressed="${!!f.urgente}" title="${f.urgente?'Tirar o urgente':'Marcar como urgente'}">🔥 Urgente</button>`
   +`<button type="button" class="mk${f.lembreteData?' on':''}" data-lem="${id}" title="Lembrete: avisa na data, sem esconder o card">⏰ Lembrete</button>`
   +`<button type="button" class="mk${adiada(f)?' on':''}" data-adi="${id}" title="Adiar: a cobrança passa a vencer na data escolhida (vai para 📆 A vencer)">💤 Adiar</button>`
-  +`<button type="button" class="mk" data-mensal="${id}" title="Fechamento mensal: volta em ${esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`;
+  +`<button type="button" class="mk${f.mensal?' on':''}" data-mensal="${id}" aria-pressed="${!!f.mensal}" title="${f.mensal?'Desmarcar fechamento mensal':'Fechamento mensal: nota e cobrança a partir de '+esc(dataBR(inicioMesSeguinte(f)))}">📅 Mensal</button></div>`;
 }
 function linha(f){
  const atraso=atrasada(f), aberto=abertos.has(f.id);
  const cor=atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
- const selo=f.cobrancaStatus==='informado'?'<span class="nf-pill pend">pagamento comunicado · aguardando Will</span>':atraso?'<span class="nf-pill erro">em atraso</span>'
-   :f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
-   :f.cobrancaStatus==='enviada'?'<span class="nf-pill env">cobrança enviada</span>'
-   :'<span class="nf-pill pend">a cobrar</span>';
+ const diasAtr=atraso?Math.round((Date.parse(today()+'T00:00:00')-Date.parse(vencEf(f)+'T00:00:00'))/86400000):0;
+ const dEnv=f.enviadoEm?ddmm(String(f.enviadoEm).slice(0,10)):'';
+ const selo=f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
+   :(f.cobrancaStatus==='informado'?'<span class="nf-pill pend">cliente disse que pagou · Will confere</span>'
+     :f.cobrancaStatus==='enviada'?`<span class="nf-pill env">📨 cobrada${dEnv?' em '+dEnv:''}</span>`
+     :'<span class="nf-pill pend">a cobrar</span>')
+    +(atraso?`<span class="nf-pill erro">em atraso há ${diasAtr} dia${diasAtr===1?'':'s'}</span>`:'');
  const semCobranca=(f.clienteFiscal||{}).cobrancaAdministrativo===false;
  const selocob=semCobranca?'<span class="nf-pill erro">não cobrar — é o Will quem cobra</span>':'';
  const selonf=!f.exigeNota?'<span class="nf-pill">NF não solicitada</span>'
@@ -386,8 +397,9 @@ function linha(f){
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
   +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${f.itens.length} ${f.itens.length===1?'diária':'diárias'} · ${horas}h · ${venc}</span>${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
-  +`<div class="nf-val">${cash(f.valor)}${Number(f.saldo)>0&&Number(f.saldo)!==Number(f.valor)
-      ?`<div class="nf-de">saldo ${cash(f.saldo)}</div>`:''}</div>`
+  +(visao==='cobranca'&&f.cobrancaStatus!=='pago'&&Number(f.saldo)!==Number(f.valor)
+      ?`<div class="nf-val"><span class="nf-rot">falta cobrar</span>${cash(f.saldo)}<div class="nf-de">de ${cash(f.valor)} · ${cash(f.recebido)} já pago</div></div>`
+      :`<div class="nf-val">${cash(f.valor)}</div>`)
   +`<div class="nf-acao">${dono?marcasBotoes(f):''}<button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
   +'</div>'+(aberto?diarias(f):'')+'</div></div>';
 }
@@ -413,12 +425,12 @@ function ordenador(modo){
 // Blocos por mês: do vencimento (padrão) ou da gravação. Só contagem no cabeçalho —
 // a tela dela não soma valores da empresa. Urgentes e lembretes do dia vêm antes de tudo.
 function blocos(vis){
- const modo=$('agrupar')?$('agrupar').value:'venc';
+ const modo='venc';
  const topo=vis.filter(f=>f.cobrancaStatus!=='pago'&&(f.urgente||lembreteHoje(f)));
  const resto=vis.filter(f=>!topo.includes(f));
  let h=topo.length?grupo('urg','🔥 Urgentes e lembretes de hoje',topo.map(linha),' urg'):'';
  if(modo==='nada')return h+resto.map(linha).join('');
- const chave=f=>(modo==='grav'?gravDe(f):vencEf(f)).slice(0,7);
+ const chave=f=>vencEf(f).slice(0,7);
  const grupos=new Map();
  resto.forEach(f=>{const k=chave(f);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(f);});
  [...grupos.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).forEach(k=>{
@@ -433,10 +445,11 @@ function blocos(vis){
 let fechados=new Set();try{fechados=new Set(JSON.parse(localStorage.getItem('wen_fiscal_fechados')||'[]'));}catch(e){}
 function salvarFechados(){try{localStorage.setItem('wen_fiscal_fechados',JSON.stringify([...fechados]));}catch(e){}}
 let gruposDaTela=[];
-function grupo(chave,titulo,linhas,cls=''){
- const k=visao+':'+chave, fechado=fechados.has(k), n=linhas.length;
+function grupo(chave,titulo,linhas,cls='',padraoFechado=false){
+ const k=visao+':'+chave, n=linhas.length;
+ const fechado=padraoFechado?!fechados.has('+'+k):fechados.has(k);
  gruposDaTela.push(k);
- return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}" aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
+ return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}"${padraoFechado?' data-padrao="fechado"':''} aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
   +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?'cobrança':'cobranças'}${fechado?' · escondido':''}</span></button>`
   +`<div class="grupo-corpo${cls}" data-corpo="${esc(k)}"${fechado?' hidden':''}>${linhas.join('')}</div>`;
 }
@@ -447,57 +460,61 @@ function barraGrupos(){
 function listaFiscal(base){
  const itens=base.map(f=>({f,x:fiscal(f)})).filter(o=>o.x);
  const prontas=itens.filter(o=>o.x.prontas.length).sort((a,b)=>String(a.x.desde).localeCompare(String(b.x.desde))||a.f.cliente.localeCompare(b.f.cliente,'pt-BR'));
- const espera=itens.filter(o=>!o.x.prontas.length).sort((a,b)=>String(a.x.proxima||'9999').localeCompare(String(b.x.proxima||'9999')));
+ const mensais=itens.filter(o=>!o.x.prontas.length&&o.x.gravadas.length).sort((a,b)=>String(a.x.liberaEm).localeCompare(String(b.x.liberaEm)));
+ const futuras=itens.filter(o=>!o.x.prontas.length&&!o.x.gravadas.length).sort((a,b)=>String(a.x.proxima||'9999').localeCompare(String(b.x.proxima||'9999')));
  const atras=prontas.filter(o=>o.x.dias>7).length;
  $('cards').innerHTML=
-   '<div class="card-p alerta"><label>Nota para emitir</label><div class="val">'+prontas.length+'</div><div class="val-sub">já gravou (ou já pode)</div></div>'
+   '<div class="card-p alerta"><label>Emitir nota agora</label><div class="val">'+prontas.length+'</div><div class="val-sub">já gravou</div></div>'
   +'<div class="card-p atrasado"><label>Há mais de 7 dias</label><div class="val">'+atras+'</div><div class="val-sub">'+(atras?'gravou e ainda sem nota':'nada esquecido')+'</div></div>'
-  +'<div class="card-p pendente"><label>Ainda não é hora</label><div class="val">'+espera.length+'</div><div class="val-sub">gravação ou pagamento por vir</div></div>';
- return (prontas.length?grupo('prontas','🧾 Já gravou — emitir a nota',prontas.map(o=>linha(o.f)),' urg'):'')
-  +(espera.length?grupo('espera','⏳ Ainda não é hora da nota',espera.map(o=>linha(o.f))):'')
-  ||'<div class="nf-vazio">✅ Nenhuma nota pendente neste recorte.</div>';
+  +'<div class="card-p pendente"><label>Esperando</label><div class="val">'+(mensais.length+futuras.length)+'</div><div class="val-sub">'+mensais.length+' fechamento mensal · '+futuras.length+' ainda vai gravar</div></div>';
+ return (prontas.length?grupo('prontas','🧾 Emitir nota agora',prontas.map(o=>linha(o.f)),' urg'):'')
+  +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
+  +(futuras.length?grupo('futuras','⏳ Ainda vai gravar',futuras.map(o=>linha(o.f)),'',true):'')
+  ||'<div class="nf-vazio">✅ Nenhuma nota para emitir.</div>';
+}
+// Cobrança (24/11): UMA lista, pelo vencimento (o adiamento vale como vencimento). Quem
+// foi cobrado e não pagou continua aqui, com o status no card — não vai para outra aba.
+function listaCobranca(base){
+ const minhas=base.filter(f=>(f.clienteFiscal||{}).cobrancaAdministrativo!==false);
+ const abertas=minhas.filter(f=>f.cobrancaStatus!=='pago').sort(ordenador('venc'));
+ const pagas=minhas.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
+ const hoje=today(), em7=(()=>{const d=new Date(hoje+'T12:00:00');d.setDate(d.getDate()+7);return d.toISOString().slice(0,10);})();
+ const atr=abertas.filter(atrasada).length;
+ const semana=abertas.filter(f=>!atrasada(f)&&vencEf(f)&&vencEf(f)<=em7).length;
+ const cobradas=abertas.filter(f=>f.cobrancaStatus==='enviada'||f.cobrancaStatus==='informado').length;
+ $('cards').innerHTML=
+   '<div class="card-p atrasado"><label>Em atraso</label><div class="val">'+atr+'</div><div class="val-sub">'+(atr?'passou do vencimento':'nada vencido')+'</div></div>'
+  +'<div class="card-p alerta"><label>Vence em 7 dias</label><div class="val">'+semana+'</div><div class="val-sub">cobrar agora</div></div>'
+  +'<div class="card-p pendente"><label>Já cobradas</label><div class="val">'+cobradas+'</div><div class="val-sub">aguardando pagamento</div></div>';
+ return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar.</div>')
+  +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
 }
 function lista(){
  const cli=$('busca').value;
- const base=docs.filter(f=>(!cli||f.cliente===cli)&&noRecorte(f));
+ const base=docs.filter(f=>!cli||f.cliente===cli);
  document.querySelectorAll('.visoes [data-v]').forEach(b=>{b.classList.toggle('on',b.dataset.v===visao);b.setAttribute('aria-selected',String(b.dataset.v===visao));});
- if($('chipsCob'))$('chipsCob').hidden=visao==='fiscal';
- ['ordem','agrupar'].forEach(id=>{const el=$(id);if(el&&el.closest('.fg'))el.closest('.fg').hidden=visao==='fiscal';});   // no fiscal a ordem é a da gravação
- if(visao==='fiscal'){
-  // Adiar é sobre COBRAR; a nota sai depois da gravação de qualquer jeito.
-  gruposDaTela=[];const html=listaFiscal(base);
-  $('lista').innerHTML=barraGrupos()+html;
-  ligarLista();return;
- }
- const nAdiadas=base.filter(adiada).length;
- if(filtro==='adiada')filtro='avencer';   // aba antiga, guardada de antes
- const daCobranca=f=>visao!=='cobranca'||((f.clienteFiscal||{}).cobrancaAdministrativo!==false&&(f.cobrancaStatus!=='pago'||filtro==='pago'));
- const vis=base.filter(daCobranca).filter(f=>!filtro?true
-     :filtro==='atrasada'?atrasada(f)
-     :filtro==='avencer'?aVencer(f)
-     :filtro==='pendente'?f.cobrancaStatus==='pendente'&&!adiada(f)   // adiada não é "a cobrar" agora
-     :f.cobrancaStatus===filtro)
-   .sort(ordenador($('ordem')?$('ordem').value:'venc'));
- cards(vis,nAdiadas);
  gruposDaTela=[];
- $('lista').innerHTML=vis.length?(h=>barraGrupos()+h)(blocos(vis))
-  :(filtro==='avencer'?'<div class="nf-vazio">Nenhuma cobrança a vencer.</div>'
-   :'<div class="nf-vazio">Nenhum fechamento neste recorte. As diárias salvas no WEN Financeiro aparecem automaticamente aqui.</div>');
+ const html=visao==='fiscal'?listaFiscal(base):listaCobranca(base);
+ $('lista').innerHTML=barraGrupos()+html;
  ligarLista();
 }
 function ligarLista(){
  $('lista').querySelectorAll('[data-grupo]').forEach(b=>b.onclick=()=>{
-   const k=b.dataset.grupo;fechados.has(k)?fechados.delete(k):fechados.add(k);salvarFechados();lista();
+   const k=b.dataset.grupo, kk=b.dataset.padrao==='fechado'?'+'+k:k;   // grupo que nasce fechado guarda o "aberto"
+   fechados.has(kk)?fechados.delete(kk):fechados.add(kk);salvarFechados();lista();
    $('lista').querySelector('[data-grupo="'+CSS.escape(k)+'"]')?.focus();});
  $('lista').querySelectorAll('[data-todos]').forEach(b=>b.onclick=()=>{
-   gruposDaTela.forEach(k=>b.dataset.todos==='fechar'?fechados.add(k):fechados.delete(k));salvarFechados();lista();});
+   $('lista').querySelectorAll('[data-grupo]').forEach(g=>{const k=g.dataset.grupo,pf=g.dataset.padrao==='fechado',abrir=b.dataset.todos!=='fechar';
+     if(pf)abrir?fechados.add('+'+k):fechados.delete('+'+k);else abrir?fechados.delete(k):fechados.add(k);});salvarFechados();lista();});
  if(dono){
  $('lista').querySelectorAll('[data-urg]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.urg);
    if(f)salvarMarcas(f,{urgente:!f.urgente},f.urgente?'Urgente removido de '+f.cliente+'.':'🔥 '+f.cliente+' marcado como urgente.');});
  $('lista').querySelectorAll('[data-lem]').forEach(b=>b.onclick=e=>{e.stopPropagation();marcaDialogo('lembrete',b.dataset.lem);});
  $('lista').querySelectorAll('[data-adi]').forEach(b=>b.onclick=e=>{e.stopPropagation();marcaDialogo('adiar',b.dataset.adi);});
  $('lista').querySelectorAll('[data-mensal]').forEach(b=>b.onclick=e=>{e.stopPropagation();const f=docs.find(x=>x.id===b.dataset.mensal);
-   if(f){const d=inicioMesSeguinte(f);salvarMarcas(f,{adiadoAte:d},'📅 '+f.cliente+' volta em '+dataBR(d)+' (fechamento mensal).');}});
+   if(!f)return;
+   if(f.mensal){salvarMarcas(f,{mensal:false,adiadoAte:''},'Fechamento mensal desmarcado de '+f.cliente+'.');return;}
+   const d=inicioMesSeguinte(f);salvarMarcas(f,{mensal:true,adiadoAte:d},'📅 '+f.cliente+': fechamento mensal — nota e cobrança a partir de '+dataBR(d)+'.');});
  }
  $('lista').querySelectorAll('[data-exp]').forEach(b=>b.onclick=e=>{
    e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
@@ -929,7 +946,7 @@ function marcaDialogo(tipo,id){
    <p id="mkAviso" class="status error" role="alert"></p></form>`;
  dlg.querySelector('#mkCancelar').onclick=()=>dlg.close();
  const limpar=dlg.querySelector('#mkLimpar');
- if(limpar)limpar.onclick=()=>{dlg.close();salvarMarcas(f,lem?{lembreteData:'',lembreteObs:''}:{adiadoAte:''},lem?'Lembrete removido.':f.cliente+' voltou para a lista.');};
+ if(limpar)limpar.onclick=()=>{dlg.close();salvarMarcas(f,lem?{lembreteData:'',lembreteObs:''}:{adiadoAte:'',mensal:false},lem?'Lembrete removido.':f.cliente+' voltou para a lista.');};
  dlg.querySelector('form').onsubmit=e=>{
    e.preventDefault();
    const d=dlg.querySelector('#mkData').value;
@@ -983,7 +1000,7 @@ $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace(location.pathname);};
 document.querySelectorAll('.visoes [data-v]').forEach(b=>b.onclick=()=>{visao=b.dataset.v;try{localStorage.setItem('wen_fiscal_visao',visao);}catch(e){}lista();});
-$('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;$('ordem').onchange=lista;if($('agrupar'))$('agrupar').onchange=lista;
+$('busca').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
 window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar();});

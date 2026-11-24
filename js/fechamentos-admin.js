@@ -321,7 +321,7 @@ const FC_CAMPOS_DADOS=['itens','lancamentoIds','valor','recebido','saldo','venci
   'notaModo','exigeNota','atualizadoEm','divergencia','descricaoFiscal','descricaoCobranca'];
 const FC_CAMPOS_DELA=['nfNumero','nfData','fiscalStatus','cobrancaStatus','enviadoEm','promessaData','promessaObs',
   'nfSinalNumero','nfSinalData','nfSinalStatus','nfSaldoNumero','nfSaldoData','nfSaldoStatus',
-  'urgente','adiadoAte','lembreteData','lembreteObs'];   // marcas dela no card (24/11)
+  'urgente','adiadoAte','lembreteData','lembreteObs','mensal'];   // marcas dela no card (24/11)
 
 // A chave do agrupamento sai da ficha: mensal junta o mês do cliente, "diaria" é uma por uma.
 function FC_chaveGrupo(cliente,reg,ficha){
@@ -419,8 +419,11 @@ async function FC_espelhar(regs,motivo){
       if(antigo)FC_CAMPOS_DELA.forEach(k=>{if(antigo[k]!==undefined)doc[k]=antigo[k];});
       else{doc.criadoEm=doc.atualizadoEm;}
       // Só a baixa do proprietário no Receber confirma ou reabre o pagamento.
-      const mudouPagamento=antigo&&(Number(antigo.saldo)!==Number(doc.saldo)||Number(antigo.recebido)!==Number(doc.recebido));
-      if(mudouPagamento)doc.cobrancaStatus=doc.saldo===0?'pago':antigo.cobrancaStatus==='pago'?'pendente':antigo.cobrancaStatus;
+      const mudouPagamento=antigo&&(Number(antigo.saldo)!==Number(doc.saldo)||Number(antigo.recebido)!==Number(doc.recebido)||Number(antigo.valor)!==Number(doc.valor));
+      // 24/11 (Will, Danny Ueda): "está cobrança enviada mas não cobramos, está em aberto".
+      // Entrou pagamento ou diária nova e ainda falta: a cobrança anterior foi respondida,
+      // o que falta volta para "a cobrar". Quitou: pago.
+      if(mudouPagamento)doc.cobrancaStatus=doc.saldo===0?'pago':'pendente';
       await (antigo?FC_gravarCampos:FC_criarEspelho)(id,doc,antigo?FC_CAMPOS_DADOS.concat('grupo','descricaoAuto',...(mudouPagamento?['cobrancaStatus']:[]))
         :FC_CAMPOS_DADOS.concat(FC_CAMPOS_DELA,'grupo','descricaoAuto','criadoEm','cliente','clienteFiscal','fiscalIds','fiscalValor'));
       FC_dados[id]=doc;

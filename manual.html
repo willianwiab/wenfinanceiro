@@ -248,43 +248,35 @@ footer{text-align:center;color:var(--fraco);font-size:.82rem;padding:28px 20px 4
     <tr><td><span class="chip erro">🔥 urgente</span></td><td>O Will quer essa cobrança resolvida já. Ela fica no topo, com borda vermelha.</td><td>Cobrar antes de todas as outras.</td></tr>
     <tr><td><span class="chip erro">⏰ lembrete: …</span></td><td>Chegou o dia de um lembrete do Will. Aparece também no 🔔.</td><td>Fazer o que a anotação diz.</td></tr>
     <tr><td><span class="chip sel">⏰ 05/12</span></td><td>Há um lembrete marcado para essa data.</td><td>Nada por enquanto.</td></tr>
-    <tr><td><span class="chip sel">💤 adiada até 01/12</span></td><td>O Will adiou a cobrança: ela passa a vencer nessa data. Sai do <b>A cobrar</b>, fica em <b>📆 A vencer</b> e não aparece como atrasada até lá. A <b>nota</b> não espera: se já gravou, ela continua em 🧾 Fiscal.</td><td>Não cobrar antes da data.</td></tr>
+    <tr><td><span class="chip sel">💤 adiada até 01/12</span></td><td>O Will adiou a cobrança: ela passa a vencer nessa data, vai para o mês dela na lista e não aparece como atrasada até lá. A <b>nota</b> não espera: se já gravou, ela continua em 🧾 Fiscal.</td><td>Não cobrar antes da data.</td></tr>
   </table>
 
-  <h3>Duas filas: 💰 Cobrança e 🧾 Fiscal</h3>
-  <p>No alto da tela há três botões. Cada um mostra uma fila com uma prioridade diferente:</p>
+  <h3>Duas abas: 🧾 Fiscal e 💰 Cobrança</h3>
+  <p>A tela tem só duas abas. Cada uma é uma fila de trabalho, e a ordem já é a certa — não precisa filtrar nada.</p>
   <table>
-    <tr><th>Botão</th><th>O que mostra</th><th>O que vem primeiro</th></tr>
-    <tr><td><b>💰 Cobrança</b></td><td>Só o que você precisa cobrar (sem os pagos e sem os que o Will cobra).</td><td>O <b>vencimento</b> mais próximo.</td></tr>
-    <tr><td><b>🧾 Fiscal</b></td><td>Só o que ainda precisa de nota.</td><td>Quem <b>já gravou</b> e está sem nota — o mais antigo primeiro. Quem ainda vai gravar fica embaixo, em “Ainda não é hora”.</td></tr>
-    <tr><td><b>🗂️ Tudo</b></td><td>Tudo junto, como antes.</td><td>O que você escolher em “Ordenar por”.</td></tr>
+    <tr><th>Aba</th><th>A regra</th><th>O que aparece</th></tr>
+    <tr><td><b>🧾 Fiscal</b></td><td><b>Gravou, faz a nota.</b> Se o cliente é de <b>fechamento mensal</b>, a nota sai a partir do dia 1º do mês seguinte.</td>
+        <td><b>🧾 Emitir nota agora</b> (o mais antigo primeiro; vermelho depois de 7 dias) · <b>📅 Fechamento mensal</b> (com a data em que libera) · <b>⏳ Ainda vai gravar</b> (escondido — clique para ver).</td></tr>
+    <tr><td><b>💰 Cobrança</b></td><td><b>Pela data de vencimento.</b> O Will pode adiar — aí vale a data nova.</td>
+        <td>Uma lista só, em blocos por mês. Quem já foi cobrado e não pagou <b>continua na lista</b>, com o status no card. As pagas ficam no fim, em <b>✅ Pagas</b> (escondido).</td></tr>
   </table>
-  <div class="nota">
-    <b>Exemplo</b>
-    A Tirolez gravou e ainda não tem nota, mas só vence em dezembro. Em <b>💰 Cobrança</b> ela espera a vez dela.
-    Em <b>🧾 Fiscal</b> ela aparece no topo com <b>“🧾 emitir nota · gravou há N dias”</b> — a nota sai agora.
-    Se passar de 7 dias, o selo fica vermelho.
-  </div>
-  <p>Cada separação (mês, “Já gravou”, “Ainda não é hora”, urgentes) tem uma setinha <b>▾</b>.
-     Clique no título para <b>esconder</b> o grupo e de novo para <b>expandir</b>. No alto da lista há
-     <b>Expandir tudo</b> e <b>Esconder tudo</b>. O que você esconder fica guardado no seu computador.</p>
-  <p>A hora da nota segue a ficha do cliente: depois da gravação (o normal), depois do pagamento, já na
-     reserva, ou separada em sinal e saldo.</p>
 
-  <h3>Achar o que você procura</h3>
-  <p>No alto da tela há cinco filtros. Eles se combinam.</p>
+  <h3>O status no card da cobrança</h3>
   <table>
-    <tr><td><b>Cliente</b></td><td>Um cliente específico.</td></tr>
-    <tr><td><b>Mês inicial / final</b></td><td>O período das gravações.</td></tr>
-    <tr><td><b>Ordenar por</b></td><td>Comece sempre por <b>“Vencimento — o mais urgente primeiro”</b>.</td></tr>
-    <tr><td><b>Separar por</b></td><td>A lista vem em blocos por <b>mês do vencimento</b>. Dá para trocar para o mês da gravação, ou tirar a separação.</td></tr>
-    <tr><td><b>Exibir</b></td><td>Atalhos: <b>A cobrar</b>, <b>📆 A vencer</b>, <b>Enviadas</b>, <b>Pagas</b> e <b>Em atraso</b>.</td></tr>
+    <tr><th>Selo</th><th>Quer dizer</th></tr>
+    <tr><td><span class="chip pend">a cobrar</span></td><td>Ainda não foi cobrado.</td></tr>
+    <tr><td><span class="chip sel">📨 cobrada em 20/11</span></td><td>Você cobrou nessa data e o cliente ainda não pagou.</td></tr>
+    <tr><td><span class="chip erro">em atraso há 3 dias</span></td><td>Passou do vencimento. Aparece junto com “a cobrar” ou “cobrada”.</td></tr>
+    <tr><td><span class="chip pend">cliente disse que pagou</span></td><td>Você marcou “pagamento comunicado”. O Will confere no banco.</td></tr>
   </table>
+  <p>O número grande do card é <b>o que falta cobrar</b>. Se entrou um pagamento ou uma diária nova e ainda falta
+     valor, a cobrança volta sozinha para <b>“a cobrar”</b> — a cobrança anterior já foi respondida.</p>
+  <p>Cada separação tem uma setinha <b>▾</b>: clique no título para esconder ou mostrar. O que você esconder fica guardado no seu computador.</p>
 
   <div class="nota ok">
-    <b>Sua rotina do dia, em dois cliques</b>
-    Clique em <b>⚠️ Em atraso</b> e resolva essas primeiro. Depois clique em <b>📋 A cobrar</b>,
-    com a ordem por vencimento. Pronto — você trabalhou pelo que é mais urgente.
+    <b>Sua rotina do dia</b>
+    Abra <b>🧾 Fiscal</b> e emita as notas do topo. Depois abra <b>💰 Cobrança</b> e trabalhe de cima para baixo:
+    primeiro o que está <b>em atraso</b>, depois o que vence na semana.
   </div>
 </section>
 

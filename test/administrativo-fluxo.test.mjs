@@ -54,7 +54,7 @@ assert.equal(await page.locator('#promessaData:visible').count(),1,'a promessa d
 // empresa pode aparecer fora do fechamento aberto — o administrativo vê o unitário, não o total.
 assert.equal(await page.locator('#cards .card-p').count(),3);
 assert(!(await page.textContent('#cards')).includes('R$'));
-assert((await page.textContent('#cards')).includes('A cobrar'));
+assert(/Em atraso|Vence em 7 dias|Emitir nota agora/.test(await page.textContent('#cards')),'cards da aba aberta (Cobrança ou Fiscal)');
 // O fechamento aberto é o documento do Relatórios → Fechamento: faixa, 6 cartões,
 // tabela por mês com Horário/Studio/Status, barra de total e as 4 ações.
 assert.equal(await page.locator('#rFechDoc .frc-r').count(),6);
