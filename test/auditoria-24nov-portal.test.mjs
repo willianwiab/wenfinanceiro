@@ -19,7 +19,8 @@ const it=(id,n,extra={})=>{const d=dia(n);return {id,data:String(d.getDate()).pa
 const limpar=()=>page.evaluate(()=>['wen_mock_marcas','wen_fiscal_visao','wen_fiscal_fechados'].forEach(k=>localStorage.removeItem(k)));
 const cenario=async(c,visao)=>{await page.evaluate(([c,v])=>{localStorage.setItem('wen_mock_marcas',JSON.stringify(c));localStorage.setItem('wen_fiscal_visao',v);localStorage.setItem('wen_fiscal_fechados','["+cobranca:agravar","+fiscal:futuras"]');},[c,visao]);
   await page.reload();await page.waitForSelector('#lista');};
-const nomes=()=>page.$$eval('#lista .nf-lin',l=>l.filter(x=>x.offsetParent!==null).map(x=>x.querySelector('.nf-nome').textContent.trim()));
+// a fila de emitir é o grupo "🧾 Emitir nota agora" (desde 24/11 a aba Fiscal mostra tudo, em grupos)
+const nomes=()=>page.$$eval('[data-corpo="fiscal:prontas"] .nf-lin',l=>l.map(x=>x.querySelector('.nf-nome').textContent.trim()));
 const card=n=>page.locator('#lista .nf-lin',{hasText:n}).textContent().then(t=>t.replace(/\s+/g,' ').replace(/ /g,' '));
 const base={exigeNota:true,condicao:'avista',cobrancaStatus:'pendente',valor:3400,recebido:0,saldo:3400,vencimento:iso(5),descricaoFiscal:'Serviço',descricaoCobranca:'Cobrança'};
 try{
@@ -30,6 +31,7 @@ await cenario({
   demo:{...base,cliente:'VITRINE',itens:[it('v1',-27)],fiscalStatus:'emitida',nfNumero:'4343',nfData:hoje,notasEmitidas:[]},
   demo3:{...base,cliente:'SEM NOTA AINDA',itens:[it('s1',-10)],fiscalStatus:'pendente',nfNumero:'',nfData:'',notasEmitidas:[]}},'fiscal');
 assert.deepEqual(await nomes(),['SEM NOTA AINDA'],'nota marcada como emitida sai da fila de emitir');
+assert((await page.$$eval('[data-corpo="fiscal:emitidas"] .nf-lin .nf-nome',l=>l.map(x=>x.textContent.trim()))).includes('VITRINE'),'e vai para o grupo ✅ Nota emitida');
 await page.click('.visoes [data-v="cobranca"]');
 assert(/nota 4343/.test(await card('VITRINE')),'e na cobrança aparece "nota 4343"');
 
@@ -81,7 +83,8 @@ assert.deepEqual(await nomes(),['FALTA O SALDO'],'separado: só sai da fila com 
 await cenario({
   demo:{...base,cliente:'SEM NF NESTA',itens:[it('n1',-10)],fiscalStatus:'nao_solicitada',nfNumero:'',notasEmitidas:[]},
   demo3:{...base,cliente:'COM NF',itens:[it('n2',-10)],fiscalStatus:'pendente',notasEmitidas:[]}},'fiscal');
-assert.deepEqual(await nomes(),['COM NF'],'não solicitada fica fora da fila fiscal');
+assert.deepEqual(await nomes(),['COM NF'],'não solicitada fica fora da fila de emitir');
+assert((await page.$$eval('[data-corpo="fiscal:semnota"] .nf-lin .nf-nome',l=>l.map(x=>x.textContent.trim()))).includes('SEM NF NESTA'),'e aparece em 🚫 Sem nota — só acompanhar');
 await page.click('.visoes [data-v="cobranca"]');
 assert(/NF não solicitada/.test(await card('SEM NF NESTA'))&&!/nota pendente/.test(await card('SEM NF NESTA')),'e o selo diz "NF não solicitada"');
 

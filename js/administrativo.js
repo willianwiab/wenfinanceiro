@@ -198,8 +198,12 @@ function fiscal(f){
  const proxima=futuras.map(diaIso).filter(Boolean).sort()[0]||'';
  return {livres,prontas,gravadas,futuras,desde,dias,liberaEm,proxima,mensal};
 }
+// 24/11 (Will): "entrou no financeiro, entra no fiscal — mesmo sem nota e sem cobrança".
+const semNota=f=>!f.exigeNota||(f.fiscalStatus==='nao_solicitada'&&!(f.notasEmitidas||[]).length);
 function seloFiscal(f){
- const x=fiscal(f);if(!x)return '';
+ if(semNota(f))return '<span class="nf-pill">🚫 sem nota fiscal · só acompanhar</span>';
+ const x=fiscal(f);
+ if(!x)return `<span class="nf-pill ok">✅ nota ${esc(f.nfNumero||'emitida')}</span>`;
  const n=k=>k+' '+(k===1?'diária':'diárias');
  if(x.prontas.length){
    const tempo=x.mensal?(x.dias<=0?'mês fechou hoje':'mês fechou há '+x.dias+' dia'+(x.dias===1?'':'s'))
@@ -458,7 +462,7 @@ function linha(f){
                rA=abertasF.reduce((t,i)=>t+Math.round((Number(i.recebido)||0)*100),0)/100;
         // o pago parcial aparece junto da diária em aberto: "3.500 · 1.750 pago"
         // "Se a cobrança foi enviada, não falta cobrar — falta o cliente pagar" (Will, 24/11).
-        const rot=f.cobrancaStatus==='enviada'?['aguardando pagamento','esp']:f.cobrancaStatus==='informado'?['a conferir','esp']:['falta cobrar',''];
+        const rot=semCobranca?['em aberto · Will cobra','nada']:f.cobrancaStatus==='enviada'?['aguardando pagamento','esp']:f.cobrancaStatus==='informado'?['a conferir','esp']:['falta cobrar',''];
         return `<div class="nf-val"><span class="nf-rot ${rot[1]}">${rot[0]}</span>${cash(faltaCobrar(f))}`
           +(rA>0?`<div class="nf-de">${cash(vA)} · ${cash(rA)} pago</div>`:'')+'</div>';})()
       :`<div class="nf-val">${cash(f.valor)}</div>`)
@@ -529,10 +533,16 @@ function listaFiscal(base){
    '<div class="card-p alerta"><label>Emitir nota agora</label><div class="val">'+prontas.length+'</div><div class="val-sub">já gravou</div></div>'
   +'<div class="card-p atrasado"><label>Há mais de 7 dias</label><div class="val">'+atras+'</div><div class="val-sub">'+(atras?'gravou e ainda sem nota':'nada esquecido')+'</div></div>'
   +'<div class="card-p pendente"><label>Esperando</label><div class="val">'+(mensais.length+futuras.length)+'</div><div class="val-sub">'+mensais.length+' fechamento mensal · '+futuras.length+' ainda vai gravar</div></div>';
+ // Meses seguintes à vista: o que ainda vai gravar vem separado por mês, aberto.
+ const porMes=new Map();futuras.forEach(o=>{const k=String(o.x.proxima||'').slice(0,7);if(!porMes.has(k))porMes.set(k,[]);porMes.get(k).push(o);});
+ const feitas=base.filter(f=>!semNota(f)&&!fiscal(f)).sort(ordenador('grav'));
+ const semNF=base.filter(semNota).sort(ordenador('grav-asc'));
  return (prontas.length?grupo('prontas','🧾 Emitir nota agora',prontas.map(o=>linha(o.f)),' urg'):'')
   +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
-  +(futuras.length?grupo('futuras','⏳ Ainda vai gravar',futuras.map(o=>linha(o.f)),'',true):'')
-  ||'<div class="nf-vazio">✅ Nenhuma nota para emitir.</div>';
+  +[...porMes.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).map(k=>grupo('fut:'+(k||'sem'),'⏳ Vai gravar em '+(k?mesExtenso(k):'data a definir'),porMes.get(k).map(o=>linha(o.f)))).join('')
+  +(feitas.length?grupo('emitidas','✅ Nota emitida',feitas.map(linha),'',true):'')
+  +(semNF.length?grupo('semnota','🚫 Sem nota fiscal — só acompanhar',semNF.map(linha)):'')
+  ||'<div class="nf-vazio">✅ Nenhuma gravação neste recorte.</div>';
 }
 // Cobrança (24/11): UMA lista, pelo vencimento (o adiamento vale como vencimento). Quem
 // foi cobrado e não pagou continua aqui, com o status no card — não vai para outra aba.
@@ -541,7 +551,8 @@ function listaCobranca(base){
  const todasAbertas=minhas.filter(f=>f.cobrancaStatus!=='pago');
  const aGravar=todasAbertas.filter(soAGravar).sort((a,b)=>String(aGravarAbertas(a).map(isoDiaria).sort()[0]).localeCompare(String(aGravarAbertas(b).map(isoDiaria).sort()[0])));
  const abertas=todasAbertas.filter(f=>!soAGravar(f)).sort(ordenador('venc'));
- const pagas=minhas.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
+ const doWill=base.filter(f=>(f.clienteFiscal||{}).cobrancaAdministrativo===false&&f.cobrancaStatus!=='pago').sort(ordenador('venc'));
+ const pagas=base.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
  const hoje=today(), em7=(()=>{const d=new Date(hoje+'T12:00:00');d.setDate(d.getDate()+7);return d.toISOString().slice(0,10);})();
  const atr=abertas.filter(atrasada).length;
  const semana=abertas.filter(f=>f.cobrancaStatus==='pendente'&&!atrasada(f)&&vencEf(f)&&vencEf(f)<=em7).length;
@@ -551,8 +562,11 @@ function listaCobranca(base){
    '<div class="card-p atrasado"><label>Em atraso</label><div class="val">'+atr+'</div><div class="val-sub">'+(atr?'passou do vencimento':'nada vencido')+'</div></div>'
   +'<div class="card-p alerta"><label>Falta cobrar</label><div class="val">'+aCobrar+'</div><div class="val-sub">'+semana+' vence'+(semana===1?'':'m')+' em 7 dias</div></div>'
   +'<div class="card-p pendente"><label>Aguardando pagamento</label><div class="val">'+cobradas+'</div><div class="val-sub">já cobradas</div></div>';
- return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar.</div>')
-  +(aGravar.length?grupo('agravar','⏳ Ainda vai gravar — cobrar depois da gravação',aGravar.map(linha),'',true):'')
+ // Meses seguintes à vista: quem ainda vai gravar vem separado por mês da gravação, aberto.
+ const porMes=new Map();aGravar.forEach(f=>{const k=String(aGravarAbertas(f).map(isoDiaria).sort()[0]||'').slice(0,7);if(!porMes.has(k))porMes.set(k,[]);porMes.get(k).push(f);});
+ return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar agora.</div>')
+  +[...porMes.keys()].sort().map(k=>grupo('agravar:'+k,'⏳ Vai gravar em '+mesExtenso(k)+' — cobrar depois da gravação',porMes.get(k).map(linha))).join('')
+  +(doWill.length?grupo('dowill','👤 O Will cobra — só acompanhar',doWill.map(linha)):'')
   +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
 }
 function lista(){

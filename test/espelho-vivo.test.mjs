@@ -107,47 +107,33 @@ assert.equal(f[0].saldo,0);
 tipos=await page.evaluate(()=>window.__avisos.map(a=>a.fields.tipo.stringValue));
 assert(tipos.includes('pago'),'aviso de pagamento confirmado');
 
-// ── 6) a ficha decide quem entra — e quem SAI ─────────────────────────────
-// Decisão do Will em 20/11: "que suma da tela dela". Quem está desmarcado em nota
-// E cobrança não é espelhado; e quem já estava lá é removido quando o Will desmarca.
-await page.evaluate(()=>{CFI_FICHAS.outro={id:'outro',nome:'OUTRO',exigeNota:false,cobrancaAdministrativo:false};});
+// ── 6) todo cliente entra — mesmo sem nota e sem cobrança ──────────────────
+// 24/11 (Will): "entrou no sistema financeiro, entra no fiscal mesmo se não vamos emitir
+// nota fiscal ou fazer cobrança". Desfaz a decisão de 20/11 (desmarcado nos dois sumia).
+await page.evaluate(()=>{CFI_FICHAS.outro={id:'outro',nome:'OUTRO',exigeNota:false,cobrancaAdministrativo:false};window.__avisos.length=0;});
 const antes=await page.evaluate(()=>Object.keys(FC_dados).length);
 await espelhar({...diaria('X1'),cliente:'OUTRO'});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),antes,
-  'desmarcado nos dois: não espelha');
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),antes+1,'desmarcado nos dois: entra mesmo assim');
+const outro=await page.evaluate(()=>Object.values(FC_dados).find(f=>f.cliente==='OUTRO'));
+assert.equal(outro.exigeNota,false,'sem nota');assert.equal(outro.clienteFiscal.cobrancaAdministrativo,false,'e quem cobra é o Will');
+assert.equal(await page.evaluate(()=>window.__avisos.length),0,'só acompanhar: não gera aviso para ela');
 
-// cliente que JÁ estava na tela dela some quando o Will desmarca
-await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
-await espelhar({...diaria('S1'),cliente:'SAI FORA'});
+// desmarcar os dois de quem JÁ estava lá não tira mais da tela — só muda o retrato da ficha
+await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;window.__patches.length=0;});
+await espelhar({...diaria('S1'),cliente:'FICA'});
 assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,'entrou primeiro');
 await page.evaluate(async()=>{
-  CFI_FICHAS.saifora={id:'saifora',nome:'SAI FORA',exigeNota:false,cobrancaAdministrativo:false};
-  await FC_aoMudarFicha('SAI FORA');});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'e saiu quando desmarcou os dois');
-assert(await page.evaluate(()=>window.__patches.some(p=>p.del)),'foi apagado na nuvem, não só da memória');
+  CFI_FICHAS.fica={id:'fica',nome:'FICA',exigeNota:false,cobrancaAdministrativo:false};
+  await FC_aoMudarFicha('FICA');});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,'continua na tela dela');
+assert(!(await page.evaluate(()=>window.__patches.some(p=>p.del))),'nada é apagado na nuvem');
+const fica=await page.evaluate(()=>Object.values(FC_dados)[0]);
+assert.equal(fica.exigeNota,false);assert.equal(fica.clienteFiscal.cobrancaAdministrativo,false,'a ficha nova chega na cobrança');
 
-// ...mas se já tem NOTA EMITIDA, fica: sumir calado com uma nota fiscal seria pior
+// 🚫 não faturável continua de fora
 await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
-await espelhar({...diaria('S2'),cliente:'TEM NOTA'});
-await page.evaluate(async()=>{
-  const id=Object.keys(FC_dados)[0];
-  Object.assign(FC_dados[id],{fiscalStatus:'emitida',nfNumero:'555',nfData:'2026-12-01'});
-  CFI_FICHAS.temnota={id:'temnota',nome:'TEM NOTA',exigeNota:false,cobrancaAdministrativo:false};
-  await FC_aoMudarFicha('TEM NOTA');});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,
-  '🔒 fechamento com nota emitida NÃO é apagado');
-
-// e religar traz de volta
-await page.evaluate(()=>{CFI_FICHAS={};FC_dados={};R_todosOsDados.length=0;});
-await espelhar({...diaria('S3'),cliente:'VOLTA'});
-await page.evaluate(async()=>{
-  CFI_FICHAS.volta={id:'volta',nome:'VOLTA',exigeNota:false,cobrancaAdministrativo:false};
-  await FC_aoMudarFicha('VOLTA');});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'saiu');
-await page.evaluate(async()=>{
-  CFI_FICHAS.volta.exigeNota=true;
-  await FC_aoMudarFicha('VOLTA');});
-assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),1,'e voltou ao remarcar');
+await espelhar({...diaria('N1'),cliente:'PRE RESERVA',naoFaturavel:true});
+assert.equal(await page.evaluate(()=>Object.keys(FC_dados).length),0,'não faturável não entra');
 
 // ── 7) cliente "por diária" ganha um fechamento por gravação ───────────────
 await page.evaluate(()=>{CFI_FICHAS.avulso={id:'avulso',nome:'AVULSO',exigeNota:true,fechamentoPadrao:'diaria'};});
@@ -173,9 +159,11 @@ assert.equal(depoisRename[0].c,'FULANO','e é o do nome corrigido');
 st=await page.evaluate(()=>Object.values(FC_dados).flatMap(f=>f.lancamentoIds));
 assert.deepEqual(st,['R1'],'a diária vive em um fechamento só');
 
-// e o fechamento órfão foi apagado de verdade, não só da memória
-const apagou=await page.evaluate(()=>window.__patches.filter(p=>p.del).length>0);
-assert(apagou,'o fechamento do nome antigo foi apagado na nuvem');
+// desde a auditoria de 24/11 o MESMO documento é renomeado (casa pelas diárias e grava
+// `cliente` com máscara): não nasce órfão para apagar. (Esta checagem passava antes só por
+// causa de uma exclusão de outro bloco do teste.)
+const renomeou=await page.evaluate(()=>window.__patches.some(p=>!p.del&&(p.campos||[]).includes('cliente')));
+assert(renomeou,'o nome novo foi gravado na nuvem, no mesmo fechamento');
 
 // ── 9) renomear com NOTA EMITIDA não cria órfão nem perde a nota ──────────
 // Antes (minha versão): nascia um fechamento novo e o antigo ficava marcado com

@@ -63,11 +63,14 @@ t('ficha antiga (exigeNota/notaSinal) continua valendo', () => {
   assert.equal(C.CFI_notaRegra({exigeNota:true, notaSinal:'separado'}), 'duas');
   assert.equal(C.CFI_notaRegra(null), 'gravacao');
 });
-t('só quem é desmarcado nos DOIS fica de fora', () => {
+t('todo cliente entra (24/11); desmarcado nos DOIS vira "só acompanhar"', () => {
   assert.equal(C.CFI_liberavel(null), true);
   assert.equal(C.CFI_liberavel({exigeNota:false}), true);
   assert.equal(C.CFI_liberavel({cobrancaAdministrativo:false}), true);
-  assert.equal(C.CFI_liberavel({exigeNota:false, cobrancaAdministrativo:false}), false);
+  assert.equal(C.CFI_liberavel({exigeNota:false, cobrancaAdministrativo:false}), true);
+  assert.equal(C.CFI_soAcompanhar({exigeNota:false, cobrancaAdministrativo:false}), true);
+  assert.equal(C.CFI_soAcompanhar({exigeNota:false}), false);
+  assert.equal(C.CFI_soAcompanhar(null), false);
 });
 t('nome: pré-reserva é reconhecida como o mesmo cliente', () => {
   assert.deepEqual(C.CFI_parecidos('PRÉ RESERVA WEN PRODUTORA ESTUDIO B - DANNY UEDA', ['DANNY UEDA']), ['DANNY UEDA']);

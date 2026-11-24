@@ -51,8 +51,9 @@ assert.equal(await page.locator('#nfConteudo .cfi-lin.pend',{hasText:'CARTPANDA'
 // desligar também a nota tira o cliente da liberação em lote
 await page.selectOption(linha+' .cfi-cond.nota','nenhuma');
 await page.waitForFunction(()=>window.__salvos.length===2);
-assert.equal(await page.evaluate(()=>CFI_liberavel(CFI_FICHAS.cartpanda)),false,
-  'desmarcado nos dois: sai da liberação');
+assert.equal(await page.evaluate(()=>CFI_liberavel(CFI_FICHAS.cartpanda)),true,
+  'desmarcado nos dois: continua entrando (24/11) —');
+assert.equal(await page.evaluate(()=>CFI_soAcompanhar(CFI_FICHAS.cartpanda)),true,'— só que como "só acompanhar"');
 
 // e religar devolve: é o estado do exemplo do Will
 await page.selectOption(linha+' .cfi-cond.nota','gravacao');

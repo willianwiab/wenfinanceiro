@@ -431,8 +431,8 @@ async function FC_espelhar(regs,motivo){
     if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
     if(r.naoFaturavel)return;   // pré-reserva, bloqueio de agenda, teste interno
     const ficha=CFI_casar(r.cliente,fichas);
-    // O Codex desligou este filtro em 19/11 ("todo cliente entra"). O Will decidiu em
-    // 20/11 que quem está desmarcado em nota E cobrança deve SUMIR da tela dela.
+    // 24/11 (Will): todo cliente entra, mesmo sem nota e sem cobrança (CFI_liberavel é
+    // sempre verdadeiro). Só a diária 🚫 não faturável fica de fora, logo acima.
     if(!CFI_liberavel(ficha))return;
     const chave=FC_chaveGrupo(r.cliente,r,ficha);
     if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
@@ -468,6 +468,7 @@ async function FC_espelhar(regs,motivo){
       await FC_limparOrfaos(id,doc.lancamentoIds||[]);
       feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
         divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
+        soAcompanhar:typeof CFI_soAcompanhar==='function'&&CFI_soAcompanhar(ficha),
         pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
         parcial:!!(antigo&&doc.recebido>antigo.recebido&&doc.saldo>0)});
     }catch(e){console.warn('FC_espelhar',chave,e.message);erros.push(cliente+': '+e.message);}
@@ -702,6 +703,7 @@ async function AV_criar(feitos){
     try{
       const {tipo,texto}=AV_texto(f);
       if(tipo==='mudou'&&!f.divergencia)continue;        // mexida sem consequência não vira aviso
+      if(f.soAcompanhar)continue;                        // sem nota e sem cobrança dela: nada a fazer, nada a avisar
       const id=tipo+'-'+f.id+'-'+dia;
       const doc={tipo,texto,fechamentoId:f.id,cliente:f.cliente,valor:f.valor,saldo:f.saldo,
         criadoEm:new Date().toISOString(),lidoEm:''};
