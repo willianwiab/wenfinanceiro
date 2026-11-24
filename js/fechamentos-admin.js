@@ -653,9 +653,25 @@ async function FC_aoSalvarLancamento(reg,motivo){
   }catch(e){console.warn('FC_aoSalvarLancamento',e.message);toast('Diária salva, mas o administrativo não foi atualizado. Recarregue o financeiro para tentar novamente.','#ef4444',8000);}
 }
 
+function FC_desatualizados(){
+  const porId=new Map((R_todosOsDados||[]).map(r=>[String(r.id),r]));
+  const c=v=>Math.round((Number(v)||0)*100);
+  const fora=[];
+  for(const f of Object.values(FC_dados)){
+    const regs=(f.lancamentoIds||[]).map(id=>porId.get(String(id))).filter(r=>r&&!r.excluido);
+    if(!regs.length)continue;
+    const rec=regs.reduce((s,r)=>s+c(r.valorReserva),0), tot=regs.reduce((s,r)=>s+c(r.valorTotal),0);
+    if(rec!==c(f.recebido)||tot-rec!==c(f.saldo))fora.push(...regs);
+  }
+  return fora;
+}
 async function FC_sincronizarPendentes(){
   if(!await CFI_carregar()||!await FC_carregar())return;
   const ocupados=FC_ocupados();
   const pendentes=(R_todosOsDados||[]).filter(r=>!r.excluido&&r.cliente&&Number(r.valorTotal)>0&&WENFechamentos.noPeriodo(r)&&!ocupados.has(String(r.id)));
+  // Autocorreção (24/11): a baixa feita por um caminho que não avisava o administrativo
+  // (botão ✅ recebido, conciliação pelo extrato) deixava o espelho com o pagamento velho.
+  // Ao abrir o financeiro, todo fechamento cujo recebido/saldo diverge do Receber é refeito.
+  FC_desatualizados().forEach(r=>{if(!pendentes.includes(r))pendentes.push(r);});
   if(pendentes.length){const feitos=await FC_espelhar(pendentes,'automatico');await AV_criar(feitos);}
 }

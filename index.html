@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261120-2c1df7c7';
+window.APP_VERSION='20261124-fb75b94a';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2761,7 +2761,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
 
 <div class="toast" id="toast"></div>
 <script src="js/fechamentos.js?v=f8837676"></script>
-<script src="js/fechamentos-admin.js?v=f7ff015b"></script>
+<script src="js/fechamentos-admin.js?v=2319702c"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4451,7 +4451,7 @@ document.addEventListener('click',async function(e){
   if(action==='receber'){
     loading(true,'Registrando...');setSyncStatus('saving');
     try{const idx=R_todosOsDados.findIndex(r=>String(r.id)===String(rid));
-    if(idx>-1){R_todosOsDados[idx].saldo=0;R_todosOsDados[idx].valorReserva=R_todosOsDados[idx].valorTotal;await R_fbSalvar(R_todosOsDados[idx]);}
+    if(idx>-1){R_todosOsDados[idx].saldo=0;R_todosOsDados[idx].valorReserva=R_todosOsDados[idx].valorTotal;await R_fbSalvar(R_todosOsDados[idx]);FC_aoSalvarLancamento(R_todosOsDados[idx],'baixa');}
     setSyncStatus('ok');renderTabelaR();renderDashboardR();renderAgendaWidget();toast('✅ Marcado como recebido!');
     }catch(err){setSyncStatus('error');toast('Erro: '+err.message,'#ef4444');}finally{loading(false);}
   }
@@ -9743,6 +9743,7 @@ async function CONC_conciliar(movId,val,valorBaixa){
     await CC_fbSalvar(CONC_COL,chave,CONC_LINKS[chave]);
     r.valorReserva=Math.round((reservaAntes+mover)*100)/100;r.saldo=Math.round((saldoAntes-mover)*100)/100;r.conciliadoMov=movId;
     if(typeof R_fbSalvar==='function')R_fbSalvar(r);
+    if(typeof FC_aoSalvarLancamento==='function')FC_aoSalvarLancamento(r,'baixa');   // a baixa pelo extrato também chega no administrativo
     mov.conciliadoReceber=r.id;BC_fbUpsert(BC_COL_MOV,mov.id,mov);
     if(typeof AUD_log==='function')AUD_log('editar','lancamentos',r.cliente||'recebimento','Conciliado com o extrato (recebido)',null,null);
     toast('🔗 Conciliado (recebido): '+(r.cliente||r.desc||''));
@@ -9789,7 +9790,7 @@ function CONC_impArquivo(input,modo){
 async function CONC_desfazer(chave){
   const x=CONC_LINKS[chave];if(!x)return;
   if(x.tipo==='pagar'){const r=(P_meses[x.mes]||[]).find(y=>String(y.id)===String(x.id));if(r){r.status=x.statusAntes||'PENDENTE';r.valorPago=(x.valorPagoAntes!=null?x.valorPagoAntes:0);delete r.conciliadoMov;if(x.statusAntes!=='PAGO')delete r.dataPagamento;P_salvarStorage();}}
-  else if(x.tipo==='receber'){const r=(R_todosOsDados||[]).find(y=>String(y.id)===String(x.id));if(r){if(x.valorReservaAntes!=null)r.valorReserva=x.valorReservaAntes;if(x.saldoAntes!=null)r.saldo=x.saldoAntes;delete r.conciliadoMov;if(typeof R_fbSalvar==='function')R_fbSalvar(r);}}
+  else if(x.tipo==='receber'){const r=(R_todosOsDados||[]).find(y=>String(y.id)===String(x.id));if(r){if(x.valorReservaAntes!=null)r.valorReserva=x.valorReservaAntes;if(x.saldoAntes!=null)r.saldo=x.saldoAntes;delete r.conciliadoMov;if(typeof R_fbSalvar==='function')R_fbSalvar(r);if(typeof FC_aoSalvarLancamento==='function')FC_aoSalvarLancamento(r,'estorno');}}
   const mov=CONC_movs().find(m=>m.id===x.movId);if(mov){delete mov.conciliadoPagar;delete mov.conciliadoReceber;BC_fbUpsert(BC_COL_MOV,mov.id,mov);}
   delete CONC_LINKS[chave];await CC_fbExcluir(CONC_COL,chave);
   if(typeof AUD_log==='function')AUD_log('editar',x.tipo==='receber'?'lancamentos':'meses',x.label||'',' Conciliação desfeita',null,null);
