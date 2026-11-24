@@ -978,6 +978,24 @@ $('busca').onchange=lista;$('mesIni').onchange=lista;$('mesFim').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
 window.addEventListener('focus',()=>{if(!dirty&&!busy&&!$('app').hidden)carregar();});
+// ── Ao vivo (24/11, Will: "as atualizações não aparecem em tempo real"). A cada 30 s, com a
+// aba visível, pergunta ao Firebase se ALGUMA cobrança ou aviso mudou depois do mais recente
+// que a tela tem — consulta com limit 1, então custa 1 leitura quando nada mudou. Se mudou,
+// recarrega. Não mexe na tela enquanto ela edita ou está com uma janela aberta.
+const maisRecente=(l,k)=>l.map(x=>String(x[k]||'')).sort().at(-1)||'';
+async function algoMudou(){
+ const q=(col,campo,desde)=>req(':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{from:[{collectionId:col}],
+   where:{fieldFilter:{field:{fieldPath:campo},op:'GREATER_THAN',value:{stringValue:desde}}},limit:1}})})
+   .then(j=>Array.isArray(j)&&j.some(x=>x.document)).catch(()=>false);
+ const [f,a]=await Promise.all([q('administrativo_fechamentos','atualizadoEm',maisRecente(docs,'atualizadoEm')),
+   q('administrativo_avisos','criadoEm',maisRecente(avisos,'criadoEm'))]);
+ return f||a;
+}
+setInterval(async()=>{
+ if(mock||document.visibilityState!=='visible'||dirty||busy||$('app').hidden)return;
+ if($('cobrancaDialog').open||($('marcaDialog')&&$('marcaDialog').open))return;
+ if(await algoMudou())carregar();
+},30000);
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 (async()=>{if(mock){await carregar();return;}refresh=sessionStorage.getItem('wen_admin_rt')||localStorage.getItem('wen_auth_rt');if(refresh)await carregar();})();
 })();
