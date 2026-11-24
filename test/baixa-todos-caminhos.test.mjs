@@ -75,6 +75,24 @@ await page.evaluate(()=>{window.__patches.length=0;});
 await page.evaluate(()=>FC_sincronizarPendentes());
 assert.equal(await page.evaluate(()=>window.__patches.length),0,'espelho em dia: nenhuma escrita');
 
+// ── 2b. um cliente com problema não trava os outros ────────────────────────────
+const r2b=await page.evaluate(async()=>{
+  CFI_FICHAS.ruim={id:'ruim',nome:'Ruim',nomes:['Ruim'],exigeNota:false,cobrancaAdministrativo:true};
+  R_todosOsDados.push({id:'B1',cliente:'Ruim',mes:'NOV/2026',data:'11/11/2026',horario:'-',horas:2,studio:'STUDIO A',valorTotal:500,valorReserva:0,saldo:500,desc:'x'});
+  await FC_espelhar([R_todosOsDados.find(r=>r.id==='B1')],'antes');
+  const ia=Object.values(FC_dados).find(f=>f.cliente==='IA Teste');ia.recebido=0;ia.saldo=2000;ia.cobrancaStatus='enviada';
+  const ruim=Object.values(FC_dados).find(f=>f.cliente==='Ruim');ruim.recebido=999;   // defasado também
+  const orig=window.FC_gravarCampos;
+  window.FC_gravarCampos=async(id,doc,c)=>{if(id===ruim.id)throw Error('recusado (teste)');return orig(id,doc,c);};
+  const toasts=[];const t=window.toast;window.toast=m=>toasts.push(m);
+  let erro=null;try{await FC_sincronizarPendentes();}catch(e){erro=e.message;}
+  window.FC_gravarCampos=orig;window.toast=t;
+  return {erro,toasts,ia:Object.values(FC_dados).find(f=>f.cliente==='IA Teste').cobrancaStatus};
+});
+assert.equal(r2b.ia,'pago','o IA foi corrigido mesmo com o outro cliente falhando');
+assert(/Ruim: recusado/.test(r2b.erro||''),'o erro do outro cliente aparece com o nome dele: '+r2b.erro);
+assert(r2b.toasts.some(m=>/Administrativo atualizado: 1/.test(m)),'e o Will vê quantas atualizou: '+r2b.toasts.join(' | '));
+
 // ── 3. conciliação pelo extrato: baixa e desfazer chamam o gancho ──────────────
 const src=fs.readFileSync(new globalThis.URL('../index.html',import.meta.url),'utf8');
 const conc=src.slice(src.indexOf('async function CONC_conciliar('),src.indexOf('async function CONC_conciliarTodas('));

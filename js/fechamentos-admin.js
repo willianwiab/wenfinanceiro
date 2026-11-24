@@ -383,7 +383,7 @@ async function FC_espelhar(regs,motivo){
     const chave=FC_chaveGrupo(r.cliente,r,ficha);
     if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
   });
-  const feitos=[];
+  const feitos=[],erros=[];
   for(const [chave,{cliente,ficha}] of grupos){
     try{
       const doGrupo=FC_regsDoGrupo(chave,cliente,ficha);
@@ -408,8 +408,11 @@ async function FC_espelhar(regs,motivo){
         divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
         pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
         parcial:!!(antigo&&doc.recebido>antigo.recebido&&doc.saldo>0)});
-    }catch(e){console.warn('FC_espelhar',chave,e.message);throw e;}
+    }catch(e){console.warn('FC_espelhar',chave,e.message);erros.push(cliente+': '+e.message);}
   }
+  // Um grupo com problema não impede os outros de serem atualizados (24/11: um erro
+  // num cliente travava a autocorreção de todos, em silêncio).
+  if(erros.length){const e=Error(erros.join(' · '));e.feitos=feitos;throw e;}
   return feitos;
 }
 
@@ -673,5 +676,10 @@ async function FC_sincronizarPendentes(){
   // (botão ✅ recebido, conciliação pelo extrato) deixava o espelho com o pagamento velho.
   // Ao abrir o financeiro, todo fechamento cujo recebido/saldo diverge do Receber é refeito.
   FC_desatualizados().forEach(r=>{if(!pendentes.includes(r))pendentes.push(r);});
-  if(pendentes.length){const feitos=await FC_espelhar(pendentes,'automatico');await AV_criar(feitos);}
+  console.info('Administrativo: '+pendentes.length+' diária(s) a espelhar ao abrir');
+  if(!pendentes.length)return;
+  let feitos=[],erro=null;
+  try{feitos=await FC_espelhar(pendentes,'automatico');}catch(e){erro=e;feitos=e.feitos||[];}
+  if(feitos.length){await AV_criar(feitos);toast('🔄 Administrativo atualizado: '+feitos.length+' cobrança(s).');}
+  if(erro)throw erro;
 }
