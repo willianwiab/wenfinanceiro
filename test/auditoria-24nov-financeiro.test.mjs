@@ -103,6 +103,19 @@ const preso=await page.evaluate(async r=>{
 },d('V2','Volta'));
 assert(/reservar as diárias/.test(preso),'vínculo válido continua barrando: '+preso);
 
+// ── divergência nota × diária olha o valor DAS NOTAS (Oswaldo Cruz: 3.600 → 3.213) ──
+const dv=await page.evaluate(()=>{
+  const antigo={fiscalStatus:'emitida',valor:3600,notasEmitidas:[{numero:'5',ids:['O1'],valor:3213}]};
+  return {conserto:FC_divergenciaDe(antigo,3213,[{id:'O1',valor:3213}]),
+          aindaErrado:FC_divergenciaDe(antigo,3600,[{id:'O1',valor:3600}]),
+          parcial:FC_divergenciaDe({fiscalStatus:'pendente',valor:11250,notasEmitidas:[{numero:'1',ids:['a'],valor:3750}]},11250,[{id:'a',valor:3750},{id:'b',valor:3750},{id:'c',valor:3750}]),
+          legado:FC_divergenciaDe({fiscalStatus:'emitida',valor:1000},1200,[{id:'x',valor:1200}])};
+});
+assert.equal(dv.conserto,null,'corrigir a diária para o valor da nota não é divergência');
+assert(dv.aindaErrado&&dv.aindaErrado.valorNota===3213&&dv.aindaErrado.valorAtual===3600,'nota 3.213 × diária 3.600 é divergência');
+assert.equal(dv.parcial,null,'nota de uma das três diárias não é divergência');
+assert(dv.legado&&dv.legado.valorNota===1000,'sem registro por nota, vale a regra antiga');
+
 // ── 5: a caixinha "Não é faturável" não estica ──────────────────────────────
 await page.evaluate(()=>R_abrirModal());await page.waitForTimeout(300);
 const cx=await page.locator('#rFNaoFaturavel').boundingBox();

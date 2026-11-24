@@ -361,7 +361,17 @@ function FC_preservarTexto(antigo,novo){
   };
 }
 // Nota emitida e o valor mudou: NÃO sobrescreve calado — marca e avisa.
-function FC_divergenciaDe(antigo,valorNovo){
+function FC_divergenciaDe(antigo,valorNovo,itensNovos){
+  // 24/11 (Oswaldo Cruz): quando há registro por nota, compara o VALOR DAS NOTAS com as
+  // diárias que elas cobrem — não o total antigo da cobrança. Corrigir o Receber para o
+  // valor da nota (3.600 → 3.213) é o conserto, não uma divergência.
+  const notas=(antigo&&antigo.notasEmitidas)||[];
+  if(notas.length&&Array.isArray(itensNovos)){
+    const c=v=>Math.round((Number(v)||0)*100);
+    const cobertas=new Set(notas.flatMap(n=>n.ids||[]).map(String));
+    const vNotas=notas.reduce((t,n)=>t+c(n.valor),0), vDiarias=itensNovos.filter(i=>cobertas.has(String(i.id))).reduce((t,i)=>t+c(i.valor),0);
+    return vNotas===vDiarias?null:{valorNota:vNotas/100,valorAtual:vDiarias/100,em:new Date().toISOString()};
+  }
   const emitiu=antigo&&(antigo.fiscalStatus==='emitida'||antigo.nfSinalStatus==='emitida'||antigo.nfSaldoStatus==='emitida');
   if(!emitiu)return null;
   const valorNota=Number(antigo.fiscalValor??antigo.valor)||0;
@@ -441,7 +451,7 @@ async function FC_espelhar(regs,motivo){
         await FC_removerGrupo(chave,alvo);continue;}
       const novo=WENFechamentos.criar(doGrupo,ficha||{});
       const textos=FC_preservarTexto(antigo,novo);
-      const div=FC_divergenciaDe(antigo,novo.valor);
+      const div=FC_divergenciaDe(antigo,novo.valor,novo.itens);
       const doc={...(antigo||{}),...novo,...textos,grupo:chave,id,
         atualizadoEm:new Date().toISOString(),divergencia:div||null};
       if(antigo)FC_CAMPOS_DELA.forEach(k=>{if(antigo[k]!==undefined)doc[k]=antigo[k];});
