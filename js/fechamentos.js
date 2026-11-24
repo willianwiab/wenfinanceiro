@@ -14,12 +14,21 @@
   const dataBR=iso=>/^\d{4}-\d{2}-\d{2}$/.test(String(iso||''))?iso.split('-').reverse().join('/'):'';
   // O vencimento NÃO é digitado de novo aqui: ele vem do lançamento do Receber, que é
   // onde o Will define a data. '-' e vazio contam como sem data.
-  function vencIso(v){
+  function vencIso(v,mes){
     const t=String(v||'').trim();
     if(!t||t==='-')return '';
     if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;
     const m=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    return m?m[3]+'-'+m[2]+'-'+m[1]:'';
+    if(m)return m[3]+'-'+m[2]+'-'+m[1];
+    // 24/11: o Receber grava muito vencimento só como "27/11". Era ignorado, e o
+    // fechamento ficava com o vencimento de outra diária (Danny Ueda "em atraso" por
+    // uma gravação que nem tinha acontecido). O ano vem do mês do lançamento; mês do
+    // vencimento muito antes do lançamento = ano seguinte (lançamento DEZ, vence 05/01).
+    const c=t.match(/^(\d{1,2})\/(\d{1,2})$/), ref=mesChave(mes);
+    if(!c||!ref)return '';
+    const dd=c[1].padStart(2,'0'), mm=c[2].padStart(2,'0');
+    let ano=Number(ref.slice(0,4));if(Number(mm)<Number(ref.slice(5,7))-6)ano++;
+    return ano+'-'+mm+'-'+dd;
   }
   // O que o emissor da nota quer ver somado: quantas diárias, quantas horas,
   // quantas edições. Função própria para o teste e para as telas usarem o MESMO número.
@@ -78,7 +87,7 @@
       const total=cents(r.valorTotal), recebido=cents(r.valorReserva);
       if(recebido<0||recebido>total)throw Error('Revise o valor recebido da diária '+r.id+'.');
       return {id:String(r.id),data:String(r.data||''),mes:String(r.mes||''),horas:Number(r.horas)||0,
-        horario:String(r.horario||''),vencimento:vencIso(r.vencimento),edicoes:Math.max(0,parseInt(r.qtdEdicao,10)||0),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
+        horario:String(r.horario||''),vencimento:vencIso(r.vencimento,r.mes),edicoes:Math.max(0,parseInt(r.qtdEdicao,10)||0),studio:String(r.studio||''),descricao:String(r.desc||r.descricao||''),valor:total/100,recebido:recebido/100,saldo:(total-recebido)/100};
     });
     // Regra da nota: o que, quantas e quando. Fichas antigas caem no equivalente.
     const REGRAS={gravacao:{emite:true,separa:false,quando:'gravacao'},
