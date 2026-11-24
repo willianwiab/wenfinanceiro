@@ -18,19 +18,18 @@ await page.evaluate(c=>localStorage.setItem('wen_mock_marcas',JSON.stringify(c))
   demo3:{cliente:'VAI GRAVAR',itens:[it('v1',5)],exigeNota:true,fiscalStatus:'pendente',notasEmitidas:[],condicao:'avista'}});
 await page.reload();await page.waitForSelector('#lista .grupo-mes');
 const visiveis=()=>page.$$eval('#lista .nf-lin',l=>l.filter(x=>x.offsetParent!==null).map(x=>x.querySelector('.nf-nome').textContent.trim()));
-// desde 24/11 os meses seguintes ficam À VISTA (grupo por mês, aberto); o cliente sem nota
-// também aparece, em "Sem nota fiscal — só acompanhar".
-assert.deepEqual(await visiveis(),['GRAVOU','VAI GRAVAR','OUTRO CLIENTE DEMO'],'tudo aberto no começo');
+// desde 24/11 os meses seguintes ficam À VISTA (grupo por mês, aberto)
+assert.deepEqual(await visiveis(),['GRAVOU','VAI GRAVAR'],'tudo aberto no começo');
 assert.equal(await page.locator('.grupos-acoes').count(),1,'botões de expandir/esconder tudo');
 const cab=()=>page.locator('#lista .grupo-mes',{hasText:'Vai gravar em'});
 assert.equal(await cab().getAttribute('aria-expanded'),'true');
 await cab().click();
-assert.deepEqual(await visiveis(),['GRAVOU','OUTRO CLIENTE DEMO'],'clicou: esconde o grupo');
+assert.deepEqual(await visiveis(),['GRAVOU'],'clicou: esconde o grupo');
 assert.equal(await cab().getAttribute('aria-expanded'),'false');
 assert(/1 cobrança · escondido/.test(await cab().textContent()),'o cabeçalho continua dizendo quantas tem');
 // fica guardado no aparelho
 await page.reload();await page.waitForSelector('#lista .grupo-mes');
-assert.deepEqual(await visiveis(),['GRAVOU','OUTRO CLIENTE DEMO'],'lembra o que foi escondido');
+assert.deepEqual(await visiveis(),['GRAVOU'],'lembra o que foi escondido');
 // e é por aba: na Cobrança os grupos são outros — e "✅ Pagas" nasce fechado
 await page.click('.visoes [data-v="cobranca"]');
 assert.deepEqual(await visiveis(),['GRAVOU','VAI GRAVAR'],'outra aba, outros grupos (a paga começa escondida)');
@@ -44,12 +43,12 @@ await page.click('.visoes [data-v="fiscal"]');
 // esconder tudo / expandir tudo
 await page.click('[data-todos="fechar"]');
 assert.deepEqual(await visiveis(),[],'esconder tudo');
-assert.equal(await page.locator('#lista .grupo-mes').count(),3,'os cabeçalhos ficam');
+assert.equal(await page.locator('#lista .grupo-mes').count(),2,'os cabeçalhos ficam');
 await page.click('[data-todos="abrir"]');
-assert.deepEqual(await visiveis(),['GRAVOU','VAI GRAVAR','OUTRO CLIENTE DEMO'],'expandir tudo');
+assert.deepEqual(await visiveis(),['GRAVOU','VAI GRAVAR'],'expandir tudo');
 // teclado: o cabeçalho é botão
 await page.focus('#lista .grupo-mes >> nth=0');await page.keyboard.press('Enter');
-assert.deepEqual(await visiveis(),['VAI GRAVAR','OUTRO CLIENTE DEMO'],'Enter no cabeçalho esconde');
+assert.deepEqual(await visiveis(),['VAI GRAVAR'],'Enter no cabeçalho esconde');
 
 await page.evaluate(()=>{['wen_mock_marcas','wen_fiscal_visao','wen_fiscal_fechados'].forEach(k=>localStorage.removeItem(k));});
 assert.deepEqual(erros,[]);

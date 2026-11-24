@@ -39,14 +39,14 @@ assert.equal(await page.locator('#cfiSync').count(),1,'cai na aba Clientes, que 
 // ── o diagnóstico vê os três casos ────────────────────────────────────────
 const d=await page.evaluate(()=>FC_diagnostico());
 assert.deepEqual(d.faltam,[{cliente:'Entra',qtd:2}],'as duas diárias do Entra ainda não chegaram');
-assert.deepEqual(d.sobram,[],'24/11: ninguém "sobra" mais — desmarcado nos dois continua na tela dela');
+assert.deepEqual(d.sobram,[{cliente:'Sai',qtd:1}],'o Sai está lá e não deveria');
 assert(!JSON.stringify(d).includes('NaoFaturavel'),'🚫 não faturável nem é considerado');
 
 // ── sincronizar resolve os três de uma vez ────────────────────────────────
 await page.click('#cfiSync');
 await page.waitForFunction(()=>Object.values(FC_dados).some(f=>f.cliente==='Entra'),null,{timeout:20000});
 const final=await page.evaluate(()=>Object.values(FC_dados).map(f=>({c:f.cliente,n:f.itens.length})));
-assert.deepEqual(final.sort((a,b)=>a.c.localeCompare(b.c)),[{c:'Entra',n:2},{c:'Sai',n:1}],'o Entra entrou com as duas diárias; o desmarcado continua lá');
+assert.deepEqual(final,[{c:'Entra',n:2}],'o Entra entrou com as duas diárias; o Sai saiu');
 assert.deepEqual(await page.evaluate(()=>FC_diagnostico().faltam),[],'nada mais faltando');
 assert.deepEqual(await page.evaluate(()=>FC_diagnostico().sobram),[],'nada mais sobrando');
 

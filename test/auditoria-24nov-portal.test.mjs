@@ -84,7 +84,7 @@ await cenario({
   demo:{...base,cliente:'SEM NF NESTA',itens:[it('n1',-10)],fiscalStatus:'nao_solicitada',nfNumero:'',notasEmitidas:[]},
   demo3:{...base,cliente:'COM NF',itens:[it('n2',-10)],fiscalStatus:'pendente',notasEmitidas:[]}},'fiscal');
 assert.deepEqual(await nomes(),['COM NF'],'não solicitada fica fora da fila de emitir');
-assert((await page.$$eval('[data-corpo="fiscal:semnota"] .nf-lin .nf-nome',l=>l.map(x=>x.textContent.trim()))).includes('SEM NF NESTA'),'e aparece em 🚫 Sem nota — só acompanhar');
+assert(!(await page.textContent('#lista')).includes('SEM NF NESTA'),'e não aparece na aba Fiscal');
 await page.click('.visoes [data-v="cobranca"]');
 assert(/NF não solicitada/.test(await card('SEM NF NESTA'))&&!/nota pendente/.test(await card('SEM NF NESTA')),'e o selo diz "NF não solicitada"');
 

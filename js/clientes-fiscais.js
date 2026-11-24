@@ -184,16 +184,9 @@ function CFI_notaRegra(ficha){
   return f.notaSinal === 'separado' ? 'duas' : 'gravacao';
 }
 
-// 24/11 (Will): "entrou no sistema financeiro, entra no fiscal — mesmo se não vamos emitir
-// nota fiscal ou fazer cobrança". Desfaz a decisão de 20/11 (desmarcado nos dois sumia da
-// tela dela). Todo cliente é espelhado; quem não tem nota nem cobrança aparece lá nos grupos
-// "só acompanhar". O que continua FORA é a diária marcada 🚫 não faturável.
 function CFI_liberavel(ficha){
-  return true;
-}
-// Sem nota e sem cobrança do administrativo: ela só acompanha (não recebe aviso).
-function CFI_soAcompanhar(ficha){
-  return !!ficha && ficha.exigeNota === false && ficha.cobrancaAdministrativo === false;
+  if (!ficha) return true;
+  return ficha.exigeNota !== false || ficha.cobrancaAdministrativo !== false;
 }
 
 function CFI_casar(nomeLancamento, fichas){
@@ -248,6 +241,6 @@ function CFI_resumo(lancamentos, fichas, ano){
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CFI_UFS, CFI_OBRIGATORIOS, CFI_DESEJAVEIS, CFI_slug, CFI_so, CFI_validarCPF, CFI_validarCNPJ,
     CFI_validarDoc, CFI_tipoDoc, CFI_formatarDoc, CFI_validarCEP, CFI_validarUF, CFI_validarEmail,
-    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_soAcompanhar, CFI_NOTA_REGRAS, CFI_notaRegra,
+    CFI_completude, CFI_novaFicha, CFI_liberavel, CFI_NOTA_REGRAS, CFI_notaRegra,
     CFI_nucleoNome, CFI_parecidos, CFI_casar, CFI_adicionarApelido, CFI_pendencias, CFI_resumo };
 }

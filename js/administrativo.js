@@ -198,7 +198,7 @@ function fiscal(f){
  const proxima=futuras.map(diaIso).filter(Boolean).sort()[0]||'';
  return {livres,prontas,gravadas,futuras,desde,dias,liberaEm,proxima,mensal};
 }
-// 24/11 (Will): "entrou no financeiro, entra no fiscal — mesmo sem nota e sem cobrança".
+// Cobrança sem nota fiscal (cliente só de cobrança, ou "NF não solicitada" marcada nela).
 const semNota=f=>!f.exigeNota||(f.fiscalStatus==='nao_solicitada'&&!(f.notasEmitidas||[]).length);
 function seloFiscal(f){
  if(semNota(f))return '<span class="nf-pill">🚫 sem nota fiscal · só acompanhar</span>';
@@ -548,13 +548,11 @@ function listaFiscal(base){
  // Meses seguintes à vista: o que ainda vai gravar vem separado por mês, aberto.
  const porMes=new Map();futuras.forEach(o=>{const k=String(o.x.proxima||'').slice(0,7);if(!porMes.has(k))porMes.set(k,[]);porMes.get(k).push(o);});
  const feitas=base.filter(f=>!semNota(f)&&!fiscal(f)).sort(ordenador('grav'));
- const semNF=base.filter(semNota).sort(ordenador('grav-asc'));
  return (prontas.length?grupo('prontas','🧾 Emitir nota agora',prontas.map(o=>linha(o.f)),' urg'):'')
   +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
   +[...porMes.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).map(k=>grupo('fut:'+(k||'sem'),'⏳ Vai gravar em '+(k?mesExtenso(k):'data a definir'),porMes.get(k).map(o=>linha(o.f)))).join('')
   +(feitas.length?grupo('emitidas','✅ Nota emitida',feitas.map(linha),'',true):'')
-  +(semNF.length?grupo('semnota','🚫 Sem nota fiscal — só acompanhar',semNF.map(linha)):'')
-  ||'<div class="nf-vazio">✅ Nenhuma gravação neste recorte.</div>';
+  ||'<div class="nf-vazio">✅ Nenhuma nota para emitir.</div>';
 }
 // Cobrança (24/11): UMA lista, pelo vencimento (o adiamento vale como vencimento). Quem
 // foi cobrado e não pagou continua aqui, com o status no card — não vai para outra aba.
@@ -563,8 +561,8 @@ function listaCobranca(base){
  const todasAbertas=minhas.filter(f=>f.cobrancaStatus!=='pago');
  const aGravar=todasAbertas.filter(soAGravar).sort((a,b)=>String(aGravarAbertas(a).map(isoDiaria).sort()[0]).localeCompare(String(aGravarAbertas(b).map(isoDiaria).sort()[0])));
  const abertas=todasAbertas.filter(f=>!soAGravar(f)).sort(ordenador('venc'));
- const doWill=base.filter(f=>(f.clienteFiscal||{}).cobrancaAdministrativo===false&&f.cobrancaStatus!=='pago').sort(ordenador('venc'));
- const pagas=base.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
+ // Quem o Will cobra não aparece na aba Cobrança (24/11: "esses não quero que apareça").
+ const pagas=minhas.filter(f=>f.cobrancaStatus==='pago').sort((a,b)=>String(b.atualizadoEm||'').localeCompare(String(a.atualizadoEm||'')));
  const hoje=today(), em7=(()=>{const d=new Date(hoje+'T12:00:00');d.setDate(d.getDate()+7);return d.toISOString().slice(0,10);})();
  const atr=abertas.filter(atrasada).length;
  const semana=abertas.filter(f=>f.cobrancaStatus==='pendente'&&!atrasada(f)&&vencEf(f)&&vencEf(f)<=em7).length;
@@ -578,7 +576,6 @@ function listaCobranca(base){
  const porMes=new Map();aGravar.forEach(f=>{const k=String(aGravarAbertas(f).map(isoDiaria).sort()[0]||'').slice(0,7);if(!porMes.has(k))porMes.set(k,[]);porMes.get(k).push(f);});
  return (abertas.length?blocos(abertas):'<div class="nf-vazio">✅ Nada a cobrar agora.</div>')
   +[...porMes.keys()].sort().map(k=>grupo('agravar:'+k,'⏳ Vai gravar em '+mesExtenso(k)+' — cobrar depois da gravação',porMes.get(k).map(linha))).join('')
-  +(doWill.length?grupo('dowill','👤 O Will cobra — só acompanhar',doWill.map(linha)):'')
   +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
 }
 function lista(){

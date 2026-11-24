@@ -56,11 +56,14 @@ t=await abrirCom({demo:{...base,cliente:'TUDO CERTO',itens:[d('k',-20,1800,1800)
 assert(/Todas as gravações já têm nota/.test(t)&&/Já pagou R\$ 1\.800,00 \(100%\)/.test(t)&&/Falta pagar Nada — está tudo pago/.test(t),'tudo certo: '+t);
 assert(/O que fazer agora ?Nada\. Está tudo em dia/.test(t)&&!/Vencimento/.test(t),'nada a fazer, sem linha de vencimento');
 
-// ── 5. cliente que o Will cobra e que não pede nota: só acompanhar ──
-t=await abrirCom({demo:{...base,cliente:'SO ACOMPANHAR',itens:[d('w',-9,1200,0)],valor:1200,recebido:0,saldo:1200,vencimento:iso(-3),exigeNota:false,fiscalStatus:'nao_solicitada',
-  clienteFiscal:{cobrancaAdministrativo:false}}},'SO ACOMPANHAR');
-assert(/Este cliente não pede nota fiscal/.test(t)&&/Quem cobra este cliente é o Will — você só acompanha/.test(t),'só acompanhar: '+t);
-assert(/O que fazer agora ?Nada\. A cobrança é do Will/.test(t)&&!/em atraso/.test(t),'nada para ela');
+// ── 5. cliente só de NOTA (quem cobra é o Will): ela vê pelo Fiscal e só cuida da nota ──
+await page.evaluate(c=>{localStorage.setItem('wen_mock_marcas',JSON.stringify(c));localStorage.setItem('wen_fiscal_visao','fiscal');localStorage.setItem('wen_fiscal_fechados','[]');},
+  {demo:{...base,cliente:'SO NOTA',itens:[d('w',-9,1200,0)],valor:1200,recebido:0,saldo:1200,vencimento:iso(-3),clienteFiscal:{cobrancaAdministrativo:false}}});
+await page.reload();await page.waitForSelector('#lista .nf-lin');
+await page.locator('#lista .nf-lin',{hasText:'SO NOTA'}).locator('[data-abrir]').click();await page.waitForSelector('#situacao');
+t=(await page.innerText('#situacao')).replace(/\s+/g,' ').replace(/\u00a0/g,' ');await page.click('#fecharCobranca');
+assert(/Falta emitir R\$ 1\.200,00/.test(t)&&/Quem cobra este cliente é o Will — você só acompanha/.test(t),'só nota: '+t);
+assert(/O que fazer agora ?Emitir a nota de R\$ 1\.200,00/.test(t)&&!/Cobrar R\$/.test(t)&&!/em atraso/.test(t),'a tarefa dela é só a nota: '+t);
 
 // o texto que vem do cliente não vira HTML
 t=await abrirCom({demo:{...base,cliente:'ESCAPE',itens:[d('z',-9,100,0)],valor:100,recebido:0,saldo:100,vencimento:iso(5),promessaData:iso(1),promessaObs:'<img src=x onerror=window.__xss=1>'}},'ESCAPE');

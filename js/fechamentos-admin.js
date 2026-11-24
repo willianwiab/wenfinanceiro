@@ -438,8 +438,9 @@ async function FC_espelharInterno(regs,motivo){
     if(!r||!r.cliente||!(Number(r.valorTotal)>0)||!WENFechamentos.noPeriodo(r))return;
     if(r.naoFaturavel)return;   // pré-reserva, bloqueio de agenda, teste interno
     const ficha=CFI_casar(r.cliente,fichas);
-    // 24/11 (Will): todo cliente entra, mesmo sem nota e sem cobrança (CFI_liberavel é
-    // sempre verdadeiro). Só a diária 🚫 não faturável fica de fora, logo acima.
+    // Quem está desmarcado em nota E em cobrança NÃO entra na tela dela (decisão do Will de
+    // 20/11, reafirmada em 24/11 depois de ver o contrário no ar: "somente se tem nota e
+    // cobrança, somente nota ou somente cobrança — como decidido anteriormente").
     if(!CFI_liberavel(ficha))return;
     const chave=FC_chaveGrupo(r.cliente,r,ficha);
     if(!grupos.has(chave))grupos.set(chave,{cliente:r.cliente,ficha});
@@ -475,7 +476,6 @@ async function FC_espelharInterno(regs,motivo){
       await FC_limparOrfaos(id,doc.lancamentoIds||[]);
       feitos.push({id,cliente,novo:!antigo,valor:doc.valor,recebido:doc.recebido,saldo:doc.saldo,
         divergencia:div,diarias:doc.itens.length,motivo:motivo||'lancamento',
-        soAcompanhar:typeof CFI_soAcompanhar==='function'&&CFI_soAcompanhar(ficha),
         pagouAgora:!!(antigo&&antigo.saldo>0&&doc.saldo===0),
         parcial:!!(antigo&&doc.recebido>antigo.recebido&&doc.saldo>0)});
     }catch(e){console.warn('FC_espelhar',chave,e.message);erros.push(cliente+': '+e.message);}
@@ -710,7 +710,6 @@ async function AV_criar(feitos){
     try{
       const {tipo,texto}=AV_texto(f);
       if(tipo==='mudou'&&!f.divergencia)continue;        // mexida sem consequência não vira aviso
-      if(f.soAcompanhar)continue;                        // sem nota e sem cobrança dela: nada a fazer, nada a avisar
       const id=tipo+'-'+f.id+'-'+dia;
       const doc={tipo,texto,fechamentoId:f.id,cliente:f.cliente,valor:f.valor,saldo:f.saldo,
         criadoEm:new Date().toISOString(),lidoEm:''};
@@ -856,6 +855,10 @@ async function FC_sincronizarPendentes(){
   // Faxina (auditoria 24/11): cobrança de diária excluída e vínculo órfão. Não derruba o resto.
   try{const nf=await FC_limparFantasmas();if(nf)toast('🧹 '+nf+' cobrança(s) de diária excluída saíram do administrativo.');}catch(e){}
   try{await FC_limparVinculosOrfaos();}catch(e){}
+  // Quem não tem nota NEM cobrança não fica na tela dela (24/11). Cobrança com nota emitida
+  // permanece — sumir calado com algo que virou nota fiscal seria pior.
+  try{let n=0;for(const g of FC_naoAtendidos()){const r=await FC_removerCliente(g.cliente);n+=r.removidos;}
+    if(n)toast('🧹 '+n+' cobrança(s) de cliente sem nota e sem cobrança saíram do administrativo.');}catch(e){}
   if(!pendentes.length)return;
   let feitos=[],erro=null;
   try{feitos=await FC_espelhar(pendentes,'automatico');}catch(e){erro=e;feitos=e.feitos||[];}

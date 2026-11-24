@@ -103,23 +103,21 @@ await page.waitForSelector('#rFechDoc .fech-secao.futuro');
 const docF=(await page.textContent('#rFechDoc')).replace(/\s+/g,' ');
 assert(/⏳ Ainda vai gravar — cobrar depois · 1 diária/.test(docF)&&/Nada a cobrar agora\. Próxima gravação em \d\d\/\d\d/.test(docF)&&!/Saldo em aberto/.test(docF),'documento da futura: '+docF.slice(0,900));
 await page.click('#fecharCobranca');
-// ── 24/11: "entrou no financeiro, entra no fiscal — mesmo sem nota e sem cobrança" ──
+// ── 24/11: meses seguintes à vista; quem o Will cobra NÃO aparece na Cobrança e quem não tem
+// nota NÃO aparece no Fiscal ("somente se tem nota e cobrança, somente nota ou somente cobrança") ──
 await page.evaluate(c=>{localStorage.setItem('wen_fiscal_visao','cobranca');localStorage.setItem('wen_fiscal_fechados','[]');localStorage.setItem('wen_mock_marcas',JSON.stringify(c));},{
   demo:{cliente:'IRMAOS (Will cobra)',itens:[d('w1',-20,1200,0)],valor:1200,recebido:0,saldo:1200,vencimento:iso(-10),cobrancaStatus:'pendente',condicao:'avista',
         exigeNota:false,fiscalStatus:'nao_solicitada',clienteFiscal:{cobrancaAdministrativo:false}},
   demo2:{cliente:'MES QUE VEM',itens:[d('m1',35,2000,0)],valor:2000,recebido:0,saldo:2000,vencimento:iso(40),cobrancaStatus:'pendente',condicao:'avista',exigeNota:true,fiscalStatus:'pendente',notasEmitidas:[]},
   demo3:{cliente:'NORMAL',itens:[d('n1',-5,1000,0)],valor:1000,recebido:0,saldo:1000,vencimento:iso(2),cobrancaStatus:'pendente',condicao:'avista',exigeNota:true,fiscalStatus:'pendente',notasEmitidas:[]}});
 await page.reload();await page.waitForSelector('#lista .nf-lin');
-assert.deepEqual(await emGrupo('cobranca:dowill'),['IRMAOS (WILL COBRA)'],'quem o Will cobra aparece, no grupo "só acompanhar"');
-const iw=await card('IRMAOS');
-assert(/não cobrar — é o Will quem cobra/.test(iw)&&/em aberto · Will cobra/.test(iw),'com o selo e o valor identificado: '+iw);
-assert(!/em atraso/.test(iw)&&!/falta cobrar/.test(iw),'sem "em atraso" nem "falta cobrar" para ela');
+assert(!(await page.textContent('#lista')).includes('IRMAOS'),'quem o Will cobra não aparece na aba Cobrança');
+assert(!/O Will cobra — só acompanhar/.test(await page.textContent('#lista')),'e o grupo "só acompanhar" não existe');
 const cds=(await page.textContent('#cards')).replace(/\s+/g,' ');
 assert(/Em atraso ?0/.test(cds)&&/Falta cobrar ?1/.test(cds),'e não entra nos números dela: '+cds);
 assert.deepEqual(await emGrupo('cobranca:agravar:'),['MES QUE VEM'],'mês seguinte à vista, sem precisar abrir nada');
 await page.click('.visoes [data-v="fiscal"]');
-assert.deepEqual(await emGrupo('fiscal:semnota'),['IRMAOS (WILL COBRA)'],'no fiscal: grupo "Sem nota fiscal — só acompanhar"');
-assert(/🚫 sem nota fiscal · só acompanhar/.test(await card('IRMAOS')),'com o selo');
+assert(!(await page.textContent('#lista')).includes('IRMAOS'),'quem não tem nota não aparece na aba Fiscal');
 assert.deepEqual(await emGrupo('fiscal:fut:'),['MES QUE VEM'],'gravação do mês seguinte aparece, no mês dela');
 assert.deepEqual(await emGrupo('fiscal:prontas'),['NORMAL'],'e a fila de emitir continua só com o que já gravou');
 const fc=(await page.textContent('#cards')).replace(/\s+/g,' ');

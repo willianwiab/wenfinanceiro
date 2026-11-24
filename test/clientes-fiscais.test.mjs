@@ -146,11 +146,8 @@ ok(C.CFI_liberavel(undefined), 'ficha indefinida também');
 
   ok(C.CFI_liberavel({ ...f, exigeNota: false }), 'sem NF mas com cobrança: entra');
   ok(C.CFI_liberavel({ ...f, cobrancaAdministrativo: false }), 'com NF mas cobrança do Will: entra');
-  // 24/11 (Will): "entrou no financeiro, entra no fiscal" — desmarcado nos dois também entra
-  ok(C.CFI_liberavel({ ...f, exigeNota: false, cobrancaAdministrativo: false }),
-     'desmarcado nos dois: entra (só acompanhar)');
-  ok(C.CFI_soAcompanhar({ ...f, exigeNota: false, cobrancaAdministrativo: false }), 'e é marcado como só acompanhar');
-  ok(!C.CFI_soAcompanhar(f), 'ficha normal não é só acompanhar');
+  ok(!C.CFI_liberavel({ ...f, exigeNota: false, cobrancaAdministrativo: false }),
+     'desmarcado nos dois: fica de fora');
 
   // ficha antiga, gravada antes do campo existir, não pode sumir da liberação
   const antiga = { ...f }; delete antiga.cobrancaAdministrativo;
