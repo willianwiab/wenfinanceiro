@@ -603,8 +603,15 @@ function listaFiscal(base){
    .sort((a,b)=>String(b.n.data||'').localeCompare(String(a.n.data||''))||a.f.cliente.localeCompare(b.f.cliente,'pt-BR'));
  $('cards').innerHTML+='<button type="button" class="card-p emitidas" id="verEmitidas"><label>Notas emitidas</label><div class="val">'+feitas.length+'</div><div class="val-sub">'+(feitas.length?'clique para ver':'nenhuma registrada')+'</div></button>';
  return (prontas.length?grupo('prontas','🧾 Emitir nota agora',prontas.map(o=>linha(o.f)),' urg'):'')
-  +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
-  +[...porMes.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).map(k=>grupo('fut:'+(k||'sem'),'⏳ Vai gravar em '+(k?mesExtenso(k):'data a definir'),porMes.get(k).map(o=>linha(o.f)))).join('')
+  // Ordem do calendário (24/11, Will): o que grava ainda NESTE mês vem antes do fechamento
+  // mensal, que só vira nota no dia 1º do mês seguinte; os meses de lá em diante, depois.
+  +(()=>{const mesFech=String(mensais.map(o=>o.x.liberaEm).filter(Boolean).sort()[0]||'').slice(0,7);
+     const gF=k=>grupo('fut:'+(k||'sem'),'⏳ Vai gravar em '+(k?mesExtenso(k):'data a definir'),porMes.get(k).map(o=>linha(o.f)));
+     const ks=[...porMes.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999'));
+     const antes=mensais.length?ks.filter(k=>k&&mesFech&&k<mesFech):[];
+     return antes.map(gF).join('')
+       +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
+       +ks.filter(k=>!antes.includes(k)).map(gF).join('');})()
   +(feitas.length?grupo('emitidas','✅ Notas emitidas',feitas.map(o=>linhaNota(o.f,o.n)),'',true,['nota','notas']):'')
   ||'<div class="nf-vazio">✅ Nenhuma nota para emitir.</div>';
 }
