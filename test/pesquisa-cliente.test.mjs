@@ -22,6 +22,7 @@ await page.reload();await page.waitForSelector('#lista .nf-lin');
 
 // ── a aba chama só "Fiscal" ──
 assert.equal((await page.textContent('.visoes [data-v="fiscal"]')).trim(),'🧾 Fiscal','sem o "gravou, faz a nota"');
+assert.equal((await page.textContent('.visoes [data-v="cobranca"]')).trim(),'💰 Cobrança','e a outra só "Cobrança"');
 
 // ── caixa de pesquisa: pedaço do nome, sem acento, sem maiúscula ──
 assert.equal(await page.getAttribute('#busca','type'),'search');
