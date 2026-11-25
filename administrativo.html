@@ -161,7 +161,7 @@ summary{cursor:pointer;font-size:.84rem;color:#64748b;font-weight:600}
 .nf-abas button.on{background:#1e40af;border-color:#1e40af;color:#fff}
 .nf-abas button:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
 .nf-filtros .fg.cli{flex:1 1 320px}
-.nf-filtros .fg.cli select{width:100%}
+.nf-filtros .fg.cli select,.nf-filtros .fg.cli input{width:100%}
 .nf-exp{background:#fff;border:1px solid #e2e8f0;border-radius:7px;width:28px;height:28px;cursor:pointer;color:#64748b;font-size:.8rem;flex-shrink:0}
 .nf-exp:hover{background:#f1f5f9;color:#0f172a}
 .nf-exp:focus-visible{outline:2px solid #6d28d9;outline-offset:2px}
@@ -336,11 +336,11 @@ body.cobranca-aberta{overflow:hidden}
   </section>
   <div id="app" hidden>
     <div class="visoes" role="tablist" aria-label="O que você vai trabalhar agora">
-      <button type="button" role="tab" data-v="fiscal">🧾 Fiscal <small>gravou, faz a nota</small></button>
+      <button type="button" role="tab" data-v="fiscal">🧾 Fiscal</button>
       <button type="button" role="tab" data-v="cobranca">💰 Cobrança <small>pelo vencimento</small></button>
     </div>
     <div class="nf-filtros">
-      <div class="fg cli"><label>Cliente</label><select id="busca"><option value="">— Todos —</option></select></div>
+      <div class="fg cli"><label for="busca">Pesquisar cliente</label><input id="busca" type="search" list="buscaLista" placeholder="🔎 Digite o nome do cliente…" autocomplete="off" spellcheck="false"><datalist id="buscaLista"></datalist></div>
       <div class="fg" style="align-self:end"><button type="button" id="atualizar">↻ Atualizar</button></div>
       <div class="fg" id="freioAviso" hidden style="align-self:end;flex-basis:100%"><span class="status" role="status">⏸ A atualização automática foi pausada por hoje (limite de segurança de leituras). Use o botão <b>↻ Atualizar</b>. Avise o Will.</span></div>
     </div>
@@ -364,4 +364,4 @@ body.cobranca-aberta{overflow:hidden}
     <button type="button" class="btn" id="nfCopiar" style="background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:11px 19px;font-weight:700;cursor:pointer;width:auto">📋 Copiar tudo</button>
   </div>
 </div></div>
-<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=1c63790f"></script></body></html>
+<div id="toast" class="toast"></div><article id="printArea"></article><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="js/fechamentos.js?v=77d3a402"></script><script src="js/administrativo.js?v=b936e97d"></script></body></html>

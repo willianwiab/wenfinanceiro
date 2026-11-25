@@ -417,8 +417,8 @@ const mesesDe=f=>(f.itens||[]).map(i=>mesChave(i.mes)).filter(Boolean);
 function combo(){
  const cli=$('busca'), atual=cli.value;
  const nomes=[...new Set(docs.map(f=>f.cliente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
- cli.innerHTML='<option value="">— Todos —</option>'+nomes.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
- cli.value=nomes.includes(atual)?atual:'';
+ // Caixa de pesquisa (24/11, Will): digita um pedaço do nome; a lista de clientes vem como sugestão.
+ $('buscaLista').innerHTML=nomes.map(n=>`<option value="${esc(n)}">`).join('');
  const meses=[...new Set(docs.flatMap(mesesDe))].sort();
  for(const [id,padrao] of [['mesIni',meses[0]],['mesFim',meses.at(-1)]]){
    const el=$(id);if(!el)continue;const tinha=el.value;
@@ -574,9 +574,10 @@ function blocos(vis){
 let fechados=new Set();try{fechados=new Set(JSON.parse(localStorage.getItem('wen_fiscal_fechados')||'[]'));}catch(e){}
 function salvarFechados(){try{localStorage.setItem('wen_fiscal_fechados',JSON.stringify([...fechados]));}catch(e){}}
 let gruposDaTela=[];
+let buscando=false;   // pesquisando um cliente: todo grupo abre, para o resultado não ficar escondido
 function grupo(chave,titulo,linhas,cls='',padraoFechado=false,un=['cobrança','cobranças']){
  const k=visao+':'+chave, n=linhas.length;
- const fechado=padraoFechado?!fechados.has('+'+k):fechados.has(k);
+ const fechado=buscando?false:padraoFechado?!fechados.has('+'+k):fechados.has(k);
  gruposDaTela.push(k);
  return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}"${padraoFechado?' data-padrao="fechado"':''} aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
   +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?un[0]:un[1]}${fechado?' · escondido':''}</span></button>`
@@ -640,12 +641,14 @@ function listaCobranca(base){
   +(pagas.length?grupo('pagas','✅ Pagas',pagas.map(linha),'',true):'');
 }
 function lista(){
- const cli=$('busca').value;
- const base=docs.filter(f=>!cli||f.cliente===cli);
+ // sem acento e sem maiúscula: "vitoria" acha "VITÓRIA"; pedaço do nome já serve
+ const semAc=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const cli=semAc($('busca').value);buscando=!!cli;
+ const base=docs.filter(f=>!cli||semAc(f.cliente).includes(cli));
  document.querySelectorAll('.visoes [data-v]').forEach(b=>{b.classList.toggle('on',b.dataset.v===visao);b.setAttribute('aria-selected',String(b.dataset.v===visao));});
  gruposDaTela=[];
  const html=visao==='fiscal'?listaFiscal(base):listaCobranca(base);
- $('lista').innerHTML=barraGrupos()+html;
+ $('lista').innerHTML=buscando&&!base.length?'<div class="nf-vazio">Nenhum cliente com “'+esc($('busca').value.trim())+'”. Confira o nome ou apague a pesquisa.</div>':barraGrupos()+html;
  ligarLista();
 }
 function ligarLista(){
@@ -1351,7 +1354,7 @@ $('nfCopiar').onclick=()=>copiarTexto($('nfTextoArea').value,'📋 Texto da nota
 $('modalNFBg').onclick=e=>{if(e.target===$('modalNFBg'))$('modalNFBg').classList.remove('open');};
 $('sair').onclick=()=>{sessionStorage.removeItem('wen_admin_rt');localStorage.removeItem('wen_auth_rt');location.replace(location.pathname);};
 document.querySelectorAll('.visoes [data-v]').forEach(b=>b.onclick=()=>{visao=b.dataset.v;try{localStorage.setItem('wen_fiscal_visao',visao);}catch(e){}lista();});
-$('busca').onchange=lista;
+$('busca').oninput=lista;$('busca').onchange=lista;
 document.querySelectorAll('.nf-abas [data-f]').forEach(b=>b.onclick=()=>{filtro=b.dataset.f;document.querySelectorAll('.nf-abas [data-f]').forEach(x=>x.classList.toggle('on',x===b));lista();});
 $('atualizar').onclick=()=>{if(!dirty||confirm('Descartar alterações e atualizar?'))carregar();};
 window.addEventListener('focus',aoVivo);   // voltar para a aba confere o que mudou (antes relia tudo a cada foco)
