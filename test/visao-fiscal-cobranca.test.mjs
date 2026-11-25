@@ -74,7 +74,8 @@ await page.evaluate(c=>{localStorage.setItem('wen_fiscal_visao','cobranca');loca
   demo2:{cliente:'FUTURA',itens:[d('f1',-9,3750,3750),d('f2',3,3750,0)],valor:7500,recebido:3750,saldo:3750,vencimento:iso(-1),cobrancaStatus:'enviada',condicao:'avista',exigeNota:false},
   demo3:{cliente:'PARCIAL',itens:[d('x',-14,3500,3500),d('y',-4,3500,1750)],valor:7000,recebido:5250,saldo:1750,vencimento:iso(5),cobrancaStatus:'pendente',condicao:'avista'}});
 await page.reload();await page.waitForSelector('#lista .nf-lin');
-const card=n=>page.locator('#lista .nf-lin',{hasText:n}).textContent().then(t=>t.replace(/\s+/g,' ').replace(/ /g,' '));
+// as linhas de "✅ Notas emitidas" (uma por nota) não são o card da cobrança
+const card=n=>page.locator('#lista .nf-lin:not(.nota-lin)',{hasText:n}).textContent().then(t=>t.replace(/\s+/g,' ').replace(/ /g,' '));
 const dn=await card('DANNY');
 assert(/1 diária em aberto · 6h/.test(dn),'Danny: só a diária em aberto no card: '+dn);
 assert(/✔️ 2 pagas · fora da cobrança/.test(dn)&&/falta cobrar ?R\$ 3\.750,00/.test(dn),'as pagas saem; falta cobrar 3.750: '+dn);
@@ -140,7 +141,10 @@ assert(!/11\.250/.test(fd),'nunca o total de 11.250');
 const ff=await card('DUAS FALTAM');
 assert(/2 diárias sem nota/.test(ff)&&/nota a emitir ?R\$ 3\.500,00/.test(ff)&&/\+ R\$ 1\.000,00 depois/.test(ff),'as duas já gravadas agora; a futura fica "depois": '+ff);
 assert(!/4\.500/.test(ff),'sem o total');
-assert(/nota emitida ?R\$ 1\.800,00/.test(await card('TUDO COM NOTA')),'já emitida mostra o valor da nota');
+// desde 24/11 a nota emitida aparece numa linha por NOTA, no grupo "✅ Notas emitidas"
+const tn=(await page.locator('#lista .nota-lin',{hasText:'TUDO COM NOTA'}).textContent()).replace(/\s+/g,' ').replace(/ /g,' ');
+assert(/nota nº 7/.test(tn)&&/nota emitida ?R\$ 1\.800,00/.test(tn),'já emitida mostra o número e o valor da nota: '+tn);
+assert.equal(await page.locator('#lista .nota-lin',{hasText:'DANNY'}).count(),2,'e as duas notas da Danny também estão lá');
 
 await page.evaluate(()=>['wen_mock_marcas','wen_fiscal_visao','wen_fiscal_fechados'].forEach(k=>localStorage.removeItem(k)));
 assert.deepEqual(erros,[]);

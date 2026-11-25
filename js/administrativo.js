@@ -122,6 +122,9 @@ async function fichaSalvar(cliente){
  }catch(e){fichas[id]=antiga;avisar(e.message,true);}
 }
 function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+// Dia (em São Paulo) de um carimbo de hora gravado em UTC. Sem isto, o que foi cobrado
+// depois das 21h aparecia como "cobrada" no dia seguinte (24/11).
+function diaSP(ts){const d=new Date(ts);return isNaN(d)?String(ts||'').slice(0,10):new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
 function atrasada(f){const v=vencEf(f);return f.cobrancaStatus!=='pago'&&!soAGravar(f)&&!!v&&v<today();}
 // ── Marcas do Will no card (24/11): 🔥 urgente, ⏰ lembrete, 💤 adiar e 📅 fechamento
 //    mensal. "Eu marco, ela vê": os botões só aparecem quando o Will entra AQUI com o login
@@ -197,6 +200,36 @@ function fiscal(f){
  const liberaEm=gravadas.map(libera).sort()[0]||'';
  const proxima=futuras.map(diaIso).filter(Boolean).sort()[0]||'';
  return {livres,prontas,gravadas,futuras,desde,dias,liberaEm,proxima,mensal};
+}
+// Notas emitidas de uma cobrança, num formato só (24/11, Will: "preciso visualizar também
+// as notas emitidas"): as registradas por diária, a marcada no campo (cobre tudo) e o 50/50.
+function notasDe(f){
+ if(!f.exigeNota)return [];
+ const it=f.itens||[];
+ if(f.notaModo==='separado')return [['nfSinal','sinal',f.recebido],['nfSaldo','saldo',f.saldo]]
+   .filter(([p])=>f[p+'Status']==='emitida')
+   .map(([p,rot,v])=>({numero:String(f[p+'Numero']||'—'),data:f[p+'Data']||'',itens:it,valor:Number(v)||0,parte:rot}));
+ const reg=f.notasEmitidas||[];
+ if(reg.length)return reg.map((n,idx)=>({numero:String(n.numero||'—'),data:n.data||'',idx,
+   itens:it.filter(i=>(n.ids||[]).map(String).includes(String(i.id))),valor:Number(n.valor)||0}));
+ if(f.fiscalStatus==='emitida')return [{numero:String(f.nfNumero||'—'),data:f.nfData||'',itens:it,valor:Number(f.valor)||0,tudo:true}];
+ return [];
+}
+const notaDaDiaria=(f,i)=>notasDe(f).filter(n=>n.itens.includes(i)).map(n=>n.numero);
+// Uma linha por NOTA no grupo "✅ Notas emitidas" — a diária com nota sai do card de emitir
+// e aparece aqui, com o número, a data e o valor da nota.
+function linhaNota(f,n){
+ const dias=n.itens.map(i=>String(i.data||'').slice(0,5)).filter(Boolean);
+ const horas=n.itens.reduce((t,i)=>t+(Number(i.horas)||0),0);
+ const livres=f.notaModo==='separado'?[]:WENFechamentos.diariasLivres(f);
+ const falta=livres.length&&(f.notasEmitidas||[]).length?`<span class="nf-pill pend">ainda falta nota de ${livres.length} ${livres.length===1?'diária':'diárias'} desta cobrança</span>`:'';
+ return `<div class="nf-lin emit nota-lin" data-id="${esc(f.id)}" data-nota-num="${esc(n.numero)}"><div style="width:100%"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">`
+  +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
+  +`<div class="nf-meta"><span><b>nota nº ${esc(n.numero)}</b>${n.data?' · emitida em '+esc(dataBR(n.data)):''}${n.parte?' · nota do '+n.parte:''}`
+  +`${dias.length?' · '+(dias.length===1?'diária de ':'diárias de ')+esc(dias.join(', ')):''}${horas?' · '+horas+'h':''}</span>${falta}</div></div>`
+  +`<div class="nf-val"><span class="nf-rot esp">nota emitida</span>${cash(n.valor)}</div>`
+  +`<div class="nf-acao"><button type="button" class="abrir" data-abrir="${esc(f.id)}" aria-haspopup="dialog">📄 Abrir cobrança</button></div>`
+  +'</div></div></div>';
 }
 // Cobrança sem nota fiscal (cliente só de cobrança, ou "NF não solicitada" marcada nela).
 const semNota=f=>!f.exigeNota||(f.fiscalStatus==='nao_solicitada'&&!(f.notasEmitidas||[]).length);
@@ -401,6 +434,10 @@ function noRecorte(f){
 // ── A linha é a .nf-lin da fila de notas: ▸ para abrir as diárias, nome, selos,
 //    valor e a ação. As diárias aparecem só para conferência — a composição é do dono.
 function diarias(f){
+ if(visao==='fiscal'&&!semNota(f))
+  return '<div class="nf-itens">'+f.itens.map(i=>{const ns=notaDaDiaria(f,i);
+    return `<div class="nf-item${ns.length?' pago':''}"><span>${ns.length?'✔️':'🧾'}</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)} · ${ns.length?'nota nº '+esc(ns.join(', ')):'<b>sem nota</b>'}</span></div>`;}).join('')
+   +'<div class="nf-itens-rod">Para registrar a nota, abra a cobrança → aba <b>Nota fiscal</b> e marque só as diárias que a nota cobre.</div></div>';
  const ab=gravadasAbertas(f), fu=aGravarAbertas(f), pg=f.itens.filter(i=>!(Number(i.saldo)>0));
  if(visao==='cobranca'&&[ab,fu,pg].filter(l=>l.length).length>1)
   return '<div class="nf-itens">'+ab.map(i=>`<div class="nf-item"><span>🔴</span><span>${esc(i.data)} · ${i.horas}h · ${esc((i.studio||'').toUpperCase())} · ${cash(i.valor)}${Number(i.recebido)>0?' · '+cash(i.recebido)+' pago':''} · <b>falta ${cash(i.saldo)}</b></span></div>`).join('')
@@ -439,7 +476,7 @@ function linha(f){
  const cor=visao==='fiscal'?(xf&&xf.prontas.length?(xf.dias>7?'div':'fila'):'env')
    :atraso?'div':f.cobrancaStatus==='pago'?'emit':f.cobrancaStatus==='enviada'?'env':'fila';
  const diasAtr=atraso?Math.round((Date.parse(today()+'T00:00:00')-Date.parse(vencEf(f)+'T00:00:00'))/86400000):0;
- const dEnv=f.enviadoEm?ddmm(String(f.enviadoEm).slice(0,10)):'';
+ const dEnv=f.enviadoEm?ddmm(diaSP(f.enviadoEm)):'';
  const selo=f.cobrancaStatus==='pago'?'<span class="nf-pill ok">pago</span>'
    :(f.cobrancaStatus==='informado'?'<span class="nf-pill pend">cliente disse que pagou · Will confere</span>'
      :f.cobrancaStatus==='enviada'?`<span class="nf-pill env">📨 cobrada${dEnv?' em '+dEnv:''}</span>`
@@ -470,7 +507,7 @@ function linha(f){
   +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
   +`<button type="button" class="nf-exp" data-exp="${esc(f.id)}" aria-expanded="${aberto}">${aberto?'▾':'▸'}</button>`
   +`<div class="nf-info"><div class="nf-nome">${esc((f.cliente||'').toUpperCase())}</div>`
-  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${subF&&its.length<(f.itens||[]).length?' sem nota':cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f)+(comNotaF>0?`<span class="nf-pill ok">✔️ ${comNotaF} com nota</span>`:''):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
+  +`<div class="nf-meta"><span>${esc(per)}${faixa?' · '+esc(faixa):''} · ${its.length} ${its.length===1?'diária':'diárias'}${subF&&its.length<(f.itens||[]).length?' sem nota':cob&&abertasF.length&&(pagasF||futF.length)?' em aberto':cob&&!abertasF.length&&futF.length?' a gravar':''} · ${horas}h · ${venc}</span>${cob&&pagasF&&(abertasF.length||futF.length)?`<span class="nf-pill ok">✔️ ${pagasF} ${pagasF===1?'paga':'pagas'} · fora da cobrança</span>`:''}${cob&&futF.length?`<span class="nf-pill">⏳ ${futF.length===1?'grava em '+ddmm(isoDiaria(futF[0])):futF.length+' a gravar · a partir de '+ddmm(futF.map(isoDiaria).sort()[0])}</span>`:''}${marcasSelos(f)}${visao==='fiscal'?seloFiscal(f)+(comNotaF>0?`<span class="nf-pill ok">✔️ ${comNotaF} com nota${(f.notasEmitidas||[]).length?' · nº '+esc((f.notasEmitidas||[]).map(n=>n.numero).join(', ')):''}</span>`:''):''}${visao==='fiscal'?'':(semCobranca?'':selo)+selocob}${visao==='fiscal'?'':selonf}</div></div>`
   +(subF
       ?(()=>{const c=l=>l.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0), v=c(subF), resto=c(xf.livres)-v;
         return `<div class="nf-val"><span class="nf-rot${xf.prontas.length?'':' nada'}">${xf.prontas.length?'nota a emitir':'nota depois'}</span>${cash(v/100)}`
@@ -537,12 +574,12 @@ function blocos(vis){
 let fechados=new Set();try{fechados=new Set(JSON.parse(localStorage.getItem('wen_fiscal_fechados')||'[]'));}catch(e){}
 function salvarFechados(){try{localStorage.setItem('wen_fiscal_fechados',JSON.stringify([...fechados]));}catch(e){}}
 let gruposDaTela=[];
-function grupo(chave,titulo,linhas,cls='',padraoFechado=false){
+function grupo(chave,titulo,linhas,cls='',padraoFechado=false,un=['cobrança','cobranças']){
  const k=visao+':'+chave, n=linhas.length;
  const fechado=padraoFechado?!fechados.has('+'+k):fechados.has(k);
  gruposDaTela.push(k);
  return `<button type="button" class="grupo-mes${cls}${fechado?' fechado':''}" data-grupo="${esc(k)}"${padraoFechado?' data-padrao="fechado"':''} aria-expanded="${!fechado}" title="${fechado?'Expandir':'Esconder'}">`
-  +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?'cobrança':'cobranças'}${fechado?' · escondido':''}</span></button>`
+  +`<span class="seta" aria-hidden="true">${fechado?'▸':'▾'}</span><b>${titulo}</b><span class="qtd">${n} ${n===1?un[0]:un[1]}${fechado?' · escondido':''}</span></button>`
   +`<div class="grupo-corpo${cls}" data-corpo="${esc(k)}"${fechado?' hidden':''}>${linhas.join('')}</div>`;
 }
 function barraGrupos(){
@@ -561,11 +598,14 @@ function listaFiscal(base){
   +'<div class="card-p pendente"><label>Esperando</label><div class="val">'+(mensais.length+futuras.length)+'</div><div class="val-sub">'+mensais.length+' fechamento mensal · '+futuras.length+' ainda vai gravar</div></div>';
  // Meses seguintes à vista: o que ainda vai gravar vem separado por mês, aberto.
  const porMes=new Map();futuras.forEach(o=>{const k=String(o.x.proxima||'').slice(0,7);if(!porMes.has(k))porMes.set(k,[]);porMes.get(k).push(o);});
- const feitas=base.filter(f=>!semNota(f)&&!fiscal(f)).sort(ordenador('grav'));
+ // Toda nota emitida, inclusive a de quem ainda tem outra diária esperando nota.
+ const feitas=base.filter(f=>!semNota(f)).flatMap(f=>notasDe(f).map(n=>({f,n})))
+   .sort((a,b)=>String(b.n.data||'').localeCompare(String(a.n.data||''))||a.f.cliente.localeCompare(b.f.cliente,'pt-BR'));
+ $('cards').innerHTML+='<button type="button" class="card-p emitidas" id="verEmitidas"><label>Notas emitidas</label><div class="val">'+feitas.length+'</div><div class="val-sub">'+(feitas.length?'clique para ver':'nenhuma registrada')+'</div></button>';
  return (prontas.length?grupo('prontas','🧾 Emitir nota agora',prontas.map(o=>linha(o.f)),' urg'):'')
   +(mensais.length?grupo('mensal','📅 Fechamento mensal — nota no começo do mês seguinte',mensais.map(o=>linha(o.f))):'')
   +[...porMes.keys()].sort((a,b)=>(a||'9999').localeCompare(b||'9999')).map(k=>grupo('fut:'+(k||'sem'),'⏳ Vai gravar em '+(k?mesExtenso(k):'data a definir'),porMes.get(k).map(o=>linha(o.f)))).join('')
-  +(feitas.length?grupo('emitidas','✅ Nota emitida',feitas.map(linha),'',true):'')
+  +(feitas.length?grupo('emitidas','✅ Notas emitidas',feitas.map(o=>linhaNota(o.f,o.n)),'',true,['nota','notas']):'')
   ||'<div class="nf-vazio">✅ Nenhuma nota para emitir.</div>';
 }
 // Cobrança (24/11): UMA lista, pelo vencimento (o adiamento vale como vencimento). Quem
@@ -623,6 +663,9 @@ function ligarLista(){
    e.stopPropagation();const id=b.dataset.exp;abertos.has(id)?abertos.delete(id):abertos.add(id);lista();});
 
  $('lista').querySelectorAll('[data-abrir]').forEach(b=>b.onclick=()=>abrir(b.dataset.abrir));
+ const ve=$('verEmitidas');
+ if(ve)ve.onclick=()=>{if(!fechados.has('+fiscal:emitidas')){fechados.add('+fiscal:emitidas');salvarFechados();lista();}
+   const g=$('lista').querySelector('[data-grupo="fiscal:emitidas"]');if(g){g.scrollIntoView({behavior:'smooth',block:'start'});g.focus({preventScroll:true});}};
 }
 // ── O fechamento aberto é o MESMO documento do Relatórios → Fechamento do WEN
 //    Financeiro: faixa verde, cartões de resumo, tabela por mês, barra de total e
@@ -868,7 +911,7 @@ function blocoNotas(f){
  return `<div class="notas-bloco">
   ${jaFeitas.length?`<div class="notas-feitas"><b>Notas já emitidas</b>${jaFeitas.map(n=>
     `<div class="nota-feita"><span>nº ${esc(n.numero)} · ${esc(String(n.data||'').split('-').reverse().join('/'))}</span>
-     <span class="muted">${(n.ids||[]).length} diária(s)</span><b>${cash(n.valor)}</b></div>`).join('')}</div>`:''}
+     <span class="muted">${(l=>l.length?(l.length===1?'diária de ':'diárias de ')+esc(l.join(', ')):(n.ids||[]).length+' diária(s)')((f.itens||[]).filter(i=>(n.ids||[]).map(String).includes(String(i.id))).map(i=>String(i.data||'').slice(0,5)))}</span><b>${cash(n.valor)}</b>${dono?`<button type="button" class="mini" data-desfazer-nota="${esc(n.numero)}" title="Registrou errado? Desfaz só o registro desta nota — as diárias voltam para a fila de emitir.">↩️ Desfazer</button>`:''}</div>`).join('')}</div>`:''}
   ${livres.length?`
    <div class="notas-top"><b>🧾 Diárias desta nota</b>
      <button type="button" id="notaTodas" class="mini">${livres.every(r=>notaSel.has(String(r.id)))?'Desmarcar todas':'Marcar todas'}</button></div>
@@ -990,7 +1033,7 @@ function situacao(f){
  // ── cobrança ──
  if(sal>0){
   linhas.push(['📨','Cobrança',semCob?'Quem cobra este cliente é <b>o Will</b> — você só acompanha.'
-   :f.cobrancaStatus==='enviada'?`Você <b>já cobrou</b>${f.enviadoEm?' em '+ddmm(String(f.enviadoEm).slice(0,10)):''} e o pagamento ainda não entrou.`
+   :f.cobrancaStatus==='enviada'?`Você <b>já cobrou</b>${f.enviadoEm?' em '+ddmm(diaSP(f.enviadoEm)):''} e o pagamento ainda não entrou.`
    :f.cobrancaStatus==='informado'?'O cliente <b>disse que já pagou</b> — o Will vai conferir no banco e dar a baixa.'
    :'<b>Ainda não foi cobrado.</b>']);
  }
@@ -1120,6 +1163,7 @@ function abrir(id){
      redesenhaNotas();sincronizarDescricao(g);};
    const reg=$('notaRegistrar');
    if(reg)reg.onclick=()=>registrarNota(g);
+   $('editor').querySelectorAll('[data-desfazer-nota]').forEach(b=>b.onclick=()=>desfazerNota(g,b.dataset.desfazerNota));
  }
  notaSel=new Set(WENFechamentos.diariasLivres(f).map(r=>String(r.id)));
  descAuto='';
@@ -1141,6 +1185,12 @@ async function registrarNota(f){
  try{
   const nota=WENFechamentos.validarNota(f,{numero:($('notaNumero')||{}).value,
     data:($('notaData')||{}).value,ids:[...notaSel]});
+  if(nota.ids.length>1){
+    const its=(f.itens||[]).filter(i=>nota.ids.includes(String(i.id)));
+    if(!confirm('A nota '+nota.numero+' vai cobrir '+its.length+' diárias — total '+cash(nota.valor)+':\n\n'
+      +its.map(i=>'• '+String(i.data||'')+' — '+cash(i.valor)).join('\n')
+      +'\n\nEstá certo? Se a nota é de uma diária só, cancele e desmarque as outras.'))return;
+  }
   const lista=[...(f.notasEmitidas||[]),nota];
   const livresDepois=WENFechamentos.diariasLivres({...f,notasEmitidas:lista});
   const update={notasEmitidas:lista,atualizadoEm:new Date().toISOString(),
@@ -1158,6 +1208,30 @@ async function registrarNota(f){
   avisar('Nota '+nota.numero+' registrada — '+cash(nota.valor)+'.');
   abrir(f.id);
  }catch(e){avisar(e.message,true);if($('notaRegistrar'))$('notaRegistrar').disabled=false;}
+ finally{busy=false;}
+}
+// ↩️ Desfazer o registro de UMA nota (só o dono — as regras não deixam a lista encolher
+// pela conta dela). Não mexe na nota da Prefeitura: só devolve as diárias para a fila.
+async function desfazerNota(f,numero){
+ if(busy||!dono)return;
+ const alvo=(f.notasEmitidas||[]).find(n=>String(n.numero)===String(numero));if(!alvo)return;
+ if(!confirm('Desfazer o registro da nota '+alvo.numero+' ('+cash(alvo.valor)+')?\n\nAs diárias dela voltam para "emitir nota". Isto não cancela a nota na Prefeitura.'))return;
+ const resto=(f.notasEmitidas||[]).filter(n=>n!==alvo);
+ const update={notasEmitidas:resto,nfNumero:resto.map(n=>n.numero).join(', '),nfData:resto.length?resto.at(-1).data:'',
+   fiscalStatus:'pendente',atualizadoEm:new Date().toISOString()};
+ busy=true;
+ try{
+  let time=f.updateTime;
+  if(!mock){
+   const masks=Object.keys(update).map(k=>'updateMask.fieldPaths='+k).join('&');
+   const j=await req('/administrativo_fechamentos/'+encodeURIComponent(f.id)+'?'+masks+'&currentDocument.updateTime='+encodeURIComponent(f.updateTime),
+     {method:'PATCH',body:JSON.stringify({fields:Object.fromEntries(Object.entries(update).map(([k,v])=>[k,to(v)]))})});
+   time=j.updateTime;
+  }
+  Object.assign(f,update,{updateTime:time});
+  busy=false;lista();abrir(f.id);
+  avisar('Registro da nota '+alvo.numero+' desfeito. As diárias voltaram para a fila de emitir.');
+ }catch(e){avisar(e.message,true);}
  finally{busy=false;}
 }
 // Grava só as marcas (updateMask) com a mesma trava de concorrência do salvar.
@@ -1230,6 +1304,9 @@ async function salvar(enviar){
   if(update.fiscalStatus==='pendente'&&num&&num!==auto){avisar('Você preencheu o número da nota. Para registrar, marque "Nota emitida" (ou use o botão 🧾 Registrar nota) — ou apague o número.',true);return;}
   if(update.fiscalStatus==='emitida'&&livres.length){
    if(jaReg.length){avisar('Ainda há '+livres.length+' diária(s) sem nota. Use o botão 🧾 Registrar nota para a(s) que falta(m).',true);return;}
+   // 24/11 (Vendendo Valor): a nota era de uma diária (R$ 2.400) e o campo cobriu as duas
+   // (R$ 7.800) — a de R$ 5.400 sumiu da fila de emitir. Com mais de uma, tem que escolher.
+   if(livres.length>1){avisar('Esta cobrança tem '+livres.length+' diárias sem nota ('+livres.map(i=>String(i.data||'').slice(0,5)+' '+cash(i.valor)).join(' · ')+'). Marque acima, em "🧾 Diárias desta nota", só as que esta nota cobre e use o botão 🧾 Registrar nota.',true);return;}
    if(!num||!/^\d{4}-\d{2}-\d{2}$/.test(String(update.nfData||''))){avisar('Informe o número e a data de emissão da nota.',true);return;}
    update.notasEmitidas=[{numero:num,data:update.nfData,ids:livres.map(i=>String(i.id)),
      valor:Math.round(livres.reduce((t,i)=>t+Math.round((Number(i.valor)||0)*100),0))/100,em:new Date().toISOString()}];
