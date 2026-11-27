@@ -41,3 +41,26 @@ test('não grava nada: a função não toca em P_meses',()=>{
   const antes=JSON.stringify(P);const {RPT_calcCentros,cfg}=calc(P,R);RPT_calcCentros(['NOV/2026'],cfg);
   assert.equal(JSON.stringify(P),antes);
 });
+
+// ── Fase 2: herança do centro de custo no Pagar ──
+const cen=(P)=>new Function('P_meses',`
+  const P_getMesesOrdenados=()=>Object.keys(P_meses).sort();
+  ${['CEN_label','CEN_norm','CEN_mapaPorNome','CEN_sugerir','CEN_aplicar','CEN_herdarSemCentro'].map(extrair).join('\n')}
+  const CEN_OPCOES=[['studio_a','Studio A']];
+  return {CEN_sugerir,CEN_aplicar,CEN_herdarSemCentro};`)(P);
+test('Fase 2: conta nova herda o centro da última de mesmo nome (case/espaço ignorados)',()=>{
+  const P={'2026-10':[{id:'a',nome:'ENEL STUDIO A',centroCusto:'studio_a'}],'2026-11':[{id:'b',nome:'enel  studio a',centroCusto:'studio_b'}]};
+  const {CEN_sugerir,CEN_aplicar}=cen(P);
+  assert.equal(CEN_sugerir('Enel Studio A'),'studio_b'); // a mais recente vence
+  assert.equal(CEN_aplicar({nome:'ENEL STUDIO A'}).centroCusto,'studio_b');
+  assert.equal(CEN_aplicar({nome:'ENEL STUDIO A',centroCusto:'fora'}).centroCusto,'fora'); // escolha explícita não muda
+  assert.equal(CEN_aplicar({nome:'CONTA NOVA'}).centroCusto,undefined);
+});
+test('Fase 2: fatura de cartão não herda nem serve de modelo; hook preenche só quem está sem centro',()=>{
+  const P={'2026-11':[{id:'a',nome:'RAUL',centroCusto:'rateio_receita'},{id:'f',nome:'RAUL',faturaCartao:true},{id:'n',nome:'RAUL'},{id:'x',nome:'OUTRO'}]};
+  const {CEN_herdarSemCentro}=cen(P);
+  assert.equal(CEN_herdarSemCentro(),1);
+  assert.equal(P['2026-11'][1].centroCusto,undefined);
+  assert.equal(P['2026-11'][2].centroCusto,'rateio_receita');
+  assert.equal(P['2026-11'][3].centroCusto,undefined);
+});

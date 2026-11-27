@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261127-020c0e4e';
+window.APP_VERSION='20261127-7f267611';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -1442,6 +1442,9 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
         </div>
         <input type="text" id="pBusca" placeholder="🔍 Buscar conta..." oninput="renderTabelaP()"/>
         <select id="pMesFiltroContas" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none;display:none"></select>
+        <select id="pCentroFiltroTabela" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none">
+          <option value="">🎬 Todos os centros</option><option value="studio_a">Studio A</option><option value="studio_b">Studio B</option><option value="rateio_receita">Rateio por receita</option><option value="geral">Geral</option><option value="fora">Fora do rateio</option><option value="sem">⚠ Sem centro</option>
+        </select>
         <select id="pCatFiltroTabela" onchange="renderTabelaP()" style="border:1px solid #e5e7eb;border-radius:7px;padding:6px 11px;font-size:.86rem;outline:none">
           <option value="">🏷️ Todas categorias</option>
         </select>
@@ -2326,7 +2329,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
   <div class="modal">
     <h2 id="pModalTitle" style="color:#1e40af">➕ Nova Conta</h2>
     <div class="form-row">
-      <div class="form-group"><label>Descrição *</label><input type="text" id="pFNome" placeholder="Ex: ENEL STUDIO A"/></div>
+      <div class="form-group"><label>Descrição *</label><input type="text" id="pFNome" placeholder="Ex: ENEL STUDIO A" onblur="CEN_sugerirNoModal()"/></div>
       <div class="form-group"><label>Dia de Vencimento</label><input type="number" id="pFDia" placeholder="Ex: 5" min="1" max="31"/></div>
     </div>
     <div class="form-row">
@@ -2336,6 +2339,12 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
     <div class="form-group"><label>📅 Competência <span style="font-weight:400;color:#9ca3af">(a que mês a despesa se refere)</span></label><select id="pFCompetencia"><option value="">— mês do lançamento —</option></select></div>
     <div class="form-group"><label>Observação</label><input type="text" id="pFObs" placeholder="Ex: NO EMAIL WEN PRODUTORA"/></div>
     <div class="form-group"><label>Código de Barras / Acesso</label><textarea id="pFCod" rows="2" placeholder="Código de barras ou login/senha"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>🎬 Centro de custo</label>
+        <select id="pFCentro"><option value="">— automático pelo nome —</option></select>
+        <div style="font-size:.72rem;color:#6b7280;margin-top:3px">Studio A / Studio B / rateio pela receita. Conta nova herda da última de mesmo nome.</div>
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group">
         <label>🏷️ Categoria</label>
@@ -6991,6 +7000,7 @@ function FX_gerarUma(f){
     if(P_meses[mk].some(r=>r.fixaId===f.id))return; // anti-duplicidade
     const o={id:gerarId(),nome:f.nome,valor:Number(f.valorMedio)||0,valorPago:0,dia:f.dia||null,mes:mk,categoria:f.categoria||'',fixa:true,fixaId:f.id,status:'PENDENTE',cod:'',obs:'Gerada de conta fixa',competencia:mk,dataCriacao:new Date().toISOString()};
     if(f.contaBancariaId)o.contaBancariaId=f.contaBancariaId;
+    CEN_aplicar(o);
     P_meses[mk].push(o);n++;
   });
   return n;
@@ -8275,7 +8285,28 @@ function P_marcarMesesAlterados(){
   const todos=new Set([...Object.keys(P_meses||{}),...Object.keys(P_snapshotNuvem||{})]);
   todos.forEach(m=>{const atual=P_serializarMes(m),nuvem=P_snapshotNuvem[m]??'[]';if(atual!==nuvem)P_dirtyMeses.add(m);else{P_dirtyMeses.delete(m);P_conflitos.delete(m);}});
 }
+// ══════════════════════════════════════════════════════
+// CENTRO DE CUSTO NO PAGAR (módulo CEN_) — Fase 2. ADITIVO: só o campo `centroCusto` de cada conta.
+// Conta nova herda o centro da conta de mesmo nome mais recente; fatura de cartão fica de fora.
+// ══════════════════════════════════════════════════════
+const CEN_OPCOES=[['studio_a','Studio A'],['studio_b','Studio B'],['rateio_receita','Rateio por receita (A/B)'],['geral','Geral/empresa'],['fora','Fora do rateio (pessoal)']];
+function CEN_label(c){const o=CEN_OPCOES.find(x=>x[0]===c);return o?o[1]:'(sem centro)';}
+function CEN_norm(n){return String(n||'').replace(/\s+/g,' ').trim().toUpperCase();}
+function CEN_mapaPorNome(){const m={};const ord=(typeof P_getMesesOrdenados==='function')?P_getMesesOrdenados():Object.keys(P_meses||{});
+  ord.forEach(mk=>(P_meses[mk]||[]).forEach(r=>{if(r.faturaCartao||!r.centroCusto)return;m[CEN_norm(r.nome)]=r.centroCusto;}));return m;}
+function CEN_sugerir(nome){return CEN_mapaPorNome()[CEN_norm(nome)]||'';}
+function CEN_aplicar(o){if(o&&!o.centroCusto&&!o.faturaCartao){const c=CEN_sugerir(o.nome);if(c)o.centroCusto=c;}return o;}
+function CEN_herdarSemCentro(){let n=0;const mapa=CEN_mapaPorNome();
+  Object.keys(P_meses||{}).forEach(mk=>(P_meses[mk]||[]).forEach(r=>{if(r.centroCusto||r.faturaCartao)return;const c=mapa[CEN_norm(r.nome)];if(c){r.centroCusto=c;n++;}}));return n;}
+function CEN_badge(r){if(r.faturaCartao)return'';
+  if(!r.centroCusto)return' <span title="Sem centro de custo" style="font-size:.66rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:20px">⚠ sem centro</span>';
+  const cor={studio_a:['#dbeafe','#1e40af','A'],studio_b:['#ede9fe','#7c3aed','B'],rateio_receita:['#ecfdf5','#047857','Rateio'],geral:['#f1f5f9','#475569','Geral'],fora:['#fce7f3','#9d174d','Fora']}[r.centroCusto]||['#f1f5f9','#475569',r.centroCusto];
+  return` <span title="Centro de custo: ${CEN_label(r.centroCusto)}" style="font-size:.66rem;background:${cor[0]};color:${cor[1]};padding:1px 6px;border-radius:20px;font-weight:700">🎬 ${cor[2]}</span>`;}
+function CEN_popularModal(val){const sel=document.getElementById('pFCentro');if(!sel)return;
+  sel.innerHTML='<option value="">— automático pelo nome —</option>'+CEN_OPCOES.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('');sel.value=val||'';}
+function CEN_sugerirNoModal(){const sel=document.getElementById('pFCentro');const nome=document.getElementById('pFNome')?.value||'';if(!sel||sel.value||!nome.trim())return;const c=CEN_sugerir(nome);if(c)sel.value=c;}
 function P_salvarStorage(){
+  try{CEN_herdarSemCentro();}catch(e){} // toda conta nova (extrato, fixa, importação…) herda o centro da última de mesmo nome
   try{localStorage.setItem(P_CACHE_KEY,JSON.stringify(P_meses));}catch(e){console.warn('Pagar: cache local não persistiu (quota?)');}
   P_marcarMesesAlterados();P_salvarCacheMeta();
   clearTimeout(P_syncTimeout);
@@ -8573,6 +8604,8 @@ function renderTabelaP(){
     data.sort((a,b)=>(a.dia||99)-(b.dia||99));
   }
   if(catFiltro)data=data.filter(r=>(r.categoria||'outros')===catFiltro||(catFiltro==='outros'&&!r.categoria));
+  const centroFiltro=document.getElementById('pCentroFiltroTabela')?.value||'';
+  if(centroFiltro)data=data.filter(r=>centroFiltro==='sem'?(!r.centroCusto&&!r.faturaCartao):r.centroCusto===centroFiltro);
   if(origemFiltro)data=data.filter(r=>{
     const fixa=!!(r.fixaId||r.fixa);
     const doExtrato=P_veioDoExtrato(r);
@@ -8607,7 +8640,7 @@ function renderTabelaP(){
     }
     const codHtml=r.cod&&r.cod!=='-'?`<div style="font-size:.75rem;color:#6b7280;margin-top:2px"><span class="tooltip-wrap-p">🔢 <span style="font-family:monospace;font-size:.73rem;cursor:help;border-bottom:1px dashed #9ca3af">${r.cod.length>18?r.cod.slice(0,18)+'…':r.cod}</span><span class="tooltip-cod-p">${r.cod}</span></span></div>`:'';
     rows+=`<tr style="${P_isContaVencida(r,mesR)?'background:#fff8f8':''}">
-      <td><div class="nome-cell">${r.nome}${r.fixa?` <span class="badge-fixa-p">📌 Fixa</span>`:''} ${catBadgeP(r.categoria)}${P_filtroAtual==='VENCIDO'&&r._mes?` <span style="font-size:.7rem;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px">${r._mes}</span>`:''}${diasAtrasoHtml}</div>${r.obs?`<div style="font-size:.76rem;color:#6b7280;margin-top:2px">📝 ${r.obs}</div>`:''}${codHtml}</td>
+      <td><div class="nome-cell">${r.nome}${r.fixa?` <span class="badge-fixa-p">📌 Fixa</span>`:''} ${catBadgeP(r.categoria)}${CEN_badge(r)}${P_filtroAtual==='VENCIDO'&&r._mes?` <span style="font-size:.7rem;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px">${r._mes}</span>`:''}${diasAtrasoHtml}</div>${r.obs?`<div style="font-size:.76rem;color:#6b7280;margin-top:2px">📝 ${r.obs}</div>`:''}${codHtml}</td>
       <td class="center">${r.dia?'Dia '+r.dia:'—'}</td>
       <td class="right">${fmt(r.valor)}</td>
       <td class="right" style="color:${saldo>0?'#b91c1c':'#15803d'}">${fmt(saldo)}</td>
@@ -8676,8 +8709,8 @@ function abrirModalP(id=null){
   document.getElementById('pMesesGrupo').style.display=id?'none':'block';
   if(id){
     const mes=P_editandoMes||P_mesAtual;const r=(P_meses[mes]||[]).find(x=>String(x.id)===String(id))||Object.values(P_meses).flat().find(x=>String(x.id)===String(id));if(!r){toast('⚠️ Conta não encontrada.');return;}
-    document.getElementById('pFNome').value=r.nome;document.getElementById('pFDia').value=r.dia||'';document.getElementById('pFValor').value=r.valor;document.getElementById('pFStatus').value=r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE';document.getElementById('pFObs').value=r.obs||'';document.getElementById('pFCod').value=r.cod||'';document.getElementById('pFFixa').checked=!!r.fixa;document.getElementById('pFCategoria').value=r.categoria||'';previewCategoriaP();COMP_popularSelectCompetencia(r.competencia||'');
-  }else{['pFNome','pFDia','pFValor','pFObs','pFCod'].forEach(x=>document.getElementById(x).value='');document.getElementById('pFStatus').value='PENDENTE';document.getElementById('pFFixa').checked=false;document.getElementById('pFCategoria').value='';previewCategoriaP();COMP_popularSelectCompetencia('');renderMesesCheckP();}
+    document.getElementById('pFNome').value=r.nome;document.getElementById('pFDia').value=r.dia||'';document.getElementById('pFValor').value=r.valor;document.getElementById('pFStatus').value=r.status.toUpperCase()==='PAGO'?'PAGO':'PENDENTE';document.getElementById('pFObs').value=r.obs||'';document.getElementById('pFCod').value=r.cod||'';document.getElementById('pFFixa').checked=!!r.fixa;CEN_popularModal(r.centroCusto||'');document.getElementById('pFCategoria').value=r.categoria||'';previewCategoriaP();COMP_popularSelectCompetencia(r.competencia||'');
+  }else{['pFNome','pFDia','pFValor','pFObs','pFCod'].forEach(x=>document.getElementById(x).value='');document.getElementById('pFStatus').value='PENDENTE';document.getElementById('pFFixa').checked=false;document.getElementById('pFCategoria').value='';CEN_popularModal('');previewCategoriaP();COMP_popularSelectCompetencia('');renderMesesCheckP();}
   P_refletirFixa();
   document.getElementById('pModalBg').classList.add('open');
 }
@@ -8689,10 +8722,11 @@ function salvarContaP(){
   const compSel=document.getElementById('pFCompetencia').value; // '' = usa o mês do bucket
   const base={nome,dia:parseInt(document.getElementById('pFDia').value)||null,valor:novoValor,status:document.getElementById('pFStatus').value,obs:document.getElementById('pFObs').value.trim(),cod:document.getElementById('pFCod').value.trim(),valorPago:document.getElementById('pFStatus').value==='PAGO'?novoValor:0,fixa:novaFixa,categoria:novaCategoria};
   if(compSel)base.competencia=compSel; // só grava se escolhido explicitamente
+  const _cen=document.getElementById('pFCentro')?.value||'';if(_cen)base.centroCusto=_cen; // vazio = não mexe (edição) ou herda pelo nome (conta nova)
   if(P_editandoId){
     const mes=P_editandoMes||P_mesAtual;const original=(P_meses[mes]||[]).find(r=>String(r.id)===String(P_editandoId))||Object.values(P_meses).flat().find(r=>String(r.id)===String(P_editandoId));
     if(!compSel&&original&&original.competencia)delete base.competencia; // limpou o override → volta pro mês do bucket (não reintroduz o antigo via merge)
-    const algumaMudanca=original&&(original.valor!==novoValor||original.fixa!==novaFixa||original.dia!==(parseInt(document.getElementById('pFDia').value)||null));
+    const algumaMudanca=original&&(original.valor!==novoValor||original.fixa!==novaFixa||(base.centroCusto&&original.centroCusto!==base.centroCusto)||original.dia!==(parseInt(document.getElementById('pFDia').value)||null));
     const pagoAntes=Number(original&&original.valorPago)||0, estavaPaga=original?(pagoAntes>=(Number(original.valor)||0)-0.005&&pagoAntes>0):false;
     if(estavaPaga&&base.status!=='PAGO'&&!confirm('Desmarcar o pagamento de "'+nome+'"?\n\nA conta volta a ficar em aberto e o débito sai do saldo da conta bancária.'))return;
     // Desafixou: a conta para de se repetir. O que já está lançado à frente é decisão do Will
@@ -8721,7 +8755,7 @@ function salvarContaP(){
     else{mesclado.valorPago=Math.min(pagoAntes,novoValor);mesclado.status=mesclado.valorPago>0?'PARCIAL':'PENDENTE';}
     if(algumaMudanca&&futuros.length>0){
       P_pendingEdit={conta:mesclado,nomeOriginal:original.nome,mes,original:{...original}};
-      let mudancas=[];if(original.valor!==novoValor)mudancas.push(`Valor: <b>${fmt(original.valor)}</b> → <b>${fmt(novoValor)}</b>`);
+      let mudancas=[];if(original.valor!==novoValor)mudancas.push(`Valor: <b>${fmt(original.valor)}</b> → <b>${fmt(novoValor)}</b>`);if(base.centroCusto&&original.centroCusto!==base.centroCusto)mudancas.push(`Centro: <b>${CEN_label(original.centroCusto)}</b> → <b>${CEN_label(base.centroCusto)}</b>`);
       document.getElementById('pConfirmInfo').innerHTML=`<b>${nome}</b><br>${mudancas.join('<br>')||'Dados atualizados'}`;
       document.querySelectorAll('.prop-opcao').forEach((el,i)=>{el.classList.toggle('selected',i===0);el.querySelector('input').checked=i===0;});
       document.getElementById('pConfirmBg').classList.add('open');
@@ -8742,7 +8776,7 @@ function salvarContaP(){
       if(!P_meses[m])P_meses[m]=[];
       // só na fixa: se o mês já tem uma conta com esse nome, não duplica
       if(novaFixa&&P_meses[m].some(mesmoNome)){pulados++;return;}
-      P_meses[m].push({...base,id:gerarId(),dataCriacao:agora});criados++;
+      P_meses[m].push(CEN_aplicar({...base,id:gerarId(),dataCriacao:agora}));criados++;
     });
     fecharModalP();
     AUD_log('criar','meses',nome,'Conta a pagar criada em '+criados+' mês(es)'+(novaFixa?' (fixa, '+P_FIXA_MESES+' meses)':''),null,novoValor);
@@ -8758,8 +8792,8 @@ function confirmarPropagacaoP(){
   const opcao=document.querySelector('input[name=pPropOp]:checked')?.value||'somente';document.getElementById('pConfirmBg').classList.remove('open');if(!P_pendingEdit)return;
   const{conta,nomeOriginal,mes,original}=P_pendingEdit;const m=mes||P_mesAtual;const idx=(P_meses[m]||[]).findIndex(r=>String(r.id)===String(conta.id));if(idx>-1){P_meses[m][idx]={...conta};if(P_mexeuNoPago(original,conta)){try{BC_syncMovPagar(P_meses[m][idx]);BC_salvarCache();}catch(e){}}}
   let atualizados=0;
-  if(opcao==='futuros'){P_getMesesFuturos().forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;atualizados++;}});toast('✅ '+atualizados+' meses futuros atualizados!');}
-  else if(opcao==='todos'){[...P_getMesesPassados(),...P_getMesesFuturos()].forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;atualizados++;}});toast('✅ Todos os meses atualizados!');}
+  if(opcao==='futuros'){P_getMesesFuturos().forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;if(conta.centroCusto)r.centroCusto=conta.centroCusto;atualizados++;}});toast('✅ '+atualizados+' meses futuros atualizados!');}
+  else if(opcao==='todos'){[...P_getMesesPassados(),...P_getMesesFuturos()].forEach(m=>{const r=P_meses[m].find(r=>r.nome===nomeOriginal);if(r){r.valor=conta.valor;if(conta.fixa!==undefined)r.fixa=conta.fixa;if(conta.centroCusto)r.centroCusto=conta.centroCusto;atualizados++;}});toast('✅ Todos os meses atualizados!');}
   else toast('✅ Só este mês atualizado!');
   P_pendingEdit=null;P_salvarStorage();renderTabelaP();renderDashboardP();
 }
