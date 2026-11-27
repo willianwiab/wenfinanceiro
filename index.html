@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261124-c82a5e66';
+window.APP_VERSION='20261127-020c0e4e';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -2017,6 +2017,7 @@ table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12
           <option value="atraso">⚫ Contas atrasadas</option>
           <option value="dre">📊 Resultado / DRE (competência)</option>
           <option value="estudio">🎬 Receita por estúdio (A×B)</option>
+          <option value="cen">🧮 Resultado por estúdio (com rateio)</option>
           <option value="aging">⏳ Aging do a receber</option>
           <option value="proj">🔮 Projeção de fluxo de caixa</option>
         </select></div>
@@ -7877,13 +7878,39 @@ function RPT_popularFiltros(){
 }
 window.RPT_ativar=function(){RPT_popularFiltros();RPT_periodoChange();RPT_gerar();};
 function RPT_pct(v){return (Math.round(v*10)/10)+'%';}
+// ── Resultado por estúdio (Fase 1 — SOMENTE LEITURA) ──────────────────────────────
+// Despesa pelo campo `centroCusto` das contas do Pagar (studio_a / studio_b / rateio_receita / geral / fora / vazio).
+// Fatura de cartão (faturaCartao) NÃO entra: os itens reais dela entram como "cartão sem centro" (mesma regra canônica de
+// FCX_despesasCat, sem duplicar). Receita vem do Receber por `studio` (estimativa: o campo tem falhas). Não grava nada.
+let RPT_CEN={base:'periodo',pctA:73,sem:'aparte'};
+function RPT_calcCentros(meses,cfg){
+  cfg=cfg||RPT_CEN;const R=Array.isArray(R_todosOsDados)?R_todosOsDados:[];
+  const rec={A:0,B:0,outro:0};
+  R.forEach(r=>{if(!meses.includes(r.mes))return;const v=Number(r.valorTotal)||0;if(r.studio==='STUDIO A')rec.A+=v;else if(r.studio==='STUDIO B')rec.B+=v;else rec.outro+=v;});
+  const d={studio_a:0,studio_b:0,rateio:0,fora:0,sem:0,cartao:0};
+  meses.forEach(m=>{
+    (P_meses[m]||[]).forEach(r=>{if(r.faturaCartao)return;const v=Number(r.valor)||0;const c=r.centroCusto||'';
+      if(c==='studio_a')d.studio_a+=v;else if(c==='studio_b')d.studio_b+=v;else if(c==='rateio_receita'||c==='geral')d.rateio+=v;else if(c==='fora')d.fora+=v;else d.sem+=v;});
+    if(typeof C_itensCartaoMesWen==='function')C_itensCartaoMesWen(m).forEach(it=>{d.cartao+=Number(it.valor)||0;});
+  });
+  const baseRec=rec.A+rec.B;
+  const shareA=cfg.base==='fixo'?Math.min(1,Math.max(0,(Number(cfg.pctA)||0)/100)):(baseRec>0?rec.A/baseRec:0.5);
+  const pool=d.rateio+(cfg.sem==='ratear'?d.sem+d.cartao:0);
+  const A={receita:rec.A,direta:d.studio_a,rateio:pool*shareA},B={receita:rec.B,direta:d.studio_b,rateio:pool*(1-shareA)};
+  A.resultado=A.receita-A.direta-A.rateio;B.resultado=B.receita-B.direta-B.rateio;
+  const despTotal=d.studio_a+d.studio_b+d.rateio+d.fora+d.sem+d.cartao;
+  const alocado=A.direta+A.rateio+B.direta+B.rateio;
+  const naoAloc=(cfg.sem==='ratear'?0:d.sem+d.cartao)+d.fora;
+  return {A,B,rec,d,shareA,pool,despTotal,alocado,naoAloc,confere:Math.abs(alocado+naoAloc-despTotal)<0.005};
+}
+window.RPT_cenCfg=function(k,v){RPT_CEN[k]=(k==='pctA'?(parseFloat(v)||0):v);RPT_gerar();};
 function RPT_gerar(){
   const cont=document.getElementById('rptResultado');if(!cont)return;
   const tipo=document.getElementById('rptTipo').value;const meses=RPT_meses();
   const catF=document.getElementById('rptCategoria').value;const cliF=document.getElementById('rptCliente').value;
   const inMeses=m=>meses.includes(m);
   const periodoLabel=meses.length?(meses.length===1?meses[0]:meses[0]+' a '+meses[meses.length-1]):'—';
-  let titulo='',kpis=[],chart=null,colunas=[],linhas=[];
+  let titulo='',kpis=[],chart=null,colunas=[],linhas=[],extraH='';
   const pagarMes=m=>(P_meses[m]||[]);
   if(tipo==='cat'){
     titulo='Despesas por categoria';const acc={};let tot=0;
@@ -7947,6 +7974,24 @@ function RPT_gerar(){
     chart={type:'doughnut',labels:arr.map(x=>x[0]),data:arr.map(x=>x[1].fat)};
     colunas=['Estúdio','Faturamento','Diárias','Horas','R$/hora'];
     linhas=arr.map(x=>[x[0],fmt(x[1].fat),x[1].diarias,x[1].horas,fmt(x[1].horas>0?x[1].fat/x[1].horas:0)]);
+  }else if(tipo==='cen'){
+    titulo='Resultado por estúdio (com rateio) — estimativa';
+    const c=RPT_calcCentros(meses,RPT_CEN);const pct=x=>RPT_pct(x.receita>0?x.resultado/x.receita*100:0);
+    const sel=(k,ops)=>`<select onchange="RPT_cenCfg('${k}',this.value)" style="padding:5px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:.8rem">${ops.map(o=>`<option value="${o[0]}" ${String(RPT_CEN[k])===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+    extraH=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:.8rem;color:#475569">
+      <span>Divisão do rateio: ${sel('base',[['periodo','pela receita do período'],['fixo','% fixo']])}</span>
+      ${RPT_CEN.base==='fixo'?`<span>Studio A: <input type="number" min="0" max="100" value="${RPT_CEN.pctA}" onchange="RPT_cenCfg('pctA',this.value)" style="width:64px;padding:4px 6px;border:1px solid #e5e7eb;border-radius:7px"> %</span>`:`<span>Studio A hoje: <b>${RPT_pct(c.shareA*100)}</b> · B: <b>${RPT_pct((1-c.shareA)*100)}</b></span>`}
+      <span>Sem centro e itens de cartão: ${sel('sem',[['aparte','mostrar à parte'],['ratear','ratear também']])}</span>
+      <span style="flex-basis:100%;color:#92400e">⚠ Estimativa: despesa pelo vencimento (resultado ≠ caixa); a receita usa o campo "estúdio" do Receber, que tem falhas.${c.confere?'':' <b style="color:#b91c1c">Conferência de somas não bateu.</b>'}</span></div>`;
+    kpis=[{l:'Resultado Studio A',v:fmt(c.A.resultado)},{l:'Resultado Studio B',v:fmt(c.B.resultado)},{l:'Rateio dividido',v:fmt(c.pool)},{l:'Não alocado',v:fmt(c.naoAloc)}];
+    chart={type:'bar',labels:['Studio A','Studio B'],data:[c.A.receita,c.B.receita],data2:[c.A.direta+c.A.rateio,c.B.direta+c.B.rateio]};
+    colunas=['Linha','Receita','Despesa direta','Parte do rateio','Resultado','Margem'];
+    linhas=[['Studio A',fmt(c.A.receita),fmt(c.A.direta),fmt(c.A.rateio),fmt(c.A.resultado),pct(c.A)],
+            ['Studio B',fmt(c.B.receita),fmt(c.B.direta),fmt(c.B.rateio),fmt(c.B.resultado),pct(c.B)]];
+    if(c.rec.outro)linhas.push(['Receita sem estúdio',fmt(c.rec.outro),'—','—','—','—']);
+    if(RPT_CEN.sem!=='ratear'){linhas.push(['Não alocado: contas sem centro','—',fmt(c.d.sem),'—','—','—']);linhas.push(['Não alocado: itens de cartão','—',fmt(c.d.cartao),'—','—','—']);}
+    linhas.push(['Fora do rateio (pessoal)','—',fmt(c.d.fora),'—','—','—']);
+    linhas.push(['Total de despesas conferido','—',fmt(c.despTotal),'—','—','—']);
   }else if(tipo==='aging'){
     titulo='Aging do a receber';const hoje=new Date();hoje.setHours(0,0,0,0);
     const ordem=['0-15 dias','16-30 dias','31-60 dias','+60 dias','sem data'];
@@ -7973,7 +8018,7 @@ function RPT_gerar(){
   const kpisH=`<div class="cards-p" style="margin-bottom:14px">${kpis.map(k=>`<div class="card-p"><label>${k.l}</label><div class="val">${k.v}</div></div>`).join('')}</div>`;
   const chartH=chart?'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:14px;height:280px"><canvas id="rptCanvas"></canvas></div>':'';
   const tabH=linhas.length?`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:6px 14px 12px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem"><thead><tr style="color:#6b7280;font-size:.74rem;text-transform:uppercase">${colunas.map((c,i)=>`<th style="padding:8px;text-align:${i===0?'left':'right'}">${c}</th>`).join('')}</tr></thead><tbody>${linhas.map(row=>`<tr style="border-top:1px solid #eef2f7">${row.map((cel,i)=>`<td style="padding:7px 8px;text-align:${i===0?'left':'right'}${i===0?';font-weight:600;color:#0f172a':''}">${cel}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<div style="color:#9ca3af;font-size:.85rem">Sem dados neste filtro.</div>';
-  cont.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="font-size:1rem;font-weight:700;color:#0f172a">${titulo}</h3><span style="font-size:.8rem;color:#6b7280">${periodoLabel}</span></div>${kpisH}${chartH}${tabH}`;
+  cont.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="font-size:1rem;font-weight:700;color:#0f172a">${titulo}</h3><span style="font-size:.8rem;color:#6b7280">${periodoLabel}</span></div>${extraH}${kpisH}${chartH}${tabH}`;
   if(RPT_chart){RPT_chart.destroy();RPT_chart=null;}
   if(chart&&typeof Chart!=='undefined'){
     const ctx=document.getElementById('rptCanvas');
