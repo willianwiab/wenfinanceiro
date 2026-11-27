@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261127-7f267611';
+window.APP_VERSION='20261127-f3d41824';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -624,6 +624,8 @@ table.t-pagar tbody tr{border-bottom:1px solid #f1f5f9;transition:background .15
 table.t-pagar tbody tr:hover{background:#f8fafc}
 table.t-pagar td{padding:10px 13px;vertical-align:middle}
 table.t-pagar td.center{text-align:center}table.t-pagar td.right{text-align:right;font-weight:600}
+table.t-pagar .nome-badges-m-p{display:none;margin-top:3px}
+@media(max-width:760px){table.t-pagar .col-cat-p,table.t-pagar .col-cen-p{display:none}table.t-pagar .nome-badges-m-p{display:block}}
 table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12px 13px}
 .badge-p{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.73rem;font-weight:600}
 .badge-p.pago{background:#dcfce7;color:#15803d}.badge-p.pendente{background:#fef9c3;color:#854d0e}.badge-p.vencido{background:#fee2e2;color:#b91c1c}.badge-p.urgente{background:#ffedd5;color:#c2410c}.badge-p.parcial{background:#fef3c7;color:#92400e}
@@ -8636,12 +8638,14 @@ function renderTabelaP(){
       lastDiaKey=diaKey;const diaData=data.filter(x=>(P_filtroAtual==='VENCIDO'?x._mes===mesR&&x.dia===r.dia:x.dia===r.dia));
       const diaTotal=diaData.reduce((a,x)=>a+x.valor,0);const diaPago=P_somaPago(diaData);const diaPendente=Math.round((diaTotal-diaPago)*100)/100;
       const diaLabel=r.dia?`📅 ${P_filtroAtual==='VENCIDO'?mesR+' — ':''}Dia ${r.dia}`:'📌 Sem data';
-      rows+=`<tr class="section-day-row-p"><td colspan="7"><div class="section-day-bar-p"><div class="section-day-label-p">${diaLabel}</div><div class="section-day-totals-p"><span class="sdt-chip-p total">Total: ${fmt(diaTotal)}</span>${diaPago>0?`<span class="sdt-chip-p pago">✅ ${fmt(diaPago)}</span>`:''}${diaPendente>0?`<span class="sdt-chip-p pendente">🔴 ${fmt(diaPendente)}</span>`:`<span class="sdt-chip-p zerado">✅</span>`}</div></div></td></tr>`;
+      rows+=`<tr class="section-day-row-p"><td colspan="9"><div class="section-day-bar-p"><div class="section-day-label-p">${diaLabel}</div><div class="section-day-totals-p"><span class="sdt-chip-p total">Total: ${fmt(diaTotal)}</span>${diaPago>0?`<span class="sdt-chip-p pago">✅ ${fmt(diaPago)}</span>`:''}${diaPendente>0?`<span class="sdt-chip-p pendente">🔴 ${fmt(diaPendente)}</span>`:`<span class="sdt-chip-p zerado">✅</span>`}</div></div></td></tr>`;
     }
     const codHtml=r.cod&&r.cod!=='-'?`<div style="font-size:.75rem;color:#6b7280;margin-top:2px"><span class="tooltip-wrap-p">🔢 <span style="font-family:monospace;font-size:.73rem;cursor:help;border-bottom:1px dashed #9ca3af">${r.cod.length>18?r.cod.slice(0,18)+'…':r.cod}</span><span class="tooltip-cod-p">${r.cod}</span></span></div>`:'';
     rows+=`<tr style="${P_isContaVencida(r,mesR)?'background:#fff8f8':''}">
-      <td><div class="nome-cell">${r.nome}${r.fixa?` <span class="badge-fixa-p">📌 Fixa</span>`:''} ${catBadgeP(r.categoria)}${CEN_badge(r)}${P_filtroAtual==='VENCIDO'&&r._mes?` <span style="font-size:.7rem;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px">${r._mes}</span>`:''}${diasAtrasoHtml}</div>${r.obs?`<div style="font-size:.76rem;color:#6b7280;margin-top:2px">📝 ${r.obs}</div>`:''}${codHtml}</td>
-      <td class="center">${r.dia?'Dia '+r.dia:'—'}</td>
+      <td><div class="nome-cell">${r.nome}${r.fixa?` <span class="badge-fixa-p" title="Conta fixa — repete todo mês">📌</span>`:''}${P_filtroAtual==='VENCIDO'&&r._mes?` <span style="font-size:.7rem;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px">${r._mes}</span>`:''}</div><div class="nome-badges-m-p">${catBadgeP(r.categoria)}${CEN_badge(r)}</div>${r.obs?`<div style="font-size:.76rem;color:#6b7280;margin-top:2px">📝 ${r.obs}</div>`:''}${codHtml}</td>
+      <td class="col-cat-p">${catBadgeP(r.categoria)}</td>
+      <td class="col-cen-p">${CEN_badge(r).trim()}</td>
+      <td class="center">${r.dia?'Dia '+r.dia:'—'}${diasAtrasoHtml?' '+diasAtrasoHtml:''}</td>
       <td class="right">${fmt(r.valor)}</td>
       <td class="right" style="color:${saldo>0?'#b91c1c':'#15803d'}">${fmt(saldo)}</td>
       <td class="center"><span class="badge-p ${st.cls}">${st.label}</span><div style="margin-top:3px">${CONC_seloConciliado('pagar',r.id,mesR)?'<span style="font-size:.66rem;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Confirmado no extrato bancário">🔗 Conciliado</span>':'<span style="font-size:.66rem;font-weight:600;background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;white-space:nowrap" title="Ainda não apareceu no extrato bancário importado">Não conciliado</span>'}</div></td>
@@ -8663,6 +8667,7 @@ function renderTabelaP(){
       const desc=String(m.descricao||'Movimentação').replace(/^📥\s*/,'').replace(/</g,'&lt;');
       return `<tr style="background:#fffbeb">
         <td><div style="font-weight:600">${desc}</div><div style="font-size:.72rem;color:#92400e">📥 só no extrato — ainda não é conta a pagar</div></td>
+        <td></td><td></td>
         <td class="center">${dia?'Dia '+dia:'—'}</td>
         <td class="right">${fmt(v)}</td>
         <td class="right" style="color:#92400e">${fmt(v)}</td>
@@ -8672,7 +8677,7 @@ function renderTabelaP(){
       </tr>`;
     }).join('');
   }
-  if(!rows)rows=`<tr><td colspan="7" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
+  if(!rows)rows=`<tr><td colspan="9" style="text-align:center;padding:36px;color:#6b7280">${P_filtroAtual==='VENCIDO'?'✅ Nenhuma vencida!':'Nenhuma conta.'}</td></tr>`;
   if(origemFiltro==='extrato'){
     const partes=[];
     if(P_filtroAtual!=='TODOS')partes.push('pagas e não pagas (o filtro de status não vale aqui)');
@@ -8682,7 +8687,7 @@ function renderTabelaP(){
   const somaSoltas=soltas.reduce((a,m)=>a+Math.abs(Number(m.valor)||0),0);
   const total=data.reduce((a,r)=>a+r.valor,0)+somaSoltas,totalSaldo=data.reduce((a,r)=>a+(r.valor-(r.valorPago||0)),0)+somaSoltas;
   const qtdTotal=data.length+soltas.length;
-  document.getElementById('pTabelaDiv').innerHTML=`<table class="t-pagar"><thead><tr>${thSort('nome','Descrição')}${thSort('dia','Venc.')}${thSort('valor','Valor')}${thSort('saldo','Saldo')}<th style="text-align:center">Status</th><th style="text-align:center">Baixa</th><th style="text-align:center">Ações</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">TOTAL (${qtdTotal})</td><td style="text-align:right">${fmt(total)}</td><td style="text-align:right">${fmt(totalSaldo)}</td><td colspan="3"></td></tr></tfoot></table>`;
+  document.getElementById('pTabelaDiv').innerHTML=`<table class="t-pagar"><thead><tr>${thSort('nome','Descrição')}<th class="col-cat-p">Categoria</th><th class="col-cen-p">Centro</th>${thSort('dia','Venc.')}${thSort('valor','Valor')}${thSort('saldo','Saldo')}<th style="text-align:center">Status</th><th style="text-align:center">Baixa</th><th style="text-align:center">Ações</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>TOTAL (${qtdTotal})</td><td class="col-cat-p"></td><td class="col-cen-p"></td><td></td><td style="text-align:right">${fmt(total)}</td><td style="text-align:right">${fmt(totalSaldo)}</td><td colspan="3"></td></tr></tfoot></table>`;
 }
 
 // Modal Pagar
