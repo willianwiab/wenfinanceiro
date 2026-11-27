@@ -19,7 +19,7 @@
 <script>
 /* Auto-atualizador: a cada carga confere a versão no GitHub e, se houver uma nova,
    recarrega sozinho a versão fresca — sem precisar de hard refresh. Trava anti-loop. */
-window.APP_VERSION='20261127-f3d41824';
+window.APP_VERSION='20261127-b26b8e5b';
 (function(){try{
   fetch('version.json?t='+Date.now(),{cache:'no-store'})
    .then(function(r){return r.ok?r.json():null;})
@@ -624,8 +624,8 @@ table.t-pagar tbody tr{border-bottom:1px solid #f1f5f9;transition:background .15
 table.t-pagar tbody tr:hover{background:#f8fafc}
 table.t-pagar td{padding:10px 13px;vertical-align:middle}
 table.t-pagar td.center{text-align:center}table.t-pagar td.right{text-align:right;font-weight:600}
-table.t-pagar .nome-badges-m-p{display:none;margin-top:3px}
-@media(max-width:760px){table.t-pagar .col-cat-p,table.t-pagar .col-cen-p{display:none}table.t-pagar .nome-badges-m-p{display:block}}
+table.t-pagar .nome-badges-m-p{display:none;margin-top:4px}
+@media(max-width:760px){table.t-pagar .col-cat-p,table.t-pagar .col-cen-p{display:none}table.t-pagar .nome-badges-m-p{display:flex;flex-wrap:wrap;gap:4px;align-items:center}table.t-pagar .nome-badges-m-p>span{white-space:nowrap;font-size:.64rem!important;padding:1px 7px!important;line-height:1.5;margin:0!important;display:inline-block}table.t-pagar td:first-child{min-width:158px}}
 table.t-pagar tfoot td{background:#1e40af;color:white;font-weight:700;padding:12px 13px}
 .badge-p{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.73rem;font-weight:600}
 .badge-p.pago{background:#dcfce7;color:#15803d}.badge-p.pendente{background:#fef9c3;color:#854d0e}.badge-p.vencido{background:#fee2e2;color:#b91c1c}.badge-p.urgente{background:#ffedd5;color:#c2410c}.badge-p.parcial{background:#fef3c7;color:#92400e}
